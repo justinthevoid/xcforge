@@ -26,6 +26,7 @@ public actor AXPBridge {
     private var cachedAt: CFAbsoluteTime = 0
     private let cacheMaxAge: TimeInterval = 0.5
     private let treeBuildTimeout: TimeInterval = 5.0
+    private let actionTimeout: TimeInterval = 3.0
 
     // MARK: - Public API
 
@@ -86,25 +87,31 @@ public actor AXPBridge {
 
     /// Click an element via its native accessibility action.
     /// Invalidates the tree cache only on success since the UI may change after interaction.
-    func performClick(handle: AXPHandle) throws {
-        let result = AXUIElementPerformAction(handle.element, kAXPressAction as CFString)
-        guard result == .success else {
-            throw AXPError.actionFailed("AXPress returned \(result.rawValue)")
+    func performClick(handle: AXPHandle) async throws {
+        let timeout = actionTimeout
+        try await runOffActor(timeout: timeout, timeoutError: { .actionFailed("AXPress timed out after \(Int(timeout))s") }) {
+            let result = AXUIElementPerformAction(handle.element, kAXPressAction as CFString)
+            guard result == .success else {
+                throw AXPError.actionFailed("AXPress returned \(result.rawValue)")
+            }
         }
         invalidateCache()
     }
 
     /// Read the text content of an element. Tries kAXValueAttribute first, then kAXTitleAttribute.
-    func getText(handle: AXPHandle) throws -> String {
-        func stringAttr(_ attr: String) -> String? {
-            var ref: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(handle.element, attr as CFString, &ref) == .success
-            else { return nil }
-            return ref as? String
+    func getText(handle: AXPHandle) async throws -> String {
+        let timeout = actionTimeout
+        return try await runOffActor(timeout: timeout, timeoutError: { .actionFailed("getText timed out after \(Int(timeout))s") }) {
+            func stringAttr(_ attr: String) -> String? {
+                var ref: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(handle.element, attr as CFString, &ref) == .success
+                else { return nil }
+                return ref as? String
+            }
+            if let text = stringAttr(kAXValueAttribute) { return text }
+            if let text = stringAttr(kAXTitleAttribute) { return text }
+            throw AXPError.actionFailed("No text content on element")
         }
-        if let text = stringAttr(kAXValueAttribute) { return text }
-        if let text = stringAttr(kAXTitleAttribute) { return text }
-        throw AXPError.actionFailed("No text content on element")
     }
 
     /// Clear cached tree and handles. Called automatically after successful mutations.
@@ -125,36 +132,48 @@ public actor AXPBridge {
             return cachedElements
         }
 
-        // Build tree on a non-cooperative thread (AX calls can block), with timeout
-        let elements = try await withThrowingTaskGroup(of: [AXElement].self) { group in
-            group.addTask {
-                try await withCheckedThrowingContinuation {
-                    (continuation: CheckedContinuation<[AXElement], Error>) in
-                    DispatchQueue.global(qos: .userInteractive).async {
-                        do {
-                            try Self.verifyBootedDevice()
-                            let tree = try Self.buildTree(pid: simPID)
-                            continuation.resume(returning: tree)
-                        } catch {
-                            continuation.resume(throwing: error)
-                        }
-                    }
-                }
-            }
-            group.addTask { [treeBuildTimeout] in
-                try await Task.sleep(nanoseconds: UInt64(treeBuildTimeout * 1_000_000_000))
-                throw AXPError.treeBuildFailed("Tree traversal timed out after \(Int(treeBuildTimeout))s")
-            }
-
-            let result = try await group.next()!
-            group.cancelAll()
-            return result
+        let timeout = treeBuildTimeout
+        let elements: [AXElement] = try await runOffActor(timeout: timeout, timeoutError: { .treeBuildFailed("Tree traversal timed out after \(Int(timeout))s") }) {
+            try Self.verifyBootedDevice()
+            return try Self.buildTree(pid: simPID)
         }
 
         cachedElements = elements
         cachedUDID = cacheKey
         cachedAt = CFAbsoluteTimeGetCurrent()
         return elements
+    }
+
+    // MARK: - Off-Actor Dispatch
+
+    /// Run a blocking closure on `DispatchQueue.global`, racing against a timeout.
+    /// Prevents synchronous AX calls from starving the actor's serial executor.
+    private nonisolated func runOffActor<T: Sendable>(
+        timeout: TimeInterval,
+        timeoutError: @Sendable @escaping () -> AXPError,
+        _ body: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
+                    DispatchQueue.global(qos: .userInteractive).async {
+                        do {
+                            let result = try body()
+                            continuation.resume(returning: result)
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                throw timeoutError()
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
     }
 
     // MARK: - AXUIElement Tree Traversal
