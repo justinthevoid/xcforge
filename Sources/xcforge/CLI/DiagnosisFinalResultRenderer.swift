@@ -48,6 +48,7 @@ enum DiagnosisFinalResultRenderer {
                 includeContext: sourceAttempt.resolvedContext != result.currentAttempt?.resolvedContext,
                 layout: layout
             )
+            appendDiagnosisDetail(&lines, attempt: sourceAttempt, phase: sourceAttempt.phase)
             appendEvidenceBundle(&lines, title: "Prior Evidence Bundle", attempt: sourceAttempt, layout: layout)
         }
 
@@ -298,8 +299,9 @@ enum DiagnosisFinalResultRenderer {
     ) {
         let hasBuild = attempt.diagnosisSummary != nil
         let hasTest = attempt.testDiagnosisSummary != nil
+        let hasRuntime = attempt.runtimeSummary != nil
 
-        if !hasBuild && !hasTest {
+        if !hasBuild && !hasTest && !hasRuntime {
             appendMissingDiagnosisDetail(&lines, phase: phase)
             return
         }
@@ -312,6 +314,10 @@ enum DiagnosisFinalResultRenderer {
 
         if let testSummary = attempt.testDiagnosisSummary {
             appendTestDiagnosisDetail(&lines, testSummary)
+        }
+
+        if let runtimeSummary = attempt.runtimeSummary {
+            appendRuntimeDiagnosisDetail(&lines, runtimeSummary)
         }
     }
 
@@ -365,6 +371,33 @@ enum DiagnosisFinalResultRenderer {
 
         if !summary.supportingEvidence.isEmpty {
             lines.append("  test supporting evidence:")
+            lines += summary.supportingEvidence.map { "    - \($0.kind): \($0.path) [\($0.source)]" }
+        }
+    }
+
+    private static func appendRuntimeDiagnosisDetail(
+        _ lines: inout [String],
+        _ summary: RuntimeDiagnosisSummary
+    ) {
+        lines.append("  Runtime Observed Evidence")
+        lines.append("    summary: \(sanitizeSummaryField(summary.observedEvidence.summary))")
+        if let primarySignal = summary.observedEvidence.primarySignal {
+            lines.append("    primary_signal: \(sanitizeSummaryField(primarySignal.message))")
+        }
+        lines.append(
+            "    app_state: launched=\(summary.observedEvidence.launchedApp), running=\(summary.observedEvidence.appRunning), relaunched=\(summary.observedEvidence.relaunchedApp)"
+        )
+        lines.append(
+            "    output: stdout_lines=\(summary.observedEvidence.stdoutLineCount), stderr_lines=\(summary.observedEvidence.stderrLineCount)"
+        )
+
+        if let conclusion = summary.inferredConclusion {
+            lines.append("  Runtime Inferred Conclusion")
+            lines.append("    summary: \(sanitizeSummaryField(conclusion.summary))")
+        }
+
+        if !summary.supportingEvidence.isEmpty {
+            lines.append("  runtime supporting evidence:")
             lines += summary.supportingEvidence.map { "    - \($0.kind): \($0.path) [\($0.source)]" }
         }
     }

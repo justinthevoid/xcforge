@@ -1595,3 +1595,287 @@ struct DiagnosisFinalResultJSONFollowOnActionTests {
         #expect(failure["classification"] as? String != nil)
     }
 }
+
+// MARK: - Deferred hardening bundle tests
+
+@Suite("Deferred hardening: nextReviewAction status awareness", .serialized)
+struct NextReviewActionStatusTests {
+
+    @Test("nextReviewAction returns status-aware message for canceled")
+    func canceledStatusReturnsStatusAwareMessage() {
+        let result = DiagnosisFinalResult(
+            phase: .diagnosisBuild,
+            status: .canceled,
+            runId: "run-canceled",
+            attemptId: "a-1",
+            sourceAttemptId: nil,
+            summary: DiagnosisStatusSummary(source: .build, headline: "Canceled."),
+            recoveryHistory: [],
+            currentAttempt: nil,
+            sourceAttempt: nil,
+            comparison: nil,
+            failure: nil,
+            persistedRunPath: nil
+        )
+
+        let rendered = DiagnosisFinalResultRenderer.render(result)
+        #expect(rendered.contains("Run was canceled"))
+        #expect(rendered.contains("evidence collection may be incomplete"))
+    }
+
+    @Test("nextReviewAction returns status-aware message for inProgress")
+    func inProgressStatusReturnsStatusAwareMessage() {
+        let result = DiagnosisFinalResult(
+            phase: .diagnosisTest,
+            status: .inProgress,
+            runId: "run-progress",
+            attemptId: "a-1",
+            sourceAttemptId: nil,
+            summary: DiagnosisStatusSummary(source: .test, headline: "In progress."),
+            recoveryHistory: [],
+            currentAttempt: nil,
+            sourceAttempt: nil,
+            comparison: nil,
+            failure: nil,
+            persistedRunPath: nil
+        )
+
+        let rendered = DiagnosisFinalResultRenderer.render(result)
+        #expect(rendered.contains("Run is still in progress"))
+        #expect(rendered.contains("evidence is incomplete"))
+    }
+}
+
+@Suite("Deferred hardening: runtime-phase follow-on action", .serialized)
+struct RuntimeFollowOnActionTests {
+
+    @Test("deriveForFailed produces evidence-supported guidance when runtimeSummary is present")
+    func runtimeSummaryProducesEvidenceSupportedGuidance() {
+        let runtimeSummary = RuntimeDiagnosisSummary(
+            observedEvidence: ObservedRuntimeEvidence(
+                summary: "App launched but crashed during runtime inspection.",
+                launchedApp: true,
+                appRunning: false,
+                relaunchedApp: false,
+                primarySignal: RuntimeSignalSummary(
+                    stream: .stderr,
+                    message: "Fatal error: index out of range",
+                    source: "stderr"
+                ),
+                additionalSignalCount: 0,
+                stdoutLineCount: 5,
+                stderrLineCount: 3
+            ),
+            inferredConclusion: nil,
+            supportingEvidence: []
+        )
+
+        let attempt = DiagnosisCompareAttemptSnapshot(
+            attemptId: "a-1",
+            attemptNumber: 1,
+            phase: .diagnosisRuntime,
+            status: .failed,
+            resolvedContext: ResolvedWorkflowContext(
+                project: "/tmp/App.xcodeproj",
+                scheme: "App",
+                simulator: "iPhone 16 Pro",
+                configuration: "Debug",
+                app: AppContext(bundleId: "com.example.app", appPath: "/tmp/App.app")
+            ),
+            summary: DiagnosisStatusSummary(source: .runtime, headline: "Runtime failed."),
+            runtimeSummary: runtimeSummary,
+            evidence: [],
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        let result = DiagnosisFinalResult(
+            phase: .diagnosisRuntime,
+            status: .failed,
+            runId: "run-rt-1",
+            attemptId: "a-1",
+            sourceAttemptId: nil,
+            summary: DiagnosisStatusSummary(source: .runtime, headline: "Runtime failed."),
+            recoveryHistory: [],
+            currentAttempt: attempt,
+            sourceAttempt: nil,
+            comparison: nil,
+            failure: nil,
+            persistedRunPath: nil
+        ).withDerivedFollowOnAction()
+
+        #expect(result.followOnAction?.confidence == .evidenceSupported)
+        #expect(result.followOnAction?.action.contains("runtime failure") == true)
+        #expect(result.followOnAction?.rationale.contains("did not stay running") == true)
+    }
+
+    @Test("render includes runtime diagnosis detail when runtimeSummary is present")
+    func renderIncludesRuntimeDiagnosisDetail() {
+        let runtimeSummary = RuntimeDiagnosisSummary(
+            observedEvidence: ObservedRuntimeEvidence(
+                summary: "App launched and stayed running.",
+                launchedApp: true,
+                appRunning: true,
+                relaunchedApp: false,
+                primarySignal: nil,
+                additionalSignalCount: 0,
+                stdoutLineCount: 10,
+                stderrLineCount: 0
+            ),
+            inferredConclusion: InferredRuntimeConclusion(summary: "App appears stable."),
+            supportingEvidence: []
+        )
+
+        let attempt = DiagnosisCompareAttemptSnapshot(
+            attemptId: "a-1",
+            attemptNumber: 1,
+            phase: .diagnosisRuntime,
+            status: .succeeded,
+            resolvedContext: ResolvedWorkflowContext(
+                project: "/tmp/App.xcodeproj",
+                scheme: "App",
+                simulator: "iPhone 16 Pro",
+                configuration: "Debug",
+                app: AppContext(bundleId: "com.example.app", appPath: "/tmp/App.app")
+            ),
+            summary: DiagnosisStatusSummary(source: .runtime, headline: "Runtime OK."),
+            runtimeSummary: runtimeSummary,
+            evidence: [],
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        let result = DiagnosisFinalResult(
+            phase: .diagnosisRuntime,
+            status: .succeeded,
+            runId: "run-rt-2",
+            attemptId: "a-1",
+            sourceAttemptId: nil,
+            summary: DiagnosisStatusSummary(source: .runtime, headline: "Runtime OK."),
+            recoveryHistory: [],
+            currentAttempt: attempt,
+            sourceAttempt: nil,
+            comparison: nil,
+            failure: nil,
+            persistedRunPath: nil
+        )
+
+        let rendered = DiagnosisFinalResultRenderer.render(result)
+        #expect(rendered.contains("Runtime Observed Evidence"))
+        #expect(rendered.contains("App launched and stayed running."))
+        #expect(rendered.contains("Runtime Inferred Conclusion"))
+        #expect(rendered.contains("App appears stable."))
+        #expect(rendered.contains("stdout_lines=10"))
+    }
+}
+
+@Suite("Deferred hardening: sourceAttempt diagnosis detail", .serialized)
+struct SourceAttemptDiagnosisDetailTests {
+
+    @Test("render includes diagnosis detail for sourceAttempt in rerun comparison")
+    func sourceAttemptGetsDiagnosisDetail() {
+        let buildSummary = BuildDiagnosisSummary(
+            observedEvidence: ObservedBuildEvidence(
+                summary: "Prior build had 2 errors.",
+                primarySignal: nil,
+                additionalIssueCount: 0,
+                errorCount: 2,
+                warningCount: 0,
+                analyzerWarningCount: 0
+            ),
+            inferredConclusion: nil,
+            supportingEvidence: []
+        )
+
+        let sourceAttempt = DiagnosisCompareAttemptSnapshot(
+            attemptId: "a-prior",
+            attemptNumber: 1,
+            phase: .diagnosisBuild,
+            status: .failed,
+            resolvedContext: ResolvedWorkflowContext(
+                project: "/tmp/App.xcodeproj",
+                scheme: "App",
+                simulator: "iPhone 16 Pro",
+                configuration: "Debug",
+                app: AppContext(bundleId: "com.example.app", appPath: "/tmp/App.app")
+            ),
+            summary: DiagnosisStatusSummary(source: .build, headline: "Prior build failed."),
+            diagnosisSummary: buildSummary,
+            evidence: [],
+            recordedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        let currentAttempt = DiagnosisCompareAttemptSnapshot(
+            attemptId: "a-current",
+            attemptNumber: 2,
+            phase: .diagnosisBuild,
+            status: .succeeded,
+            resolvedContext: ResolvedWorkflowContext(
+                project: "/tmp/App.xcodeproj",
+                scheme: "App",
+                simulator: "iPhone 16 Pro",
+                configuration: "Debug",
+                app: AppContext(bundleId: "com.example.app", appPath: "/tmp/App.app")
+            ),
+            summary: DiagnosisStatusSummary(source: .build, headline: "Build succeeded."),
+            evidence: [],
+            recordedAt: Date(timeIntervalSince1970: 1_700_001_000)
+        )
+
+        let result = DiagnosisFinalResult(
+            phase: .diagnosisBuild,
+            status: .succeeded,
+            runId: "run-rerun",
+            attemptId: "a-current",
+            sourceAttemptId: "a-prior",
+            summary: DiagnosisStatusSummary(source: .build, headline: "Build succeeded."),
+            recoveryHistory: [],
+            currentAttempt: currentAttempt,
+            sourceAttempt: sourceAttempt,
+            comparison: nil,
+            failure: nil,
+            persistedRunPath: nil
+        )
+
+        let rendered = DiagnosisFinalResultRenderer.render(result)
+
+        // The "Prior State" section should now include diagnosis detail
+        let priorStateIndex = rendered.range(of: "Prior State")
+        #expect(priorStateIndex != nil)
+
+        // After "Prior State", there should be "Diagnosis Detail" with build info
+        let afterPrior = rendered[priorStateIndex!.lowerBound...]
+        #expect(afterPrior.contains("Build Observed Evidence"))
+        #expect(afterPrior.contains("Prior build had 2 errors."))
+    }
+}
+
+@Suite("Deferred hardening: CLI JSON error envelope", .serialized)
+struct CLIJSONErrorEnvelopeTests {
+
+    @Test("CLIErrorEnvelope encodes to valid JSON with error and code fields")
+    func envelopeEncodesToJSON() throws {
+        let envelope = CLIErrorEnvelope(error: "Test error", code: "resolution_failed")
+        let data = try JSONEncoder().encode(envelope)
+        let decoded = try JSONSerialization.jsonObject(with: data) as! [String: String]
+
+        #expect(decoded["error"] == "Test error")
+        #expect(decoded["code"] == "resolution_failed")
+    }
+
+    @Test("runAsyncJSON re-throws error as-is when json is false")
+    func nonJSONPassesThrough() {
+        do {
+            try runAsyncJSON(json: false) {
+                throw SampleError.test
+            }
+            Issue.record("Expected error to be thrown")
+        } catch is SampleError {
+            // Expected — error passes through without wrapping
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+    }
+
+    private enum SampleError: Error {
+        case test
+    }
+}

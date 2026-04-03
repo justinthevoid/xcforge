@@ -288,6 +288,7 @@ public struct DiagnosisFinalResultWorkflow: Sendable {
             summary: Self.summary(for: snapshot),
             diagnosisSummary: snapshot.diagnosisSummary,
             testDiagnosisSummary: snapshot.testDiagnosisSummary,
+            runtimeSummary: snapshot.runtimeSummary,
             evidence: evidence,
             recordedAt: snapshot.recordedAt
         )
@@ -437,6 +438,16 @@ extension DiagnosisFinalResult {
                 return WorkflowFollowOnAction(
                     action: "Review the failing tests and apply a fix, then rerun validation.",
                     rationale: "\(testSummary.observedEvidence.failedTestCount) of \(testSummary.observedEvidence.totalTestCount) tests failed.\(detail)",
+                    confidence: .evidenceSupported
+                )
+            }
+            if let runtimeSummary = attempt.runtimeSummary {
+                let detail = runtimeSummary.observedEvidence.primarySignal.map {
+                    " Primary signal: \($0.message)"
+                } ?? ""
+                return WorkflowFollowOnAction(
+                    action: "Review the runtime failure and captured evidence, then rerun validation.",
+                    rationale: "Runtime diagnosis failed — app \(runtimeSummary.observedEvidence.appRunning ? "was running" : "did not stay running").\(detail)",
                     confidence: .evidenceSupported
                 )
             }

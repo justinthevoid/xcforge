@@ -22,9 +22,10 @@ public actor AXPBridge {
     // MARK: - Cached State
 
     private var cachedElements: [AXElement] = []
-    private var cachedSimPID: pid_t?
+    private var cachedUDID: String?
     private var cachedAt: CFAbsoluteTime = 0
     private let cacheMaxAge: TimeInterval = 0.5
+    private let treeBuildTimeout: TimeInterval = 5.0
 
     // MARK: - Public API
 
@@ -37,8 +38,10 @@ public actor AXPBridge {
     }
 
     /// Get the full accessibility tree as JSON string.
-    func getSourceJSON() async throws -> String {
-        let elements = try await snapshotTree()
+    /// - Parameter udid: Optional simulator UDID to scope the cache. When multiple
+    ///   simulators are booted, each UDID gets its own cached tree.
+    func getSourceJSON(udid: String? = nil) async throws -> String {
+        let elements = try await snapshotTree(udid: udid)
         let dicts: [[String: Any]] = elements.map { el in
             var d: [String: Any] = [:]
             if let label = el.label { d["label"] = label }
@@ -59,30 +62,43 @@ public actor AXPBridge {
 
     // MARK: - Tree Snapshot
 
-    private func snapshotTree() async throws -> [AXElement] {
+    private func snapshotTree(udid: String? = nil) async throws -> [AXElement] {
         let simPID = try findSimulatorPID()
+        let cacheKey = udid ?? "pid-\(simPID)"
 
         let now = CFAbsoluteTimeGetCurrent()
-        if simPID == cachedSimPID, now - cachedAt < cacheMaxAge, !cachedElements.isEmpty {
+        if cacheKey == cachedUDID, now - cachedAt < cacheMaxAge, !cachedElements.isEmpty {
             return cachedElements
         }
 
-        // Build tree on a non-cooperative thread (AX calls can block)
-        let elements = try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<[AXElement], Error>) in
-            DispatchQueue.global(qos: .userInteractive).async {
-                do {
-                    try Self.verifyBootedDevice()
-                    let tree = try Self.buildTree(pid: simPID)
-                    continuation.resume(returning: tree)
-                } catch {
-                    continuation.resume(throwing: error)
+        // Build tree on a non-cooperative thread (AX calls can block), with timeout
+        let elements = try await withThrowingTaskGroup(of: [AXElement].self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation {
+                    (continuation: CheckedContinuation<[AXElement], Error>) in
+                    DispatchQueue.global(qos: .userInteractive).async {
+                        do {
+                            try Self.verifyBootedDevice()
+                            let tree = try Self.buildTree(pid: simPID)
+                            continuation.resume(returning: tree)
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
                 }
             }
+            group.addTask { [treeBuildTimeout] in
+                try await Task.sleep(nanoseconds: UInt64(treeBuildTimeout * 1_000_000_000))
+                throw AXPError.treeBuildFailed("Tree traversal timed out after \(Int(treeBuildTimeout))s")
+            }
+
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
 
         cachedElements = elements
-        cachedSimPID = simPID
+        cachedUDID = cacheKey
         cachedAt = CFAbsoluteTimeGetCurrent()
         return elements
     }

@@ -92,6 +92,14 @@ enum WorkflowPresentationHelpers {
             return "Inspect Failure Details below."
         }
 
+        if result.status == .canceled {
+            return "Run was canceled — evidence collection may be incomplete. Review Run Context below."
+        }
+
+        if result.status == .inProgress {
+            return "Run is still in progress — evidence is incomplete. Review Run Context below."
+        }
+
         if !result.recoveryHistory.isEmpty {
             return "Review Recovery Narrative below."
         }

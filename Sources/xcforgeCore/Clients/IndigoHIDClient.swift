@@ -225,7 +225,8 @@ actor IndigoHIDClient {
 
     // MARK: - Screen Info
 
-    /// Fetch screen dimensions from `simctl list devices -j`.
+    /// Fetch screen dimensions from `simctl list devices -j`, then try dynamic devicetype lookup,
+    /// falling back to the hardcoded table if the dynamic query fails.
     private func fetchScreenInfo(udid: String) async throws {
         if cachedScreenWidth > 0, cachedScreenScale > 0 { return }
 
@@ -242,11 +243,18 @@ actor IndigoHIDClient {
                 guard let devUDID = device["udid"] as? String, devUDID == udid,
                       let deviceTypeId = device["deviceTypeIdentifier"] as? String else { continue }
 
-                // Parse device type to get screen dimensions
-                let dims = Self.screenDimensions(for: deviceTypeId)
-                cachedScreenWidth = dims.width
-                cachedScreenHeight = dims.height
-                cachedScreenScale = dims.scale
+                // Try dynamic lookup first, fall back to hardcoded table
+                if let dynamic = try? await Self.dynamicScreenDimensions(for: deviceTypeId) {
+                    cachedScreenWidth = dynamic.width
+                    cachedScreenHeight = dynamic.height
+                    cachedScreenScale = dynamic.scale
+                } else {
+                    let dims = Self.screenDimensions(for: deviceTypeId)
+                    Log.warn("IndigoHID: dynamic screen lookup failed for \(deviceTypeId), using hardcoded fallback")
+                    cachedScreenWidth = dims.width
+                    cachedScreenHeight = dims.height
+                    cachedScreenScale = dims.scale
+                }
                 return
             }
         }
@@ -290,6 +298,33 @@ actor IndigoHIDClient {
         default:
             return (393, 852, 3.0)
         }
+    }
+
+    /// Query simctl for device type screen dimensions at runtime.
+    /// Returns nil if the query fails or the device type is not found.
+    static func dynamicScreenDimensions(for deviceType: String) async throws -> (width: Double, height: Double, scale: Double) {
+        let result = try await Shell.xcrun(timeout: 5, "simctl", "list", "devicetypes", "-j")
+        guard let data = result.stdout.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let deviceTypes = json["devicetypes"] as? [[String: Any]] else {
+            throw IndigoHIDError.screenInfoUnavailable
+        }
+
+        for dt in deviceTypes {
+            guard let identifier = dt["identifier"] as? String,
+                  identifier == deviceType else { continue }
+            // simctl exposes minRuntimeVersionString but screen dimensions may be in
+            // the productFamily or derived from the identifier. Newer Xcode versions
+            // include mainScreenWidth/mainScreenHeight/mainScreenScale directly.
+            if let width = dt["mainScreenWidth"] as? Double,
+               let height = dt["mainScreenHeight"] as? Double,
+               let scale = dt["mainScreenScale"] as? Double,
+               width > 0, height > 0, scale > 0 {
+                return (width, height, scale)
+            }
+        }
+
+        throw IndigoHIDError.screenInfoUnavailable
     }
 
     // MARK: - Coordinate Normalization

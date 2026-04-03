@@ -123,7 +123,7 @@ struct DiagnoseStart: ParsableCommand {
         let configuration = self.configuration
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisStartWorkflow(session: Environment.live.session)
             let result = await workflow.start(
                 request: DiagnosisStartRequest(
@@ -164,7 +164,7 @@ struct DiagnoseBuild: ParsableCommand {
         let runId = self.runId
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisBuildWorkflow()
             let result = await workflow.diagnose(
                 request: DiagnosisBuildRequest(runId: runId)
@@ -199,7 +199,7 @@ struct DiagnoseTest: ParsableCommand {
         let runId = self.runId
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisTestWorkflow()
             let result = await workflow.diagnose(
                 request: DiagnosisTestRequest(runId: runId)
@@ -238,7 +238,7 @@ struct DiagnoseRuntime: ParsableCommand {
         let captureScreenshot = self.captureScreenshot
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let env = Environment.live
             let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
             let result = await workflow.diagnose(
@@ -277,7 +277,7 @@ struct DiagnoseStatus: ParsableCommand {
         let runId = self.runId
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisStatusWorkflow()
             let result = await workflow.inspect(
                 request: DiagnosisStatusRequest(runId: runId)
@@ -312,7 +312,7 @@ struct DiagnoseEvidence: ParsableCommand {
         let runId = self.runId
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisStatusWorkflow()
             let result = await workflow.inspectEvidence(
                 request: DiagnosisStatusRequest(runId: runId)
@@ -347,7 +347,7 @@ struct DiagnoseInspect: ParsableCommand {
         let runId = self.runId
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisInspectWorkflow()
             let result = await workflow.inspect(
                 request: DiagnosisInspectRequest(runId: runId)
@@ -398,7 +398,7 @@ struct DiagnoseVerify: ParsableCommand {
         let configuration = self.configuration
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisVerifyWorkflow()
             let result = await workflow.verify(
                 request: DiagnosisVerifyRequest(
@@ -439,7 +439,7 @@ struct DiagnoseCompare: ParsableCommand {
         let runId = self.runId
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisCompareWorkflow()
             let result = await workflow.compare(
                 request: DiagnosisCompareRequest(runId: runId)
@@ -474,7 +474,7 @@ struct DiagnoseResult: ParsableCommand {
         let runId = self.runId
         let json = self.json
 
-        try runAsync {
+        try runAsyncJSON(json: json) {
             let workflow = DiagnosisFinalResultWorkflow()
             let result = await workflow.assemble(
                 request: DiagnosisFinalResultRequest(runId: runId)
@@ -525,6 +525,39 @@ func runAsync(_ operation: @escaping @Sendable () async throws -> Void) throws {
     if case let .failure(error) = box.result {
         throw error
     }
+}
+
+/// Variant of `runAsync` that catches errors and emits a JSON error envelope on stdout
+/// when the `--json` flag is active, instead of letting ArgumentParser render plain text.
+func runAsyncJSON(json: Bool, _ operation: @escaping @Sendable () async throws -> Void) throws {
+    do {
+        try runAsync(operation)
+    } catch let error as ExitCode {
+        throw error  // ExitCode is already handled — don't wrap it
+    } catch {
+        guard json else { throw error }
+        let envelope = CLIErrorEnvelope(error: "\(error)", code: errorCode(for: error))
+        if let data = try? JSONEncoder().encode(envelope),
+           let jsonString = String(data: data, encoding: .utf8)
+        {
+            print(jsonString)
+        }
+        throw ExitCode.failure
+    }
+}
+
+struct CLIErrorEnvelope: Encodable {
+    let error: String
+    let code: String
+}
+
+private func errorCode(for error: Error) -> String {
+    let typeName = String(describing: type(of: error))
+    if typeName.contains("ResolverError") { return "resolution_failed" }
+    if typeName.contains("ValidationError") { return "validation_error" }
+    if error is EncodingError { return "encoding_failed" }
+    if error is DecodingError { return "decoding_failed" }
+    return "execution_failed"
 }
 
 final class AsyncResultBox<T>: @unchecked Sendable {

@@ -1368,6 +1368,7 @@ public struct DiagnosisCompareAttemptSnapshot: Codable, Sendable, Equatable {
     public let summary: DiagnosisStatusSummary
     public let diagnosisSummary: BuildDiagnosisSummary?
     public let testDiagnosisSummary: TestDiagnosisSummary?
+    public let runtimeSummary: RuntimeDiagnosisSummary?
     public let evidence: [WorkflowEvidenceRecord]
     public let recordedAt: Date
 
@@ -1380,6 +1381,7 @@ public struct DiagnosisCompareAttemptSnapshot: Codable, Sendable, Equatable {
         summary: DiagnosisStatusSummary,
         diagnosisSummary: BuildDiagnosisSummary? = nil,
         testDiagnosisSummary: TestDiagnosisSummary? = nil,
+        runtimeSummary: RuntimeDiagnosisSummary? = nil,
         evidence: [WorkflowEvidenceRecord] = [],
         recordedAt: Date
     ) {
@@ -1391,6 +1393,7 @@ public struct DiagnosisCompareAttemptSnapshot: Codable, Sendable, Equatable {
         self.summary = summary
         self.diagnosisSummary = diagnosisSummary
         self.testDiagnosisSummary = testDiagnosisSummary
+        self.runtimeSummary = runtimeSummary
         self.evidence = evidence
         self.recordedAt = recordedAt
     }

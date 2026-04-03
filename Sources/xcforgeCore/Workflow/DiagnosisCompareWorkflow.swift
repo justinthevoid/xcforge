@@ -257,6 +257,7 @@ public struct DiagnosisCompareWorkflow: Sendable {
             summary: Self.summary(for: snapshot),
             diagnosisSummary: snapshot.diagnosisSummary,
             testDiagnosisSummary: snapshot.testDiagnosisSummary,
+            runtimeSummary: snapshot.runtimeSummary,
             evidence: evidence,
             recordedAt: snapshot.recordedAt
         )
