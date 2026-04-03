@@ -1,16 +1,18 @@
 # xcforge CLI Commands
 
 xcforge operates in two modes:
-- **No arguments** → MCP server mode (stdio transport, 63 tools)
+- **No arguments** → MCP server mode (stdio transport, 95 tools)
 - **With arguments** → CLI mode (ArgumentParser-based terminal commands)
 
 ## Mode Detection
 
 ```bash
 xcforge                    # MCP server mode
-xcforge build ...          # CLI mode — 11 command groups
+xcforge build ...          # CLI mode — 16 command groups
 xcforge test ...           # CLI mode
 xcforge sim ...            # CLI mode
+xcforge device ...         # CLI mode
+xcforge spm ...            # CLI mode
 xcforge log ...            # CLI mode
 xcforge console ...        # CLI mode
 xcforge screenshot ...     # CLI mode
@@ -19,6 +21,7 @@ xcforge git ...            # CLI mode
 xcforge accessibility ...  # CLI mode
 xcforge defaults ...       # CLI mode
 xcforge diagnose ...       # CLI mode
+xcforge plan ...           # CLI mode
 ```
 
 ---
@@ -213,7 +216,7 @@ xcforge build-test --json                        # Machine-readable JSON
 
 ## xcforge sim
 
-Manage iOS simulators. 10 subcommands — `list` is the default.
+Manage iOS simulators. 17 subcommands — `list` is the default.
 
 ```bash
 xcforge sim                                      # Same as `xcforge sim list`
@@ -228,9 +231,60 @@ xcforge sim clone "iPhone 16 Pro" --name "Clone" # Clone simulator
 xcforge sim erase "iPhone 16 Pro"                # Erase to factory state
 xcforge sim delete "Clone"                       # Permanently delete
 xcforge sim orientation LANDSCAPE                # Set orientation via WDA
+xcforge sim record-start                         # Start video recording
+xcforge sim record-start --path /tmp/demo.mov    # Custom output path
+xcforge sim record-stop                          # Stop recording, get file path
+xcforge sim location --latitude 37.7749 --longitude -122.4194  # Set GPS
+xcforge sim location-reset                       # Clear GPS override
+xcforge sim appearance --appearance dark         # Set light/dark mode
+xcforge sim statusbar --time "9:41" --battery-level 100  # Override status bar
+xcforge sim statusbar-clear                      # Restore default status bar
 ```
 
 All subcommands support `--json`. `install`, `launch`, `terminate` auto-detect simulator and bundle ID from session state.
+
+---
+
+## xcforge device
+
+Manage physical iOS/iPadOS devices via devicectl. 7 subcommands — `list` is the default.
+
+```bash
+xcforge device                                   # Same as `xcforge device list`
+xcforge device list                              # List connected devices
+xcforge device list --filter iPhone              # Filter by name/UDID/OS
+xcforge device info "iPhone"                     # Detailed device info
+xcforge device install /path/to/App.app --device "iPhone"  # Install app
+xcforge device uninstall com.app.id --device "iPhone"      # Uninstall app
+xcforge device launch com.app.id --device "iPhone"         # Launch app
+xcforge device launch com.app.id --device "iPhone" --console --timeout 30  # With console
+xcforge device terminate com.app.id --device "iPhone"      # Terminate app
+xcforge device apps --device "iPhone"                      # List installed apps
+xcforge device apps --device "iPhone" --include-system     # Include system apps
+```
+
+All subcommands support `--json`.
+
+---
+
+## xcforge spm
+
+Swift package management. 5 subcommands — `build` is the default.
+
+```bash
+xcforge spm build                                # Build package in current dir
+xcforge spm build --configuration release        # Release build
+xcforge spm build --path /path/to/package        # Custom path
+xcforge spm test                                 # Run all tests
+xcforge spm test --filter "MyTests/testFoo"      # Filter tests
+xcforge spm test --parallel                      # Parallel execution
+xcforge spm run                                  # Run single executable target
+xcforge spm run mytool -- --verbose              # Run named target with args
+xcforge spm list                                 # Show dependency tree (JSON)
+xcforge spm clean                                # Clean build artifacts
+```
+
+All subcommands support `--json`. `--path` defaults to current directory.
 
 ---
 
@@ -295,7 +349,7 @@ All subcommands support `--json`. `--format` defaults to png. `--threshold` defa
 
 ## xcforge ui
 
-UI automation via WebDriverAgent. 15 subcommands — `status` is the default.
+UI automation via WebDriverAgent. 16 subcommands — `status` is the default.
 
 ```bash
 xcforge ui status                                # Check WDA health

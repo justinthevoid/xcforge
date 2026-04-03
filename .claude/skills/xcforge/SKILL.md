@@ -1,20 +1,23 @@
 ---
 name: xcforge
-description: Complete reference for xcforge — 67 MCP tools + 67 CLI commands for iOS development. Covers build, test, simulator, UI automation, screenshots, logs, git, visual regression, accessibility, localization, diagnosis workflows, plan execution, and full CLI parity across 13 command groups. Use when working with iOS simulators, Xcode builds, UI testing, TDD workflows, or any xcforge tool.
+description: Complete reference for xcforge — 95 MCP tools + 99 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, and full CLI parity across 16 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, or any xcforge tool.
 ---
 
 # xcforge — iOS Development MCP Server & CLI
 
-xcforge is a native Swift MCP server and CLI for iOS development. 67 MCP tools, 67 CLI commands across 13 groups, 8.5MB binary, zero runtime dependencies. It provides build, test, simulator management, UI automation via WebDriverAgent, ultra-fast screenshots, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, structured diagnosis workflows, and server-side plan execution for multi-step UI automation. Every MCP tool has a CLI equivalent.
+xcforge is a native Swift MCP server and CLI for iOS development. 95 MCP tools, 99 CLI commands across 16 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, and server-side plan execution for multi-step UI automation. Every MCP tool has a CLI equivalent.
 
 **Key advantages over alternatives:**
 - Screenshots in 0.3s (44x faster) via CoreSimulator IOSurface API
+- Native HID taps/swipes in <5ms (bypasses WDA when available)
 - Structured xcresult parsing — pass/fail counts, failure file:line, failure screenshots
 - One-call alert batching (`accept_all`) handles 3+ permission dialogs
 - Topic-filtered logs — 90% fewer tokens, 8 topics with line counts
 - Element-to-element drag & drop in 1 call
 - Auto-scroll to off-screen elements (3-tier fallback)
 - View hierarchy in ~20ms (750x faster)
+- Physical device support — install, launch, terminate, list apps via devicectl
+- Session profiles — save/switch named default sets for quick context switching
 
 ## Reference Loading Guide
 
@@ -24,16 +27,18 @@ xcforge is a native Swift MCP server and CLI for iOS development. 67 MCP tools, 
 |-----------|-----------|
 | **[Build Tools](references/build-tools.md)** | Building, running, cleaning, discovering projects, listing schemes |
 | **[Test Tools](references/test-tools.md)** | Running tests, analyzing failures, checking code coverage, build diagnostics |
-| **[Simulator Tools](references/simulator-tools.md)** | Managing simulators — boot, shutdown, install, launch, clone, erase, delete, orientation |
-| **[UI Automation](references/ui-automation.md)** | Finding/clicking elements, alerts, typing, gestures, drag & drop, view hierarchy |
+| **[Simulator Tools](references/simulator-tools.md)** | Managing simulators — boot, shutdown, install, launch, clone, erase, delete, orientation, video recording, location, appearance, status bar |
+| **[Device Tools](references/device-tools.md)** | Physical iOS devices — list, info, install, uninstall, launch, terminate, list apps via devicectl |
+| **[SPM Tools](references/spm-tools.md)** | Swift packages — build, test, run, list dependencies, clean |
+| **[UI Automation](references/ui-automation.md)** | Finding/clicking elements, alerts, typing, gestures, drag & drop, view hierarchy, clipboard, native HID taps/swipes |
 | **[Screenshot & Visual](references/screenshot-visual.md)** | Taking screenshots, saving baselines, comparing visual regressions, multi-device checks |
 | **[Accessibility & Localization](references/cli-commands.md#xcforge-accessibility)** | Dynamic Type size checks, localization layout checks, RTL rendering validation |
 | **[Log & Console](references/log-console.md)** | Capturing logs, topic filtering, waiting for patterns, stdout/stderr capture |
 | **[Git Tools](references/git-tools.md)** | Git status, diff, log, commit, branch operations |
 | **[Diagnosis Workflows](references/diagnosis-workflows.md)** | Running structured diagnosis: start, build, test, runtime, status, evidence, inspect, verify, compare, result |
 | **[Plan Execution](references/plan-execution.md)** | Multi-step UI automation plans: run_plan, run_plan_decide, step types, variable binding, verification, suspend/resume |
-| **[Auto-Detection & Defaults](references/auto-detection.md)** | Understanding parameter resolution, setting defaults, session state |
-| **[CLI Commands](references/cli-commands.md)** | Using xcforge from terminal: all 12 command groups (`build`, `test`, `sim`, `log`, `console`, `screenshot`, `ui`, `git`, `accessibility`, `defaults`, `diagnose`, `plan`) |
+| **[Auto-Detection & Defaults](references/auto-detection.md)** | Understanding parameter resolution, setting defaults, session profiles |
+| **[CLI Commands](references/cli-commands.md)** | Using xcforge from terminal: `build`, `build-test`, `test`, `sim`, `device`, `spm`, `log`, `console`, `screenshot`, `ui`, `git`, `accessibility`, `defaults`, `diagnose`, `plan` |
 
 ## Auto-Detection — How Parameters Resolve
 
@@ -135,6 +140,72 @@ multi_device_check(
 )
 ```
 
+### Video Recording
+```
+record_video_start()                          → starts .mov recording
+# perform actions...
+record_video_stop()                           → returns file path
+```
+
+### Screenshot Prep (Clean Status Bar)
+```
+sim_statusbar(time: "9:41", battery_level: 100, battery_state: "charged", cellular_bars: 4, wifi_bars: 3)
+set_sim_appearance(appearance: "light")
+screenshot()
+sim_statusbar_clear()
+```
+
+### Location Testing
+```
+set_sim_location(latitude: 37.7749, longitude: -122.4194)  → San Francisco
+# test location features...
+reset_sim_location()
+```
+
+### Session Profiles (MCP)
+```
+set_defaults(project: "MyApp.xcodeproj", scheme: "MyApp", simulator: "iPhone 16 Pro")
+profile_save(name: "iphone-debug")
+set_defaults(simulator: "iPad Pro 13-inch (M4)")
+profile_save(name: "ipad-debug")
+profile_switch(name: "iphone-debug")          → switch context instantly
+profile_list()                                → see all saved profiles
+```
+
+### Physical Device Workflow
+```
+list_devices()                                → connected devices
+device_info(device: "iPhone")                 → detailed info
+device_install(device: "iPhone", app_path: "/path/to/App.app")
+device_launch(device: "iPhone", bundle_id: "com.app.id")
+device_apps(device: "iPhone")                 → list installed apps
+device_terminate(device: "iPhone", identifier: "com.app.id")
+```
+
+### Swift Package Workflow (MCP)
+```
+swift_package_build()                         → build in current directory
+swift_package_test(filter: "MyTests")         → run specific tests
+swift_package_run(executable: "mytool")       → run an executable target
+swift_package_list()                          → show dependency tree
+swift_package_clean()                         → clean build artifacts
+```
+
+### Swift Package Workflow (CLI)
+```bash
+xcforge spm build                             → build package
+xcforge spm test --filter "MyTests"           → run filtered tests
+xcforge spm run mytool -- --verbose            → run with args
+xcforge spm list                              → dependency tree
+xcforge spm clean                             → clean artifacts
+```
+
+### Clipboard Access
+```
+clipboard_set(text: "test data")              → write to pasteboard
+clipboard_get()                               → read pasteboard content
+```
+
 ## Common Mistakes
 
 1. **Starting log capture after the event** — `start_log_capture` only captures from the moment it's called. Start capture BEFORE reproducing the issue.
@@ -152,3 +223,9 @@ multi_device_check(
 7. **Using `test_sim` then parsing output for failures** — Use `test_failures` for detailed failure info with file:line and screenshots. `test_sim` gives the summary; `test_failures` gives the details.
 
 8. **Forgetting WDA session** — UI automation tools require WebDriverAgent running on the simulator. If `wda_status` fails, WDA needs to be started. `build_run_sim` does NOT start WDA automatically.
+
+9. **Not clearing status bar overrides** — `sim_statusbar` overrides persist until cleared. Always call `sim_statusbar_clear()` after capturing screenshots with overrides.
+
+10. **Confusing simulator vs device tools** — Simulator tools (`sim`, `build_sim`, etc.) don't work with physical devices. Use `device_*` tools (`list_devices`, `device_install`, etc.) for physical iOS devices connected via USB/WiFi.
+
+11. **Using `build_sim` for Swift packages** — Swift packages don't have .xcodeproj files. Use `swift_package_build` / `swift_package_test` instead.

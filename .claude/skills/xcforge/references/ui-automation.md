@@ -1,4 +1,4 @@
-# UI Automation Tools (15 tools)
+# UI Automation Tools (19 tools)
 
 All UI tools communicate directly with WebDriverAgent via HTTP — no Appium, no Node.js, no Python.
 
@@ -217,3 +217,56 @@ Get the full view hierarchy.
 **Performance:** ~20ms latency (750x faster than competition).
 
 **Use sparingly** — returns the entire UI tree. Prefer `find_element` for targeted lookups.
+
+---
+
+## indigo_tap
+
+Tap at coordinates via native HID (sub-5ms, bypasses WDA). Falls back to WDA if unavailable.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `x` | **Yes** | — | X coordinate (points) |
+| `y` | **Yes** | — | Y coordinate (points) |
+| `simulator` | No | `"booted"` | Simulator UDID or `"booted"` |
+
+**Performance:** Sub-5ms latency via native HID when available, vs ~50ms via WDA.
+
+---
+
+## indigo_swipe
+
+Swipe via native HID (sub-5ms per step, bypasses WDA). Falls back to WDA if unavailable.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `start_x` | **Yes** | — | Start X (points) |
+| `start_y` | **Yes** | — | Start Y (points) |
+| `end_x` | **Yes** | — | End X (points) |
+| `end_y` | **Yes** | — | End Y (points) |
+| `duration_ms` | No | 300 | Swipe duration in milliseconds |
+| `simulator` | No | `"booted"` | Simulator UDID or `"booted"` |
+
+---
+
+## clipboard_get
+
+Read the device clipboard (pasteboard) content via WDA.
+
+No parameters.
+
+**Returns:** String content of the clipboard.
+
+**Requires:** WDA running on the simulator.
+
+---
+
+## clipboard_set
+
+Write text to the device clipboard (pasteboard) via WDA.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `text` | **Yes** | — | Text to copy to clipboard |
+
+**Requires:** WDA running on the simulator.

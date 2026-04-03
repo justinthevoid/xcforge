@@ -1,4 +1,4 @@
-# Auto-Detection & Session Defaults
+# Auto-Detection, Session Defaults & Profiles
 
 ## Parameter Resolution Order
 
@@ -65,6 +65,55 @@ test_sim()           # uses defaults
 screenshot()         # uses defaults
 ```
 
+## Session Profiles (4 MCP tools)
+
+Save and switch between named sets of defaults. Useful when working across multiple targets or device configurations.
+
+### profile_save
+
+Save current session defaults as a named profile.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `name` | **Yes** | — | Profile name (kebab-case, max 32 chars, e.g., `"iphone-debug"`) |
+
+**Validation:** Names must be lowercase alphanumeric with hyphens only, cannot start or end with hyphens.
+
+### profile_switch
+
+Switch session defaults to a previously saved profile.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `name` | **Yes** | — | Profile name to activate |
+
+**Returns:** Confirmation with profile contents, or error listing available profiles.
+
+### profile_list
+
+List all saved session profiles. No parameters.
+
+### profile_delete
+
+Delete a saved session profile.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `name` | **Yes** | — | Profile name to delete |
+
+### Profile Workflow
+
+```
+set_defaults(project: "MyApp.xcodeproj", scheme: "MyApp", simulator: "iPhone 16 Pro")
+profile_save(name: "iphone-debug")
+
+set_defaults(simulator: "iPad Pro 13-inch (M4)")
+profile_save(name: "ipad-debug")
+
+profile_switch(name: "iphone-debug")    # instant context switch
+profile_list()                          # see all saved profiles
+```
+
 ## xcforge defaults (CLI)
 
 Same functionality from the terminal:
@@ -76,3 +125,5 @@ xcforge defaults clear                   # Remove all defaults
 ```
 
 See [CLI Commands](cli-commands.md) for full details.
+
+**Note:** Session profiles (save/switch/list/delete) are MCP-only — there are no CLI equivalents.
