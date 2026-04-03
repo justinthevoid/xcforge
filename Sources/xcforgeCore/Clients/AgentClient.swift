@@ -806,6 +806,35 @@ public actor WDAClient {
         return data
     }
 
+    // MARK: - Pasteboard (Clipboard)
+
+    public func getPasteboard(contentType: String = "plaintext") async throws -> String {
+        let sid = try await ensureSession()
+        let json = try await jsonRequest(
+            method: "POST",
+            path: "/session/\(sid)/wda/pasteboard",
+            body: ["contentType": contentType]
+        )
+        guard let value = json["value"] as? String else {
+            return ""
+        }
+        // WDA returns base64-encoded pasteboard content
+        if let data = Data(base64Encoded: value), let text = String(data: data, encoding: .utf8) {
+            return text
+        }
+        return value
+    }
+
+    public func setPasteboard(_ text: String, contentType: String = "plaintext") async throws {
+        let sid = try await ensureSession()
+        let encoded = Data(text.utf8).base64EncodedString()
+        _ = try await jsonRequest(
+            method: "POST",
+            path: "/session/\(sid)/wda/setPasteboard",
+            body: ["content": encoded, "contentType": contentType]
+        )
+    }
+
     // MARK: - Device Orientation
 
     func getOrientation() async throws -> String {

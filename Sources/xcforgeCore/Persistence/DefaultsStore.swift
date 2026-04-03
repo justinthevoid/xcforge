@@ -122,6 +122,59 @@ public struct DefaultsStore: Sendable {
             return nil
         }
     }
+
+    // MARK: - Named Profiles
+
+    private var profilesURL: URL {
+        fileURL.deletingLastPathComponent().appendingPathComponent("profiles.json", isDirectory: false)
+    }
+
+    public func listProfiles() -> [String: PersistedDefaults] {
+        guard FileManager.default.fileExists(atPath: profilesURL.path) else { return [:] }
+        do {
+            let data = try Data(contentsOf: profilesURL)
+            return try JSONDecoder().decode([String: PersistedDefaults].self, from: data)
+        } catch {
+            Log.warn("Failed to read profiles from \(profilesURL.path): \(error.localizedDescription)")
+            return [:]
+        }
+    }
+
+    public func saveProfile(name: String, defaults: PersistedDefaults) {
+        do {
+            let dir = profilesURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            Log.warn("Failed to create profiles directory: \(error.localizedDescription)")
+            return
+        }
+
+        var profiles = listProfiles()
+        profiles[name] = defaults
+        writeProfiles(profiles)
+    }
+
+    public func loadProfile(name: String) -> PersistedDefaults? {
+        listProfiles()[name]
+    }
+
+    public func deleteProfile(name: String) -> Bool {
+        var profiles = listProfiles()
+        guard profiles.removeValue(forKey: name) != nil else { return false }
+        writeProfiles(profiles)
+        return true
+    }
+
+    private func writeProfiles(_ profiles: [String: PersistedDefaults]) {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(profiles)
+            try data.write(to: profilesURL, options: .atomic)
+        } catch {
+            Log.warn("Failed to write profiles to \(profilesURL.path): \(error.localizedDescription)")
+        }
+    }
 }
 
 /// Codable representation of persisted workflow defaults.

@@ -43,14 +43,18 @@ enum FramebufferCapture {
         simulator: String = "booted",
         format: String = "jpeg",
         quality: Double = 0.8
-    ) async throws -> (base64: String, dataSize: Int, width: Int, height: Int, method: String) {
+    ) async throws -> (base64: String, dataSize: Int, width: Int, height: Int, pointWidth: Int, pointHeight: Int, method: String) {
+        // Look up window point size once for all tiers (reused below).
+        // This is a single SCShareableContent IPC call (~5ms), cached for the entire capture.
+        let ptSize = await windowPointSize(simulator: simulator)
+
         // Tier 3: BURST — CoreSimulator IOSurface (fastest, TCC-free)
         // Uses captureImageAsync to run ObjC/XPC on DispatchQueue, not cooperative pool
         if CoreSimCapture.isAvailable {
             do {
                 let cgImage = try await CoreSimCapture.captureImageAsync(simulator: simulator)
                 let data = try encodeImage(cgImage, format: format, quality: quality)
-                return (data.base64EncodedString(), data.count, cgImage.width, cgImage.height, "burst")
+                return (data.base64EncodedString(), data.count, cgImage.width, cgImage.height, ptSize.w, ptSize.h, "burst")
             } catch {
                 // Fall through to stream
             }
@@ -68,9 +72,9 @@ enum FramebufferCapture {
             try await SimulatorStream.shared.ensureRunning(simulator: simulator)
             let cgImage = try await SimulatorStream.shared.currentFrame()
             let data = try encodeImage(cgImage, format: format, quality: quality)
-            return (data.base64EncodedString(), data.count, cgImage.width, cgImage.height, "stream")
+            return (data.base64EncodedString(), data.count, cgImage.width, cgImage.height, ptSize.w, ptSize.h, "stream")
         } catch {
-            // Fallback: one-shot
+            // Fallback: one-shot (reuse ptSize from above; window lookup is already done)
             let window = try await findSimulatorWindow(simulator: simulator)
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let config = SCStreamConfiguration()
@@ -81,7 +85,19 @@ enum FramebufferCapture {
             let cgImage = try await SCScreenshotManager.captureImage(
                 contentFilter: filter, configuration: config)
             let data = try encodeImage(cgImage, format: format, quality: quality)
-            return (data.base64EncodedString(), data.count, cgImage.width, cgImage.height, "oneshot")
+            return (data.base64EncodedString(), data.count, cgImage.width, cgImage.height, ptSize.w, ptSize.h, "oneshot")
+        }
+    }
+
+    /// Get the Simulator window's point dimensions (macOS points ≈ iOS logical points at Point Accurate zoom).
+    /// Returns (0, 0) if the window cannot be found (e.g. burst capture on headless CI).
+    @available(macOS 14.0, *)
+    private static func windowPointSize(simulator: String) async -> (w: Int, h: Int) {
+        do {
+            let window = try await findSimulatorWindow(simulator: simulator)
+            return (Int(window.frame.width), Int(window.frame.height))
+        } catch {
+            return (0, 0)
         }
     }
 

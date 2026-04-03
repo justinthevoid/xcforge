@@ -200,6 +200,22 @@ enum UITools {
             ])
         ),
         Tool(
+            name: "clipboard_get",
+            description: "Read the device clipboard (pasteboard) content via WDA.",
+            inputSchema: .object(["type": .string("object"), "properties": .object([:])])
+        ),
+        Tool(
+            name: "clipboard_set",
+            description: "Write text to the device clipboard (pasteboard) via WDA.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "text": .object(["type": .string("string"), "description": .string("Text to copy to clipboard")]),
+                ]),
+                "required": .array([.string("text")]),
+            ])
+        ),
+        Tool(
             name: "indigo_swipe",
             description: "Swipe via native HID (sub-5ms per step, bypasses WDA). Falls back to WDA if unavailable.",
             inputSchema: .object([
@@ -292,6 +308,10 @@ enum UITools {
 
     struct SourceInput: Decodable {
         let format: String?
+    }
+
+    struct ClipboardSetInput: Decodable {
+        let text: String
     }
 
     struct IndigoTapInput: Decodable {
@@ -702,6 +722,33 @@ enum UITools {
         }
     }
 
+    // MARK: - Clipboard Tools
+
+    static func clipboardGet(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
+        do {
+            let text = try await wdaClient.getPasteboard()
+            if text.isEmpty {
+                return .ok("Clipboard is empty.")
+            }
+            return .ok("Clipboard content: \(text)")
+        } catch {
+            return .fail("Clipboard read failed: \(error)")
+        }
+    }
+
+    static func clipboardSet(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
+        switch ToolInput.decode(ClipboardSetInput.self, from: args) {
+        case .failure(let err): return err
+        case .success(let input):
+            do {
+                try await wdaClient.setPasteboard(input.text)
+                return .ok("Copied to clipboard: \(input.text)")
+            } catch {
+                return .fail("Clipboard write failed: \(error)")
+            }
+        }
+    }
+
     // MARK: - IndigoHID Tools
 
     static func indigoTap(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
@@ -851,6 +898,8 @@ extension UITools: ToolProvider {
         case "type_text":          return await typeText(args, wdaClient: env.wdaClient)
         case "get_text":           return await getText(args, env: env)
         case "get_source":         return await getSource(args, env: env)
+        case "clipboard_get":      return await clipboardGet(args, wdaClient: env.wdaClient)
+        case "clipboard_set":      return await clipboardSet(args, wdaClient: env.wdaClient)
         default: return nil
         }
     }

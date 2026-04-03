@@ -64,11 +64,12 @@ enum ScreenshotTools {
                 let elapsed = String(
                     format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
                 let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
+                let ptInfo = result.pointWidth > 0 ? "\(result.pointWidth)×\(result.pointHeight) pt | " : ""
                 return .init(content: [
                     .image(
                         data: result.base64, mimeType: mimeType, annotations: nil, _meta: nil),
                     .text(
-                        text: "\(result.width)x\(result.height) | \(result.dataSize / 1024)KB | \(elapsed)ms (\(result.method))",
+                        text: "\(ptInfo)\(result.width)x\(result.height) px | \(result.dataSize / 1024)KB | \(elapsed)ms (\(result.method))",
                         annotations: nil, _meta: nil),
                 ])
             } catch {
@@ -99,12 +100,21 @@ enum ScreenshotTools {
                 // Read file and return inline
                 if let data = FileManager.default.contents(atPath: outputPath) {
                     let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
+                    // Best-effort point dimensions from Simulator window
+                    var ptInfo = ""
+                    if #available(macOS 14.0, *) {
+                        if let window = try? await FramebufferCapture.findSimulatorWindow(simulator: sim) {
+                            let ptW = Int(window.frame.width)
+                            let ptH = Int(window.frame.height)
+                            if ptW > 0 { ptInfo = "\(ptW)×\(ptH) pt | " }
+                        }
+                    }
                     return .init(content: [
                         .image(
                             data: data.base64EncodedString(), mimeType: mimeType,
                             annotations: nil, _meta: nil),
                         .text(
-                            text: "\(data.count / 1024)KB | \(elapsed)ms (simctl)",
+                            text: "\(ptInfo)\(data.count / 1024)KB | \(elapsed)ms (simctl)",
                             annotations: nil, _meta: nil),
                     ])
                 }
