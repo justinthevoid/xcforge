@@ -1,5 +1,11 @@
 import Foundation
 
+/// Error for developer tool availability failures (xcrun, simctl, xcodebuild).
+struct ToolValidationError: Error, CustomStringConvertible {
+    let description: String
+    init(_ message: String) { self.description = message }
+}
+
 public struct DiagnosisStartWorkflow: Sendable {
     typealias ProjectResolver = @Sendable () async throws -> String
     typealias SchemeResolver = @Sendable (String) async throws -> String
@@ -1118,7 +1124,7 @@ public struct DiagnosisStartWorkflow: Sendable {
         let result = try await Shell.run("/usr/bin/xcrun", arguments: ["--find", tool], timeout: 15)
         guard result.succeeded else {
             let detail = result.stderr.isEmpty ? result.stdout : result.stderr
-            throw ResolverError(
+            throw ToolValidationError(
                 "Required tool '\(tool)' is unavailable in the active developer environment: \(detail.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }

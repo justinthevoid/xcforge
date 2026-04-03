@@ -1,6 +1,12 @@
 import Foundation
 import MCP
 
+/// Error for build settings resolution failures (bundle ID, product path).
+struct BuildSettingsError: Error, CustomStringConvertible {
+    let description: String
+    init(_ message: String) { self.description = message }
+}
+
 public enum BuildTools {
     public struct BuildProductInfo: Sendable, Equatable {
         public let bundleId: String
@@ -626,7 +632,7 @@ public enum BuildTools {
 
         guard result.succeeded else {
             let details = result.stderr.isEmpty ? result.stdout : result.stderr
-            throw ResolverError("Unable to resolve app context for \(scheme): \(details.trimmingCharacters(in: .whitespacesAndNewlines))")
+            throw BuildSettingsError("Unable to resolve app context for \(scheme): \(details.trimmingCharacters(in: .whitespacesAndNewlines))")
         }
 
         var bundleId: String?
@@ -645,10 +651,10 @@ public enum BuildTools {
         }
 
         guard let bundleId else {
-            throw ResolverError("Build settings did not contain PRODUCT_BUNDLE_IDENTIFIER for \(scheme)")
+            throw BuildSettingsError("Build settings did not contain PRODUCT_BUNDLE_IDENTIFIER for \(scheme)")
         }
         guard let builtProductsDir, let fullProductName else {
-            throw ResolverError("Build settings did not contain an app product path for \(scheme)")
+            throw BuildSettingsError("Build settings did not contain an app product path for \(scheme)")
         }
 
         return BuildProductInfo(bundleId: bundleId, appPath: "\(builtProductsDir)/\(fullProductName)")

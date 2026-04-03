@@ -553,7 +553,7 @@ struct DiagnosisStartWorkflowTests {
                 makePreparedSimulatorContext(requested: simulator)
             },
             resolveAppContext: { _, _, _, _ in
-                throw ResolverError("Build settings did not contain an app product path for MyApp")
+                throw BuildSettingsError("Build settings did not contain an app product path for MyApp")
             },
             persistRun: { run in try store.save(run) }
         )
@@ -588,7 +588,7 @@ struct DiagnosisStartWorkflowTests {
                 makePreparedSimulatorContext(requested: simulator)
             },
             resolveAppContext: { _, _, _, _ in
-                throw ResolverError("Unable to resolve app context for MyApp: xcodebuild timed out")
+                throw BuildSettingsError("Unable to resolve app context for MyApp: xcodebuild timed out")
             },
             persistRun: { run in try store.save(run) }
         )
@@ -754,7 +754,7 @@ struct DiagnosisStartWorkflowTests {
             resolveScheme: { _ in "MyApp" },
             resolveSimulator: { "SIM-123" },
             validateTooling: {
-                throw ResolverError("Required tool 'simctl' is unavailable in the active developer environment: xcrun: error: unable to find utility \"simctl\"")
+                throw ToolValidationError("Required tool 'simctl' is unavailable in the active developer environment: xcrun: error: unable to find utility \"simctl\"")
             },
             validateProject: { _ in },
             validateResolvedScheme: { _, _ in },

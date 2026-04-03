@@ -553,7 +553,11 @@ struct CLIErrorEnvelope: Encodable {
 
 private func errorCode(for error: Error) -> String {
     let typeName = String(describing: type(of: error))
-    if typeName.contains("ResolverError") { return "resolution_failed" }
+    if typeName.contains("ResolverError") ||
+       typeName.contains("CoverageError") ||
+       typeName.contains("TestDiscoveryError") ||
+       typeName.contains("BuildSettingsError") ||
+       typeName.contains("ToolValidationError") { return "resolution_failed" }
     if typeName.contains("ValidationError") { return "validation_error" }
     if error is EncodingError { return "encoding_failed" }
     if error is DecodingError { return "decoding_failed" }
