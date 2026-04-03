@@ -6,7 +6,7 @@ struct XCForgeCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "xcforge",
         abstract: "CLI-first workflow entrypoints for xcforge.",
-        subcommands: [Build.self, Test.self, BuildTest.self, Sim.self, Diagnose.self, Defaults.self, Console.self, Git.self, Logs.self, Screenshot.self, UI.self, Accessibility.self, Plan.self]
+        subcommands: [Build.self, Test.self, BuildTest.self, Sim.self, Diagnose.self, Defaults.self, Console.self, Git.self, Logs.self, Screenshot.self, UI.self, Accessibility.self, Plan.self, SPM.self]
     )
 }
 

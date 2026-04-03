@@ -124,6 +124,94 @@ public enum SimTools {
             ])
         ),
         Tool(
+            name: "record_video_start",
+            description: "Start recording simulator screen to a video file. Returns the output file path. Use record_video_stop to finish.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "simulator": .object(["type": .string("string"), "description": .string("Simulator name or UDID. Auto-detected from booted simulator if omitted.")]),
+                    "path": .object(["type": .string("string"), "description": .string("Output file path. Defaults to /tmp/xcforge-recording-<timestamp>.mov if omitted.")]),
+                ]),
+            ])
+        ),
+        Tool(
+            name: "record_video_stop",
+            description: "Stop an active video recording and return the file path.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+            ])
+        ),
+        Tool(
+            name: "set_sim_location",
+            description: "Set simulated GPS location on a simulator.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "simulator": .object(["type": .string("string"), "description": .string("Simulator name or UDID. Auto-detected from booted simulator if omitted.")]),
+                    "latitude": .object(["type": .string("number"), "description": .string("Latitude coordinate (e.g. 37.7749)")]),
+                    "longitude": .object(["type": .string("number"), "description": .string("Longitude coordinate (e.g. -122.4194)")]),
+                ]),
+                "required": .array([.string("latitude"), .string("longitude")]),
+            ])
+        ),
+        Tool(
+            name: "reset_sim_location",
+            description: "Reset simulator location to default (removes any simulated GPS override).",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "simulator": .object(["type": .string("string"), "description": .string("Simulator name or UDID. Auto-detected from booted simulator if omitted.")]),
+                ]),
+            ])
+        ),
+        Tool(
+            name: "set_sim_appearance",
+            description: "Set simulator appearance to light or dark mode.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "simulator": .object(["type": .string("string"), "description": .string("Simulator name or UDID. Auto-detected from booted simulator if omitted.")]),
+                    "appearance": .object([
+                        "type": .string("string"),
+                        "description": .string("Appearance mode: light or dark"),
+                        "enum": .array([.string("light"), .string("dark")]),
+                    ]),
+                ]),
+                "required": .array([.string("appearance")]),
+            ])
+        ),
+        Tool(
+            name: "sim_statusbar",
+            description: "Override simulator status bar values (time, battery, cellular, etc.) for clean screenshots.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "simulator": .object(["type": .string("string"), "description": .string("Simulator name or UDID. Auto-detected from booted simulator if omitted.")]),
+                    "time": .object(["type": .string("string"), "description": .string("Time string to display (e.g. '9:41')")]),
+                    "battery_level": .object(["type": .string("integer"), "description": .string("Battery level percentage (0-100)")]),
+                    "battery_state": .object([
+                        "type": .string("string"),
+                        "description": .string("Battery state"),
+                        "enum": .array([.string("charging"), .string("charged"), .string("discharging")]),
+                    ]),
+                    "cellular_bars": .object(["type": .string("integer"), "description": .string("Cellular signal bars (0-4)")]),
+                    "wifi_bars": .object(["type": .string("integer"), "description": .string("WiFi signal bars (0-3)")]),
+                    "operator_name": .object(["type": .string("string"), "description": .string("Carrier name to display")]),
+                ]),
+            ])
+        ),
+        Tool(
+            name: "sim_statusbar_clear",
+            description: "Clear all status bar overrides and restore default values.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "simulator": .object(["type": .string("string"), "description": .string("Simulator name or UDID. Auto-detected from booted simulator if omitted.")]),
+                ]),
+            ])
+        ),
+        Tool(
             name: "set_orientation",
             description: """
                 Set device orientation (portrait/landscape) via WDA. \
@@ -174,6 +262,36 @@ public enum SimTools {
 
     private struct OrientationInput: Decodable {
         let orientation: String
+    }
+
+    private struct RecordVideoInput: Decodable {
+        let simulator: String?
+        let path: String?
+    }
+
+    private struct LocationInput: Decodable {
+        let simulator: String?
+        let latitude: Double
+        let longitude: Double
+    }
+
+    private struct OptionalSimInput: Decodable {
+        let simulator: String?
+    }
+
+    private struct AppearanceInput: Decodable {
+        let simulator: String?
+        let appearance: String
+    }
+
+    private struct StatusBarInput: Decodable {
+        let simulator: String?
+        let time: String?
+        let battery_level: Int?
+        let battery_state: String?
+        let cellular_bars: Int?
+        let wifi_bars: Int?
+        let operator_name: String?
     }
 
     // MARK: - Resolve simulator name to UDID
@@ -417,6 +535,187 @@ public enum SimTools {
         }
     }
 
+    // MARK: - Video Recording State
+
+    private static let videoRecording = VideoRecordingState()
+
+    private actor VideoRecordingState {
+        private var process: Process?
+        private var outputPath: String?
+
+        /// Atomic check-and-set: returns false if already recording.
+        func tryStart(process: Process, path: String) -> Bool {
+            guard self.process == nil else { return false }
+            self.process = process
+            self.outputPath = path
+            return true
+        }
+
+        func stop() -> (process: Process, path: String)? {
+            guard let process, let path = outputPath else { return nil }
+            self.process = nil
+            self.outputPath = nil
+            return (process, path)
+        }
+    }
+
+    // MARK: - Video Recording
+
+    public static func executeRecordVideoStart(simulator: String?, path: String?, env: Environment) async -> SimResult {
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            return SimResult(succeeded: false, message: "\(error)")
+        }
+        do {
+            let udid = try await resolveSimulator(sim, env: env)
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let outputPath = path ?? "/tmp/xcforge-recording-\(timestamp).mov"
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+            process.arguments = ["simctl", "io", udid, "recordVideo", "--codec=h264", outputPath]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+
+            // Atomic check-and-set: prevents race where two concurrent callers both start recording
+            let started = await videoRecording.tryStart(process: process, path: outputPath)
+            guard started else {
+                process.terminate()
+                return SimResult(succeeded: false, message: "A recording is already in progress. Stop it first with record_video_stop.")
+            }
+            return SimResult(succeeded: true, message: "Recording started → \(outputPath)")
+        } catch {
+            return SimResult(succeeded: false, message: "Failed to start recording: \(error)")
+        }
+    }
+
+    public static func executeRecordVideoStop() async -> SimResult {
+        guard let recording = await videoRecording.stop() else {
+            return SimResult(succeeded: false, message: "No active recording to stop.")
+        }
+        // Only send SIGINT if the process is still running; avoids hitting a recycled PID
+        if recording.process.isRunning {
+            recording.process.interrupt()  // sends SIGINT
+        }
+        // Wait for file finalization (up to 2s)
+        recording.process.waitUntilExit()
+        let exists = FileManager.default.fileExists(atPath: recording.path)
+        if exists {
+            return SimResult(succeeded: true, message: "Recording saved → \(recording.path)")
+        }
+        return SimResult(succeeded: false, message: "Recording stopped but file not found at \(recording.path)")
+    }
+
+    // MARK: - Simulator Location
+
+    public static func executeSetSimLocation(simulator: String?, latitude: Double, longitude: Double, env: Environment) async -> SimResult {
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            return SimResult(succeeded: false, message: "\(error)")
+        }
+        do {
+            let udid = try await resolveSimulator(sim, env: env)
+            let result = try await env.shell.xcrun(timeout: 10, "simctl", "location", udid, "set", "\(latitude),\(longitude)")
+            return result.succeeded
+                ? SimResult(succeeded: true, message: "Location set to \(latitude), \(longitude)")
+                : SimResult(succeeded: false, message: "Failed to set location: \(result.stderr)")
+        } catch {
+            return SimResult(succeeded: false, message: "Error: \(error)")
+        }
+    }
+
+    public static func executeResetSimLocation(simulator: String?, env: Environment) async -> SimResult {
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            return SimResult(succeeded: false, message: "\(error)")
+        }
+        do {
+            let udid = try await resolveSimulator(sim, env: env)
+            let result = try await env.shell.xcrun(timeout: 10, "simctl", "location", udid, "clear")
+            return result.succeeded
+                ? SimResult(succeeded: true, message: "Location reset to default")
+                : SimResult(succeeded: false, message: "Failed to reset location: \(result.stderr)")
+        } catch {
+            return SimResult(succeeded: false, message: "Error: \(error)")
+        }
+    }
+
+    // MARK: - Simulator Appearance
+
+    public static func executeSetSimAppearance(simulator: String?, appearance: String, env: Environment) async -> SimResult {
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            return SimResult(succeeded: false, message: "\(error)")
+        }
+        do {
+            let udid = try await resolveSimulator(sim, env: env)
+            let result = try await env.shell.xcrun(timeout: 10, "simctl", "ui", udid, "appearance", appearance)
+            return result.succeeded
+                ? SimResult(succeeded: true, message: "Appearance set to \(appearance)")
+                : SimResult(succeeded: false, message: "Failed to set appearance: \(result.stderr)")
+        } catch {
+            return SimResult(succeeded: false, message: "Error: \(error)")
+        }
+    }
+
+    // MARK: - Status Bar
+
+    public static func executeSimStatusBar(simulator: String?, time: String?, batteryLevel: Int?, batteryState: String?, cellularBars: Int?, wifiBars: Int?, operatorName: String?, env: Environment) async -> SimResult {
+        guard time != nil || batteryLevel != nil || batteryState != nil || cellularBars != nil || wifiBars != nil || operatorName != nil else {
+            return SimResult(succeeded: false, message: "At least one override is required (time, battery_level, battery_state, cellular_bars, wifi_bars, or operator_name).")
+        }
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            return SimResult(succeeded: false, message: "\(error)")
+        }
+        do {
+            let udid = try await resolveSimulator(sim, env: env)
+            var args = ["simctl", "status_bar", udid, "override"]
+            if let time { args += ["--time", time] }
+            if let level = batteryLevel { args += ["--batteryLevel", "\(level)"] }
+            if let state = batteryState { args += ["--batteryState", state] }
+            if let bars = cellularBars { args += ["--cellularBars", "\(bars)"] }
+            if let wifi = wifiBars { args += ["--wifiBars", "\(wifi)"] }
+            if let op = operatorName { args += ["--operatorName", op] }
+
+            let result = try await env.shell.xcrun(timeout: 10, arguments: args)
+            return result.succeeded
+                ? SimResult(succeeded: true, message: "Status bar overrides applied")
+                : SimResult(succeeded: false, message: "Failed to set status bar: \(result.stderr)")
+        } catch {
+            return SimResult(succeeded: false, message: "Error: \(error)")
+        }
+    }
+
+    public static func executeSimStatusBarClear(simulator: String?, env: Environment) async -> SimResult {
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            return SimResult(succeeded: false, message: "\(error)")
+        }
+        do {
+            let udid = try await resolveSimulator(sim, env: env)
+            let result = try await env.shell.xcrun(timeout: 10, "simctl", "status_bar", udid, "clear")
+            return result.succeeded
+                ? SimResult(succeeded: true, message: "Status bar overrides cleared")
+                : SimResult(succeeded: false, message: "Failed to clear status bar: \(result.stderr)")
+        } catch {
+            return SimResult(succeeded: false, message: "Error: \(error)")
+        }
+    }
+
     // MARK: - MCP Dispatch Helpers
 
     private static func dispatchResult(_ result: SimResult) -> CallTool.Result {
@@ -524,6 +823,38 @@ extension SimTools: ToolProvider {
             switch ToolInput.decode(OrientationInput.self, from: args) {
             case .failure(let err): return err
             case .success(let input): return dispatchResult(await executeSetOrientation(orientation: input.orientation, env: env))
+            }
+        case "record_video_start":
+            switch ToolInput.decode(RecordVideoInput.self, from: args) {
+            case .failure(let err): return err
+            case .success(let input): return dispatchResult(await executeRecordVideoStart(simulator: input.simulator, path: input.path, env: env))
+            }
+        case "record_video_stop":
+            return dispatchResult(await executeRecordVideoStop())
+        case "set_sim_location":
+            switch ToolInput.decode(LocationInput.self, from: args) {
+            case .failure(let err): return err
+            case .success(let input): return dispatchResult(await executeSetSimLocation(simulator: input.simulator, latitude: input.latitude, longitude: input.longitude, env: env))
+            }
+        case "reset_sim_location":
+            switch ToolInput.decode(OptionalSimInput.self, from: args) {
+            case .failure(let err): return err
+            case .success(let input): return dispatchResult(await executeResetSimLocation(simulator: input.simulator, env: env))
+            }
+        case "set_sim_appearance":
+            switch ToolInput.decode(AppearanceInput.self, from: args) {
+            case .failure(let err): return err
+            case .success(let input): return dispatchResult(await executeSetSimAppearance(simulator: input.simulator, appearance: input.appearance, env: env))
+            }
+        case "sim_statusbar":
+            switch ToolInput.decode(StatusBarInput.self, from: args) {
+            case .failure(let err): return err
+            case .success(let input): return dispatchResult(await executeSimStatusBar(simulator: input.simulator, time: input.time, batteryLevel: input.battery_level, batteryState: input.battery_state, cellularBars: input.cellular_bars, wifiBars: input.wifi_bars, operatorName: input.operator_name, env: env))
+            }
+        case "sim_statusbar_clear":
+            switch ToolInput.decode(OptionalSimInput.self, from: args) {
+            case .failure(let err): return err
+            case .success(let input): return dispatchResult(await executeSimStatusBarClear(simulator: input.simulator, env: env))
             }
         default: return nil
         }
