@@ -13,6 +13,7 @@ enum DefaultsSource: String, Sendable {
     case persisted = "persisted"
     case autoPromoted = "auto-promoted"
     case explicit = "explicit"
+    case repoConfig = "repo-config"
     case autoDetected = "auto-detect"
     case buildDerived = "from last build"
 }
@@ -39,11 +40,18 @@ public actor SessionState {
     private var schemeSource: DefaultsSource = .autoDetected
     private var simulatorSource: DefaultsSource = .autoDetected
 
+    // Repo-level config (.xcforge.yaml)
+    private var repoDefaults: PersistedDefaults?
+
     // Persistence
     private let defaultsStore: DefaultsStore
 
-    public init(defaultsStore: DefaultsStore = DefaultsStore()) {
+    public init(defaultsStore: DefaultsStore = DefaultsStore(), cwd: String? = nil) {
         self.defaultsStore = defaultsStore
+
+        // Load repo-level config from .xcforge.yaml (walk up from CWD to .git root).
+        let startDir = cwd ?? FileManager.default.currentDirectoryPath
+        self.repoDefaults = RepoConfig.discover(from: startDir)
 
         // Load persisted defaults eagerly from disk.
         // Only restore the three user-managed fields; build info (bundleId/appPath)
@@ -67,6 +75,11 @@ public actor SessionState {
             return explicit
         }
         if let stored = project { return stored }
+        if let repo = repoDefaults?.project {
+            self.project = repo
+            self.projectSource = .repoConfig
+            return repo
+        }
 
         let detected = try await AutoDetect.project()
         self.project = detected
@@ -82,6 +95,11 @@ public actor SessionState {
             return explicit
         }
         if let stored = scheme { return stored }
+        if let repo = repoDefaults?.scheme {
+            self.scheme = repo
+            self.schemeSource = .repoConfig
+            return repo
+        }
 
         let detected = try await AutoDetect.scheme(project: project)
         self.scheme = detected
@@ -97,6 +115,11 @@ public actor SessionState {
             return explicit
         }
         if let stored = simulator { return stored }
+        if let repo = repoDefaults?.simulator {
+            self.simulator = repo
+            self.simulatorSource = .repoConfig
+            return repo
+        }
         return try await AutoDetect.simulator()
     }
 

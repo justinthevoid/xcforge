@@ -177,6 +177,90 @@ public struct DefaultsStore: Sendable {
     }
 }
 
+// MARK: - Repo-level config (.xcforge.yaml)
+
+/// Discovers and parses a `.xcforge.yaml` file by walking up from `startDir`
+/// toward the repo root (`.git` boundary). Returns repo-scoped defaults or `nil`.
+public enum RepoConfig {
+    static let fileName = ".xcforge.yaml"
+
+    /// Discover `.xcforge.yaml` by walking up from `startDir` to the repo root.
+    /// Returns parsed defaults with relative `project` path resolved, or `nil`.
+    public static func discover(from startDir: String) -> PersistedDefaults? {
+        guard !startDir.isEmpty else { return nil }
+        let fm = FileManager.default
+        var dir = startDir
+
+        // Walk up, but stop at repo root (.git boundary) or filesystem root
+        while dir != "/" {
+            let candidate = (dir as NSString).appendingPathComponent(fileName)
+            if fm.fileExists(atPath: candidate) {
+                return load(from: candidate, configDir: dir)
+            }
+            // Stop at repo root — don't walk above .git
+            let gitPath = (dir as NSString).appendingPathComponent(".git")
+            if fm.fileExists(atPath: gitPath) {
+                break
+            }
+            dir = (dir as NSString).deletingLastPathComponent
+        }
+        return nil
+    }
+
+    /// Parse flat YAML (`key: value` lines, `#` comments, blank lines skipped).
+    /// Resolves relative `project` paths against `configDir`.
+    static func load(from path: String, configDir: String) -> PersistedDefaults? {
+        let contents: String
+        do {
+            contents = try String(contentsOfFile: path, encoding: .utf8)
+        } catch {
+            Log.warn("Failed to read \(RepoConfig.fileName) at \(path): \(error.localizedDescription)")
+            return nil
+        }
+
+        var dict: [String: String] = [:]
+        let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        for line in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            guard let colonIdx = trimmed.firstIndex(of: ":") else { continue }
+            let key = trimmed[trimmed.startIndex..<colonIdx].trimmingCharacters(in: .whitespaces)
+            let value = trimmed[trimmed.index(after: colonIdx)...].trimmingCharacters(in: .whitespaces)
+            if !key.isEmpty && !value.isEmpty {
+                dict[key] = value
+            }
+        }
+
+        if dict.isEmpty { return nil }
+
+        let allowedKeys: Set<String> = ["project", "scheme", "simulator"]
+        for key in dict.keys where !allowedKeys.contains(key) {
+            Log.warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'")
+        }
+
+        // Resolve relative project path against config file directory
+        var project = dict["project"]
+        if let p = project, !p.hasPrefix("/") {
+            let resolved = (configDir as NSString).appendingPathComponent(p)
+            let normalized = (resolved as NSString).standardizingPath
+            if FileManager.default.fileExists(atPath: normalized) {
+                project = normalized
+            } else {
+                Log.warn("\(RepoConfig.fileName): project path '\(p)' resolved to '\(normalized)' which does not exist — ignoring")
+                project = nil
+            }
+        }
+
+        let result = PersistedDefaults(
+            project: project,
+            scheme: dict["scheme"],
+            simulator: dict["simulator"]
+        )
+        return result.isEmpty ? nil : result
+    }
+}
+
 /// Codable representation of persisted workflow defaults.
 public struct PersistedDefaults: Codable, Sendable, Equatable {
     public var project: String?

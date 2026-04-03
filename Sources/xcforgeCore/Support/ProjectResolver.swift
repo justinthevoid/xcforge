@@ -81,6 +81,26 @@ enum AutoDetect {
         return device.udid
     }
 
+    // MARK: - Repo root discovery
+
+    /// Walk up from `startDir` toward filesystem root, stopping at the first directory
+    /// containing `.git`. Returns `nil` if no `.git` is found before reaching `/`.
+    static func repoRoot(from startDir: String) -> String? {
+        guard !startDir.isEmpty else { return nil }
+        var dir = startDir
+        let fm = FileManager.default
+        while dir != "/" {
+            let gitPath = (dir as NSString).appendingPathComponent(".git")
+            var isDir: ObjCBool = false
+            // .git can be a directory (normal) or a file (worktree)
+            if fm.fileExists(atPath: gitPath, isDirectory: &isDir) {
+                return dir
+            }
+            dir = (dir as NSString).deletingLastPathComponent
+        }
+        return nil
+    }
+
     // MARK: - Project (CWD)
 
     /// Detect Xcode project in working directory. Prefers .xcworkspace over .xcodeproj.
