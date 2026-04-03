@@ -2,6 +2,9 @@ import Foundation
 
 /// Persists lightweight workflow defaults to disk so they survive process restarts.
 /// Storage location: `{baseDir}/defaults.json` where baseDir defaults to `~/.xcforge/`.
+///
+/// All reads and writes use POSIX advisory file locking (`flock`) to prevent
+/// cross-process race conditions between the long-running MCP server and CLI invocations.
 public struct DefaultsStore: Sendable {
     let fileURL: URL
 
@@ -28,13 +31,9 @@ public struct DefaultsStore: Sendable {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return nil
         }
-        do {
-            let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder().decode(PersistedDefaults.self, from: data)
-        } catch {
-            Log.warn("Failed to read defaults from \(fileURL.path): \(error.localizedDescription). Starting with empty defaults.")
-            return nil
-        }
+        return withFileLock(.shared) { _ in
+            readFromDisk()
+        } ?? nil
     }
 
     public func save(_ defaults: PersistedDefaults) {
@@ -43,21 +42,84 @@ public struct DefaultsStore: Sendable {
             try FileManager.default.createDirectory(
                 at: dir, withIntermediateDirectories: true, attributes: nil
             )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(defaults)
-            try data.write(to: fileURL, options: .atomic)
         } catch {
-            Log.warn("Failed to save defaults to \(fileURL.path): \(error.localizedDescription)")
+            Log.warn("Failed to create directory for defaults at \(fileURL.path): \(error.localizedDescription)")
+            return
+        }
+
+        withFileLock(.exclusive) { lockFD in
+            // Re-read current disk state under the lock to avoid clobbering
+            // concurrent writes from other processes.
+            let existing = readFromDisk() ?? PersistedDefaults()
+            let merged = existing.merging(defaults)
+
+            do {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                let data = try encoder.encode(merged)
+                try data.write(to: fileURL, options: .atomic)
+            } catch {
+                Log.warn("Failed to save defaults to \(fileURL.path): \(error.localizedDescription)")
+            }
         }
     }
 
     public func clear() {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        withFileLock(.exclusive) { _ in
+            do {
+                try FileManager.default.removeItem(at: fileURL)
+            } catch {
+                Log.warn("Failed to remove defaults file at \(fileURL.path): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - File locking
+
+    private enum LockMode {
+        case shared, exclusive
+
+        var flockFlag: Int32 {
+            switch self {
+            case .shared: return LOCK_SH
+            case .exclusive: return LOCK_EX
+            }
+        }
+    }
+
+    /// Acquires a POSIX advisory lock on a `.lock` sibling file, executes the closure,
+    /// then releases. The lock auto-releases if the process crashes.
+    @discardableResult
+    private func withFileLock<T>(_ mode: LockMode, body: (Int32) -> T) -> T? {
+        let lockPath = fileURL.path + ".lock"
+        let fd = open(lockPath, O_CREAT | O_RDWR, 0o644)
+        guard fd >= 0 else {
+            Log.warn("Failed to open lock file at \(lockPath)")
+            return nil
+        }
+        defer {
+            flock(fd, LOCK_UN)
+            close(fd)
+        }
+        guard flock(fd, mode.flockFlag) == 0 else {
+            Log.warn("Failed to acquire lock on \(lockPath)")
+            return nil
+        }
+        return body(fd)
+    }
+
+    /// Reads and decodes the defaults file without locking (caller must hold lock).
+    private func readFromDisk() -> PersistedDefaults? {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
         do {
-            try FileManager.default.removeItem(at: fileURL)
+            let data = try Data(contentsOf: fileURL)
+            return try JSONDecoder().decode(PersistedDefaults.self, from: data)
         } catch {
-            Log.warn("Failed to remove defaults file at \(fileURL.path): \(error.localizedDescription)")
+            Log.warn("Failed to read defaults from \(fileURL.path): \(error.localizedDescription). Starting with empty defaults.")
+            return nil
         }
     }
 }
@@ -87,5 +149,17 @@ public struct PersistedDefaults: Codable, Sendable, Equatable {
     /// True when all fields are nil (nothing to persist).
     public var isEmpty: Bool {
         project == nil && scheme == nil && simulator == nil && bundleId == nil && appPath == nil
+    }
+
+    /// Returns a new value where non-nil fields from `other` overwrite `self`,
+    /// and nil fields in `other` preserve `self`'s values.
+    func merging(_ other: PersistedDefaults) -> PersistedDefaults {
+        PersistedDefaults(
+            project: other.project ?? project,
+            scheme: other.scheme ?? scheme,
+            simulator: other.simulator ?? simulator,
+            bundleId: other.bundleId ?? bundleId,
+            appPath: other.appPath ?? appPath
+        )
     }
 }
