@@ -455,20 +455,44 @@ enum UITools {
         }
     }
 
-    static func findElement(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
+    /// AXP handle cache — maps real WDA element IDs to AXP handles for fast click/getText.
+    /// Nonisolated because UITools dispatch is serial (MCP request handler).
+    nonisolated(unsafe) private static var axpHandles: [String: AXPBridge.AXPHandle] = [:]
+
+    static func findElement(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
         switch ToolInput.decode(FindElementInput.self, from: args) {
         case .failure(let err): return err
         case .success(let input):
             let scroll = input.scroll ?? false
             let direction = input.direction ?? "auto"
             let maxSwipes = input.max_swipes ?? 10
+
+            // AXP pre-check: stash handle for later click/getText acceleration
+            let axpStrategies: Set<String> = ["accessibility id", "class name"]
+            var axpHandle: AXPBridge.AXPHandle?
+            if !scroll, axpStrategies.contains(input.using), AXPBridge.isAvailable {
+                do {
+                    axpHandle = try await env.axpBridge.findElement(
+                        strategy: input.using, value: input.value
+                    )
+                } catch {
+                    Log.warn("AXPBridge findElement miss, falling back to WDA: \(error)")
+                }
+            }
+
+            // Always obtain a real WDA element ID for fallback compatibility
             do {
                 let start = CFAbsoluteTimeGetCurrent()
-                let (elementId, swipes) = try await wdaClient.findElement(
+                let (elementId, swipes) = try await env.wdaClient.findElement(
                     using: input.using, value: input.value, scroll: scroll, direction: direction, maxSwipes: maxSwipes
                 )
                 let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-                var msg = "Element found: \(elementId) (\(elapsed)ms)"
+                // Stash AXP handle keyed by the real WDA element ID
+                if let handle = axpHandle {
+                    axpHandles[elementId] = handle
+                }
+                let tag = axpHandle != nil ? "axp+wda" : "wda"
+                var msg = "Element found: \(elementId) (\(tag), \(elapsed)ms)"
                 if swipes > 0 {
                     msg += " — scrolled \(swipes) time(s) \(direction)"
                 }
@@ -494,15 +518,28 @@ enum UITools {
         }
     }
 
-    static func clickElement(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
+    static func clickElement(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
         switch ToolInput.decode(ElementInput.self, from: args) {
         case .failure(let err): return err
         case .success(let input):
+            // AXP fast-path: try native click, consume handle regardless of outcome
+            if let handle = axpHandles.removeValue(forKey: input.element_id) {
+                let start = CFAbsoluteTimeGetCurrent()
+                do {
+                    try await env.axpBridge.performClick(handle: handle)
+                    let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+                    return .ok("Clicked element \(input.element_id) (axp, \(elapsed)ms)")
+                } catch {
+                    Log.warn("AXPBridge click failed, falling back to WDA: \(error)")
+                }
+            }
+
+            // WDA path — element_id is always a real WDA handle
             do {
                 let start = CFAbsoluteTimeGetCurrent()
-                try await wdaClient.click(elementId: input.element_id)
+                try await env.wdaClient.click(elementId: input.element_id)
                 let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-                return .ok("Clicked element \(input.element_id) (\(elapsed)ms)")
+                return .ok("Clicked element \(input.element_id) (wda, \(elapsed)ms)")
             } catch {
                 return .fail("Click failed: \(error)")
             }
@@ -637,13 +674,28 @@ enum UITools {
         }
     }
 
-    static func getText(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
+    static func getText(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
         switch ToolInput.decode(ElementInput.self, from: args) {
         case .failure(let err): return err
         case .success(let input):
+            // AXP fast-path: try native getText, consume handle to prevent unbounded growth
+            if let handle = axpHandles.removeValue(forKey: input.element_id) {
+                let start = CFAbsoluteTimeGetCurrent()
+                do {
+                    let text = try await env.axpBridge.getText(handle: handle)
+                    let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+                    return .ok("Text (axp, \(elapsed)ms): \(text)")
+                } catch {
+                    Log.warn("AXPBridge getText failed, falling back to WDA: \(error)")
+                }
+            }
+
+            // WDA path — element_id is always a real WDA handle
             do {
-                let text = try await wdaClient.getText(elementId: input.element_id)
-                return .ok("Text: \(text)")
+                let start = CFAbsoluteTimeGetCurrent()
+                let text = try await env.wdaClient.getText(elementId: input.element_id)
+                let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+                return .ok("Text (wda, \(elapsed)ms): \(text)")
             } catch {
                 return .fail("Get text failed: \(error)")
             }
@@ -785,9 +837,9 @@ extension UITools: ToolProvider {
         case "handle_alert":       return await handleAlert(args, session: env.session, wdaClient: env.wdaClient)
         case "wda_status":         return await wdaStatus(args, session: env.session, wdaClient: env.wdaClient)
         case "wda_create_session": return await wdaCreateSession(args, wdaClient: env.wdaClient)
-        case "find_element":       return await findElement(args, wdaClient: env.wdaClient)
+        case "find_element":       return await findElement(args, env: env)
         case "find_elements":      return await findElements(args, wdaClient: env.wdaClient)
-        case "click_element":      return await clickElement(args, wdaClient: env.wdaClient)
+        case "click_element":      return await clickElement(args, env: env)
         case "tap_coordinates":    return await tapCoordinates(args, wdaClient: env.wdaClient)
         case "double_tap":         return await doubleTap(args, wdaClient: env.wdaClient)
         case "long_press":         return await longPress(args, wdaClient: env.wdaClient)
@@ -797,7 +849,7 @@ extension UITools: ToolProvider {
         case "indigo_swipe":       return await indigoSwipe(args, wdaClient: env.wdaClient)
         case "drag_and_drop":      return await dragAndDrop(args, wdaClient: env.wdaClient)
         case "type_text":          return await typeText(args, wdaClient: env.wdaClient)
-        case "get_text":           return await getText(args, wdaClient: env.wdaClient)
+        case "get_text":           return await getText(args, env: env)
         case "get_source":         return await getSource(args, env: env)
         default: return nil
         }

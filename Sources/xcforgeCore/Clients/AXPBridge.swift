@@ -29,12 +29,13 @@ public actor AXPBridge {
 
     // MARK: - Public API
 
-    struct AXElement {
+    struct AXElement: @unchecked Sendable {
         let label: String?
         let identifier: String?
         let elementType: String?
         let value: String?
         let frame: CGRect
+        let handle: AXUIElement
     }
 
     /// Get the full accessibility tree as JSON string.
@@ -58,6 +59,59 @@ public actor AXPBridge {
         }
         let data = try JSONSerialization.data(withJSONObject: dicts, options: [.sortedKeys])
         return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    /// Opaque handle returned by `findElement` — valid only until the cache is invalidated.
+    struct AXPHandle: @unchecked Sendable {
+        fileprivate let element: AXUIElement
+    }
+
+    /// Find an element by accessibility strategy. Supports "accessibility id" and "class name".
+    /// Returns an opaque handle for use with `performClick` / `getText`.
+    func findElement(strategy: String, value: String, udid: String? = nil) async throws -> AXPHandle {
+        let elements = try await snapshotTree(udid: udid)
+        let match: AXElement? = switch strategy {
+        case "accessibility id":
+            elements.first { $0.identifier == value }
+        case "class name":
+            elements.first { $0.elementType == value }
+        default:
+            nil
+        }
+        guard let found = match else {
+            throw AXPError.elementNotFound(strategy: strategy, value: value)
+        }
+        return AXPHandle(element: found.handle)
+    }
+
+    /// Click an element via its native accessibility action.
+    /// Invalidates the tree cache only on success since the UI may change after interaction.
+    func performClick(handle: AXPHandle) throws {
+        let result = AXUIElementPerformAction(handle.element, kAXPressAction as CFString)
+        guard result == .success else {
+            throw AXPError.actionFailed("AXPress returned \(result.rawValue)")
+        }
+        invalidateCache()
+    }
+
+    /// Read the text content of an element. Tries kAXValueAttribute first, then kAXTitleAttribute.
+    func getText(handle: AXPHandle) throws -> String {
+        func stringAttr(_ attr: String) -> String? {
+            var ref: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(handle.element, attr as CFString, &ref) == .success
+            else { return nil }
+            return ref as? String
+        }
+        if let text = stringAttr(kAXValueAttribute) { return text }
+        if let text = stringAttr(kAXTitleAttribute) { return text }
+        throw AXPError.actionFailed("No text content on element")
+    }
+
+    /// Clear cached tree and handles. Called automatically after successful mutations.
+    func invalidateCache() {
+        cachedElements = []
+        cachedUDID = nil
+        cachedAt = 0
     }
 
     // MARK: - Tree Snapshot
@@ -156,7 +210,8 @@ public actor AXPBridge {
             identifier: stringAttr("AXIdentifier"),
             elementType: stringAttr(kAXRoleAttribute),
             value: stringAttr(kAXValueAttribute),
-            frame: frame
+            frame: frame,
+            handle: ref
         )
     }
 
@@ -229,6 +284,8 @@ public actor AXPBridge {
         case simulatorNotRunning
         case noBootedDevice
         case treeBuildFailed(String)
+        case elementNotFound(strategy: String, value: String)
+        case actionFailed(String)
 
         var description: String {
             switch self {
@@ -238,6 +295,10 @@ public actor AXPBridge {
                 return "Simulator.app is running but no device is booted. Boot a device with: xcrun simctl boot <UDID>"
             case .treeBuildFailed(let msg):
                 return "AXP tree build failed: \(msg)"
+            case .elementNotFound(let strategy, let value):
+                return "AXP element not found: \(strategy) = '\(value)'"
+            case .actionFailed(let msg):
+                return "AXP action failed: \(msg)"
             }
         }
     }
