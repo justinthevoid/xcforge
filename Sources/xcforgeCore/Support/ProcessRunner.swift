@@ -58,11 +58,33 @@ public struct Environment: Sendable {
     public let axpBridge: AXPBridge
     public let wdaClient: WDAClient
 
-    public init(shell: any ShellExecutor, session: SessionState = SessionState(), axpBridge: AXPBridge = AXPBridge(), wdaClient: WDAClient = WDAClient()) {
+    // Filesystem abstractions — allow tests to mock file I/O.
+    public let fileExists: @Sendable (String) -> Bool
+    public let directoryExists: @Sendable (String) -> Bool
+    public let readFile: @Sendable (String) throws -> String
+    public let currentDirectoryPath: @Sendable () -> String
+
+    public init(
+        shell: any ShellExecutor,
+        session: SessionState = SessionState(),
+        axpBridge: AXPBridge = AXPBridge(),
+        wdaClient: WDAClient = WDAClient(),
+        fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        directoryExists: @escaping @Sendable (String) -> Bool = {
+            var isDir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: $0, isDirectory: &isDir) && isDir.boolValue
+        },
+        readFile: @escaping @Sendable (String) throws -> String = { try String(contentsOfFile: $0, encoding: .utf8) },
+        currentDirectoryPath: @escaping @Sendable () -> String = { FileManager.default.currentDirectoryPath }
+    ) {
         self.shell = shell
         self.session = session
         self.axpBridge = axpBridge
         self.wdaClient = wdaClient
+        self.fileExists = fileExists
+        self.directoryExists = directoryExists
+        self.readFile = readFile
+        self.currentDirectoryPath = currentDirectoryPath
     }
 
     /// Production environment using real process execution.

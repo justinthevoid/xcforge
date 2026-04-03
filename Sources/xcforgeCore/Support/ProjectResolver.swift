@@ -18,8 +18,7 @@ enum AutoDetect {
         let isAvailable: Bool
     }
 
-    static func validateProject(_ project: String) throws {
-        let fileManager = FileManager.default
+    static func validateProject(_ project: String, env: Environment = .live) throws {
         let normalized = project.replacingOccurrences(
             of: "/+$",
             with: "",
@@ -29,8 +28,7 @@ enum AutoDetect {
         guard normalizedLower.hasSuffix(".xcodeproj") || normalizedLower.hasSuffix(".xcworkspace") else {
             throw ResolverError("Project path must point to a .xcodeproj or .xcworkspace: \(project)")
         }
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: normalized, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard env.directoryExists(normalized) else {
             throw ResolverError("Project path not found: \(project)")
         }
     }
@@ -87,9 +85,14 @@ enum AutoDetect {
 
     /// Detect Xcode project in working directory. Prefers .xcworkspace over .xcodeproj.
     static func project() async throws -> String {
-        let cwd = FileManager.default.currentDirectoryPath
+        try await project(env: .live)
+    }
 
-        let result = try await Shell.run("/usr/bin/find", arguments: [
+    /// Detect Xcode project with injectable environment.
+    static func project(env: Environment) async throws -> String {
+        let cwd = env.currentDirectoryPath()
+
+        let result = try await env.shell.run("/usr/bin/find", arguments: [
             cwd, "-maxdepth", "2",
             "(", "-name", "*.xcodeproj", "-o", "-name", "*.xcworkspace", ")",
             "-not", "-path", "*/Pods/*",
@@ -172,8 +175,8 @@ enum AutoDetect {
         let projectDir = (project as NSString).deletingLastPathComponent
         let packageSwiftPath = (projectDir as NSString).appendingPathComponent("Package.swift")
 
-        if FileManager.default.fileExists(atPath: packageSwiftPath),
-           let contents = try? String(contentsOfFile: packageSwiftPath, encoding: .utf8) {
+        if env.fileExists(packageSwiftPath),
+           let contents = try? env.readFile(packageSwiftPath) {
             let pattern = #"\.testTarget\s*\(\s*name\s*:\s*"([^"]+)""#
             if let regex = try? NSRegularExpression(pattern: pattern),
                case let matches = regex.matches(in: contents, range: NSRange(contents.startIndex..., in: contents)),
