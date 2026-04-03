@@ -435,12 +435,30 @@ public enum BuildTools {
         let buildElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - totalStart)
 
         guard buildResult.succeeded else {
+            let reason = classifyFailureReason(stderr: buildResult.stderr)
+            let structured = extractStructuredErrors(stderr: buildResult.stderr, failureReason: reason)
             let errorLines = buildResult.stderr.split(separator: "\n")
                 .filter { $0.contains(": error:") }
                 .prefix(20)
-                .joined(separator: "\n")
-            let errors = errorLines.isEmpty ? String(buildResult.stderr.suffix(2000)) : errorLines
-            return .fail("Build FAILED in \(buildElapsed)s\n\(errors)")
+                .map(String.init)
+            let stderrTail = String(buildResult.stderr.suffix(2000))
+            let legacyErrors = errorLines.isEmpty
+                ? (stderrTail.isEmpty ? [] : [stderrTail])
+                : Array(errorLines)
+
+            let execution = BuildExecution(
+                succeeded: false,
+                elapsed: buildElapsed,
+                scheme: scheme,
+                simulator: simulator,
+                configuration: configuration,
+                bundleId: nil,
+                appPath: nil,
+                errors: legacyErrors,
+                failureReason: reason,
+                structuredErrors: structured
+            )
+            return .fail(formatBuildFailure(execution))
         }
 
         // Await settings — 3-tier fallback for app path + bundle ID:

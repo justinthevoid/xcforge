@@ -297,14 +297,15 @@ enum ConsoleTools {
     static func resetRuntimeCaptureContext(
         simulatorUDID: String,
         bundleId: String,
-        wdaClient: WDAClient
+        wdaClient: WDAClient,
+        env: Environment = .live
     ) async -> SimTools.RuntimeContinuityReset {
         await AppConsole.shared.stop()
         return await SimTools.resetRuntimeContinuity(
             simulatorUDID: simulatorUDID,
             bundleId: bundleId,
             wdaClient: wdaClient,
-            env: .live
+            env: env
         )
     }
 }

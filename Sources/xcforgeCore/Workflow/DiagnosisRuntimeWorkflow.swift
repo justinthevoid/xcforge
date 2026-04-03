@@ -74,7 +74,7 @@ public struct DiagnosisRuntimeWorkflow: Sendable {
         persistRun: @escaping PersistRun,
         resolveSimulator: @escaping ResolveSimulator,
         captureRuntime: @escaping CaptureRuntime,
-        resetRuntimeContinuity: @escaping ResetRuntimeContinuity = ConsoleTools.resetRuntimeCaptureContext,
+        resetRuntimeContinuity: @escaping ResetRuntimeContinuity = { await ConsoleTools.resetRuntimeCaptureContext(simulatorUDID: $0, bundleId: $1, wdaClient: $2) },
         captureScreenshot: @escaping CaptureScreenshot,
         artifactURL: @escaping ArtifactURL,
         now: @escaping NowProvider = Date.init,

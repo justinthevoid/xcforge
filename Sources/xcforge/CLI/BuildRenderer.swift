@@ -22,7 +22,17 @@ enum BuildRenderer {
             lines.append("App path: \(path)")
         }
 
-        if !execution.errors.isEmpty {
+        if !execution.succeeded, let reason = execution.failureReason {
+            lines.append("Failure reason: \(reason)")
+        }
+
+        if let structured = execution.structuredErrors, !structured.isEmpty {
+            lines.append("")
+            lines.append("Errors (\(structured.count)):")
+            for error in structured {
+                lines.append("  \(error)")
+            }
+        } else if !execution.errors.isEmpty {
             lines.append("")
             lines.append("Errors (\(execution.errors.count)):")
             for error in execution.errors {
