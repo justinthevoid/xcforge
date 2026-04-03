@@ -213,8 +213,12 @@ enum AutoDetect {
 
     // MARK: - Destination builder
 
-    /// Build xcodebuild destination string from a simulator name or UDID.
+    /// Build xcodebuild destination string from a simulator name, UDID, or physical device identifier.
     static func buildDestination(_ simulator: String) async -> String {
+        // Physical device UDIDs are 40-char hex (no dashes) — check first
+        if isPhysicalDeviceUDID(simulator) {
+            return "platform=iOS,id=\(simulator)"
+        }
         if isUDID(simulator) {
             return "platform=iOS Simulator,id=\(simulator)"
         }
@@ -223,12 +227,30 @@ enum AutoDetect {
                 return "platform=iOS Simulator,id=\(udid)"
             }
         }
-        // Try resolving name to UDID for reliability
+        // Try resolving name to simulator UDID first (common case)
         if let udid = await resolveNameToUDID(simulator) {
             return "platform=iOS Simulator,id=\(udid)"
         }
-        // Fallback: pass name directly
+        // Check if the name matches a connected physical device (expensive — last resort)
+        if await isConnectedPhysicalDevice(simulator) {
+            return "platform=iOS,name=\(simulator)"
+        }
+        // Fallback: pass name directly as simulator
         return "platform=iOS Simulator,name=\(simulator)"
+    }
+
+    /// Returns true if the string looks like a physical device UDID.
+    /// Supports both legacy 40-char hex format and newer 8-16 hex format (e.g. 00008101-001A2B3C4D5E6F78).
+    private static func isPhysicalDeviceUDID(_ s: String) -> Bool {
+        let legacy = #"^[0-9a-fA-F]{40}$"#
+        let modern = #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{16}$"#
+        return s.range(of: legacy, options: .regularExpression) != nil
+            || s.range(of: modern, options: .regularExpression) != nil
+    }
+
+    /// Check if a name or identifier matches a connected physical device via devicectl.
+    private static func isConnectedPhysicalDevice(_ identifier: String) async -> Bool {
+        await DeviceTools.isConnectedPhysicalDevice(identifier, env: .live)
     }
 
     private static func resolveSimulatorDevice(_ simulator: String) async throws -> SimulatorDevice {

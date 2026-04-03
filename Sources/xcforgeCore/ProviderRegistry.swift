@@ -18,6 +18,7 @@ public enum ToolRegistry {
         DiagnoseTools.self,
         PlanTools.self,
         SwiftPackageTools.self,
+        DeviceTools.self,
     ]
 
     public static var allTools: [Tool] {
