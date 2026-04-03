@@ -72,6 +72,7 @@ public actor AXPBridge {
             (continuation: CheckedContinuation<[AXElement], Error>) in
             DispatchQueue.global(qos: .userInteractive).async {
                 do {
+                    try Self.verifyBootedDevice()
                     let tree = try Self.buildTree(pid: simPID)
                     continuation.resume(returning: tree)
                 } catch {
@@ -91,14 +92,15 @@ public actor AXPBridge {
     private static func buildTree(pid: pid_t) throws -> [AXElement] {
         let app = AXUIElementCreateApplication(pid)
         var elements: [AXElement] = []
-        traverse(element: app, into: &elements, depth: 0, maxDepth: 40)
+        traverse(element: app, into: &elements, depth: 0, maxDepth: 40, maxElements: 5000)
         return elements
     }
 
     private static func traverse(
         element: AXUIElement, into elements: inout [AXElement],
-        depth: Int, maxDepth: Int
+        depth: Int, maxDepth: Int, maxElements: Int = 5000
     ) {
+        guard elements.count < maxElements else { return }
         guard depth < maxDepth else { return }
 
         let axElement = extractElement(from: element)
@@ -114,7 +116,7 @@ public actor AXPBridge {
         }
 
         for child in children {
-            traverse(element: child, into: &elements, depth: depth + 1, maxDepth: maxDepth)
+            traverse(element: child, into: &elements, depth: depth + 1, maxDepth: maxDepth, maxElements: maxElements)
         }
     }
 
@@ -167,6 +169,32 @@ public actor AXPBridge {
 
     // MARK: - Simulator PID Discovery
 
+    /// Synchronously checks that at least one simulator device is booted.
+    private static func verifyBootedDevice() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+        process.arguments = ["simctl", "list", "devices", "booted", "-j"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let devices = json["devices"] as? [String: [[String: Any]]]
+        else {
+            throw AXPError.noBootedDevice
+        }
+
+        let hasBooted = devices.values.contains { runtimes in
+            runtimes.contains { ($0["state"] as? String) == "Booted" }
+        }
+        guard hasBooted else {
+            throw AXPError.noBootedDevice
+        }
+    }
+
     private func findSimulatorPID() throws -> pid_t {
         let ws = NSWorkspace.shared
         guard
@@ -183,12 +211,15 @@ public actor AXPBridge {
 
     enum AXPError: Error, CustomStringConvertible {
         case simulatorNotRunning
+        case noBootedDevice
         case treeBuildFailed(String)
 
         var description: String {
             switch self {
             case .simulatorNotRunning:
                 return "Simulator.app not running"
+            case .noBootedDevice:
+                return "Simulator.app is running but no device is booted. Boot a device with: xcrun simctl boot <UDID>"
             case .treeBuildFailed(let msg):
                 return "AXP tree build failed: \(msg)"
             }

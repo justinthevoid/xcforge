@@ -9,7 +9,9 @@ struct BuildLogArgsTests {
 
     @Test("app mode with bundleId + appPath builds combined predicate")
     func appModeFullSession() async {
-        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir))
         await session.setBuildInfo(bundleId: "com.test.app", appPath: "/tmp/Test.app")
         let env = Environment(shell: LiveShell(), session: session)
 
@@ -33,7 +35,9 @@ struct BuildLogArgsTests {
 
     @Test("app mode with only bundleId (no appPath) uses subsystem + fault")
     func appModeBundleIdOnly() async {
-        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir))
         await session.setBuildInfo(bundleId: "com.test.app", appPath: nil)
         let env = Environment(shell: LiveShell(), session: session)
 
@@ -59,7 +63,9 @@ struct BuildLogArgsTests {
 
     @Test("app mode without session state falls back to smart")
     func appModeFallbackToSmart() async {
-        let env = Environment(shell: LiveShell(), session: SessionState(defaultsStore: DefaultsStore(baseDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))))
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let env = Environment(shell: LiveShell(), session: SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir)))
 
         let (args, note) = await LogTools.buildLogArgs(
             simulator: "FAKE-UDID", mode: "app", level: "debug",
@@ -116,7 +122,9 @@ struct BuildLogArgsTests {
 
     @Test("explicit subsystem bypasses mode logic")
     func explicitSubsystemOverride() async {
-        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir))
         await session.setBuildInfo(bundleId: "com.test.app", appPath: nil)
         let env = Environment(shell: LiveShell(), session: session)
 
@@ -284,6 +292,7 @@ struct DeriveProcessNameTests {
         // Create a temporary .app with Info.plist
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("LogToolsTest-\(UUID().uuidString).app")
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
 
         let plist: [String: Any] = [
@@ -295,15 +304,13 @@ struct DeriveProcessNameTests {
 
         let result = LogTools.deriveProcessName(from: tmpDir.path)
         #expect(result == "LogToolsTestBinary")
-
-        // Cleanup
-        try? FileManager.default.removeItem(at: tmpDir)
     }
 
     @Test("handles trailing slash in appPath")
     func trailingSlash() throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("LogToolsSlash-\(UUID().uuidString).app")
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
 
         let plist: [String: Any] = [
@@ -316,8 +323,6 @@ struct DeriveProcessNameTests {
         // Path WITH trailing slash
         let result = LogTools.deriveProcessName(from: tmpDir.path + "/")
         #expect(result == "SlashTest")
-
-        try? FileManager.default.removeItem(at: tmpDir)
     }
 }
 

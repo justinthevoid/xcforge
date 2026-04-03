@@ -8,9 +8,9 @@ struct DiagnosisStartWorkflowTests {
 
     @Test("successful start resolves context and persists a run record")
     func successfulStartPersistsRun() async throws {
-        let session = isolatedSession()
         let tempDir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = isolatedSession(baseDirectory: tempDir)
 
         let store = RunStore(baseDirectory: tempDir)
         let fixedDate = Date(timeIntervalSince1970: 1_743_417_600)
@@ -72,9 +72,9 @@ struct DiagnosisStartWorkflowTests {
 
     @Test("omitted fields reuse the latest active diagnosis context")
     func omittedFieldsReuseLatestActiveContext() async throws {
-        let session = isolatedSession()
         let tempDir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = isolatedSession(baseDirectory: tempDir)
 
         let store = RunStore(baseDirectory: tempDir)
         let appPath = tempDir
@@ -146,15 +146,14 @@ struct DiagnosisStartWorkflowTests {
 
     @Test("explicit overrides preserve reuse provenance without mutating defaults")
     func explicitOverridePreservesReuseProvenance() async throws {
-        let session = isolatedSession()
+        let tempDir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = isolatedSession(baseDirectory: tempDir)
         await session.setDefaults(
             project: "/tmp/Stored.xcodeproj",
             scheme: "StoredScheme",
             simulator: "StoredSim"
         )
-
-        let tempDir = makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let store = RunStore(baseDirectory: tempDir)
         let appPath = tempDir
@@ -257,7 +256,7 @@ struct DiagnosisStartWorkflowTests {
         _ = try store.save(reusableRun)
 
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { throw TestFailure.unusedResolver },
             resolveScheme: { _ in throw TestFailure.unusedResolver },
             resolveSimulator: { throw TestFailure.unusedResolver },
@@ -325,7 +324,7 @@ struct DiagnosisStartWorkflowTests {
         _ = try store.save(reusableRun)
 
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { throw TestFailure.unusedResolver },
             resolveScheme: { _ in throw TestFailure.unusedResolver },
             validateScheme: { _, _ in false },
@@ -360,15 +359,14 @@ struct DiagnosisStartWorkflowTests {
 
     @Test("explicit overrides do not mutate saved defaults")
     func explicitOverridesLeaveDefaultsUntouched() async {
-        let session = isolatedSession()
+        let tempDir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = isolatedSession(baseDirectory: tempDir)
         await session.setDefaults(
             project: "/tmp/Stored.xcodeproj",
             scheme: "StoredScheme",
             simulator: "StoredSim"
         )
-
-        let tempDir = makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
@@ -413,15 +411,14 @@ struct DiagnosisStartWorkflowTests {
 
     @Test("stored scheme defaults are reused before auto-detect when valid for an explicit project")
     func validStoredSchemeDefaultIsReused() async {
-        let session = isolatedSession()
+        let tempDir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = isolatedSession(baseDirectory: tempDir)
         await session.setDefaults(
             project: "/tmp/Stored.xcodeproj",
             scheme: "StoredScheme",
             simulator: "StoredSim"
         )
-
-        let tempDir = makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
@@ -455,11 +452,10 @@ struct DiagnosisStartWorkflowTests {
 
     @Test("invalid stored scheme falls back to auto-detect for the resolved project")
     func invalidStoredSchemeFallsBackToAutodetect() async {
-        let session = isolatedSession()
-        await session.setDefaults(project: nil, scheme: "StaleScheme", simulator: nil)
-
         let tempDir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = isolatedSession(baseDirectory: tempDir)
+        await session.setDefaults(project: nil, scheme: "StaleScheme", simulator: nil)
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
@@ -500,9 +496,9 @@ struct DiagnosisStartWorkflowTests {
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: {
-                throw SmartContextError(
+                throw ResolverError(
                     """
                     2 projects found — specify which one:
                       App.xcodeproj
@@ -534,7 +530,8 @@ struct DiagnosisStartWorkflowTests {
         #expect(result.failure?.options == ["App.xcodeproj", "App.xcworkspace"])
         #expect(result.environmentPreflight == nil)
         #expect(result.persistedRunPath == nil)
-        #expect((try? FileManager.default.contentsOfDirectory(atPath: tempDir.path).isEmpty) ?? true)
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: tempDir.path)) ?? []
+        #expect(contents.allSatisfy { $0 == "defaults" })
     }
 
     @Test("app context resolution failures are classified as unsupported")
@@ -544,7 +541,7 @@ struct DiagnosisStartWorkflowTests {
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { "/tmp/MyApp.xcodeproj" },
             resolveScheme: { _ in "MyApp" },
             resolveSimulator: { "SIM-123" },
@@ -556,7 +553,7 @@ struct DiagnosisStartWorkflowTests {
                 makePreparedSimulatorContext(requested: simulator)
             },
             resolveAppContext: { _, _, _, _ in
-                throw SmartContextError("Build settings did not contain an app product path for MyApp")
+                throw ResolverError("Build settings did not contain an app product path for MyApp")
             },
             persistRun: { run in try store.save(run) }
         )
@@ -579,7 +576,7 @@ struct DiagnosisStartWorkflowTests {
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { "/tmp/MyApp.xcodeproj" },
             resolveScheme: { _ in "MyApp" },
             resolveSimulator: { "SIM-123" },
@@ -591,7 +588,7 @@ struct DiagnosisStartWorkflowTests {
                 makePreparedSimulatorContext(requested: simulator)
             },
             resolveAppContext: { _, _, _, _ in
-                throw SmartContextError("Unable to resolve app context for MyApp: xcodebuild timed out")
+                throw ResolverError("Unable to resolve app context for MyApp: xcodebuild timed out")
             },
             persistRun: { run in try store.save(run) }
         )
@@ -612,7 +609,7 @@ struct DiagnosisStartWorkflowTests {
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { throw TestFailure.unusedResolver },
             resolveScheme: { _ in throw TestFailure.unusedResolver },
             resolveSimulator: { throw TestFailure.unusedResolver },
@@ -621,7 +618,7 @@ struct DiagnosisStartWorkflowTests {
             validateResolvedScheme: { _, _ in },
             validateResolvedSimulator: { _ in },
             prepareSimulatorContext: { simulator in
-                throw SmartContextError(
+                throw ResolverError(
                     """
                     Simulator '\(simulator)' is not available for this workflow context.
                     Available simulators:
@@ -660,13 +657,13 @@ struct DiagnosisStartWorkflowTests {
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { throw TestFailure.unusedResolver },
             resolveScheme: { _ in throw TestFailure.unusedResolver },
             resolveSimulator: { throw TestFailure.unusedResolver },
             validateTooling: {},
             validateProject: { project in
-                throw SmartContextError("Project path not found: \(project)")
+                throw ResolverError("Project path not found: \(project)")
             },
             validateResolvedScheme: { _, _ in },
             validateResolvedSimulator: { _ in },
@@ -703,14 +700,14 @@ struct DiagnosisStartWorkflowTests {
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { throw TestFailure.unusedResolver },
             resolveScheme: { _ in throw TestFailure.unusedResolver },
             resolveSimulator: { throw TestFailure.unusedResolver },
             validateTooling: {},
             validateProject: { _ in },
             validateResolvedScheme: { scheme, _ in
-                throw SmartContextError(
+                throw ResolverError(
                     """
                     Scheme '\(scheme)' was not found in MyApp.xcodeproj.
                     Available schemes:
@@ -752,12 +749,12 @@ struct DiagnosisStartWorkflowTests {
 
         let store = RunStore(baseDirectory: tempDir)
         let workflow = DiagnosisStartWorkflow(
-            session: isolatedSession(),
+            session: isolatedSession(baseDirectory: tempDir),
             resolveProject: { "/tmp/MyApp.xcodeproj" },
             resolveScheme: { _ in "MyApp" },
             resolveSimulator: { "SIM-123" },
             validateTooling: {
-                throw SmartContextError("Required tool 'simctl' is unavailable in the active developer environment: xcrun: error: unable to find utility \"simctl\"")
+                throw ResolverError("Required tool 'simctl' is unavailable in the active developer environment: xcrun: error: unable to find utility \"simctl\"")
             },
             validateProject: { _ in },
             validateResolvedScheme: { _, _ in },
@@ -812,8 +809,14 @@ struct DiagnosisStartWorkflowTests {
     }
 
     /// Creates a SessionState backed by a temp directory — no disk pollution.
-    private func isolatedSession() -> SessionState {
-        SessionState(defaultsStore: DefaultsStore(baseDirectory: makeTempDirectory()))
+    /// When `baseDirectory` is provided the DefaultsStore uses a subdirectory of
+    /// that path so cleanup is handled by the caller's existing `defer`.
+    /// When omitted a fresh temp directory is created; the caller must clean it up.
+    private func isolatedSession(baseDirectory: URL? = nil) -> SessionState {
+        let dir = baseDirectory ?? makeTempDirectory()
+        let defaultsDir = dir.appendingPathComponent("defaults", isDirectory: true)
+        try? FileManager.default.createDirectory(at: defaultsDir, withIntermediateDirectories: true, attributes: nil)
+        return SessionState(defaultsStore: DefaultsStore(baseDirectory: defaultsDir))
     }
 
     private func makePreparedSimulatorContext(

@@ -47,6 +47,9 @@ actor IndigoHIDClient {
     private var cachedPort: mach_port_t = mach_port_t(MACH_PORT_NULL)
     private var cachedUDID: String?
 
+    /// Serialization flag to prevent gesture interleaving from concurrent callers.
+    private var gestureInProgress = false
+
     /// Cached screen dimensions (points) for coordinate normalization.
     private var cachedScreenWidth: Double = 0
     private var cachedScreenHeight: Double = 0
@@ -70,6 +73,10 @@ actor IndigoHIDClient {
 
     /// Double-tap at point coordinates.
     func doubleTap(x: Double, y: Double, simulator: String = "booted") async throws {
+        while gestureInProgress { try await Task.sleep(nanoseconds: 1_000_000) }
+        gestureInProgress = true
+        defer { gestureInProgress = false }
+
         let port = try await resolvePort(simulator: simulator)
         let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y)
 
@@ -116,6 +123,10 @@ actor IndigoHIDClient {
         durationMs: Int = 300,
         simulator: String = "booted"
     ) async throws {
+        while gestureInProgress { try await Task.sleep(nanoseconds: 1_000_000) }
+        gestureInProgress = true
+        defer { gestureInProgress = false }
+
         let port = try await resolvePort(simulator: simulator)
         let (sxR, syR) = try normalizeCoordinates(x: startX, y: startY)
         let (exR, eyR) = try normalizeCoordinates(x: endX, y: endY)
@@ -289,7 +300,7 @@ actor IndigoHIDClient {
         }
         let xRatio = Float(x / cachedScreenWidth)
         let yRatio = Float(y / cachedScreenHeight)
-        return (xRatio, yRatio)
+        return (min(max(xRatio, 0), 1), min(max(yRatio, 0), 1))
     }
 
     // MARK: - Mach IPC
@@ -348,17 +359,20 @@ actor IndigoHIDClient {
             ptr.withMemoryRebound(to: mach_msg_header_t.self, capacity: 1) { headerPtr in
                 mach_msg(
                     headerPtr,
-                    MACH_SEND_MSG,
+                    Int32(MACH_SEND_MSG) | Int32(MACH_SEND_TIMEOUT),
                     IndigoMessage.messageSize,
                     0,
                     mach_port_t(MACH_PORT_NULL),
-                    MACH_MSG_TIMEOUT_NONE,
+                    5000,
                     mach_port_t(MACH_PORT_NULL)
                 )
             }
         }
 
         guard result == MACH_MSG_SUCCESS else {
+            if result == MACH_SEND_TIMED_OUT {
+                throw IndigoHIDError.sendTimedOut
+            }
             throw IndigoHIDError.machSendFailed(result)
         }
     }
@@ -485,6 +499,7 @@ actor IndigoHIDClient {
         case noBootedSimulator
         case portLookupFailed(String)
         case machSendFailed(kern_return_t)
+        case sendTimedOut
         case screenInfoUnavailable
 
         var description: String {
@@ -497,6 +512,8 @@ actor IndigoHIDClient {
                 return "IndigoHID port lookup failed: \(msg)"
             case .machSendFailed(let code):
                 return "Mach message send failed: \(code)"
+            case .sendTimedOut:
+                return "Mach message send timed out (5s)"
             case .screenInfoUnavailable:
                 return "Cannot determine screen dimensions for coordinate normalization"
             }

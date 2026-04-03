@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreImage
 import Foundation
 import IOSurface
+import os
 
 /// Direct Simulator framebuffer capture via CoreSimulator private APIs.
 /// Reads the IOSurface backing the Simulator display — no TCC, no background process.
@@ -54,6 +55,9 @@ enum CoreSimCapture {
     nonisolated(unsafe) private static var _cachedDescriptor: NSObject?
     nonisolated(unsafe) private static var _cachedSurfaceSelector: Selector?
     nonisolated(unsafe) private static var _cachedSimulator: String?
+
+    /// Protects all reads/writes to the 4 cached statics above.
+    nonisolated(unsafe) private static var _cacheLock = os_unfair_lock()
 
     /// Whether CoreSimulator frameworks are available.
     static var isAvailable: Bool {
@@ -117,25 +121,31 @@ enum CoreSimCapture {
     /// Get the IOSurface, reusing the cached descriptor path when possible.
     private static func getCachedSurface(simulator: String) throws -> IOSurfaceRef {
         // Fast path: reuse cached descriptor
+        os_unfair_lock_lock(&_cacheLock)
+        let cached: IOSurfaceRef?
         if simulator == _cachedSimulator,
-            let descriptor = _cachedDescriptor,
-            let surfaceSel = _cachedSurfaceSelector,
-            let result = descriptor.perform(surfaceSel)?.takeUnretainedValue()
+           let descriptor = _cachedDescriptor,
+           let surfaceSel = _cachedSurfaceSelector,
+           let result = descriptor.perform(surfaceSel)?.takeUnretainedValue()
         {
             let raw = Unmanaged.passUnretained(result).toOpaque()
             let ref = unsafeBitCast(raw, to: IOSurfaceRef.self)
-            if IOSurfaceGetWidth(ref) > 0 && IOSurfaceGetHeight(ref) > 0 {
-                return ref
-            }
+            cached = (IOSurfaceGetWidth(ref) > 0 && IOSurfaceGetHeight(ref) > 0) ? ref : nil
+        } else {
+            cached = nil
         }
+        os_unfair_lock_unlock(&_cacheLock)
+        if let cached { return cached }
 
         // Slow path: full traversal, then cache
         let device = try findDevice(simulator: simulator)
         let (surface, descriptor, surfaceSel) = try findFramebufferSurface(device: device)
 
+        os_unfair_lock_lock(&_cacheLock)
         _cachedDescriptor = descriptor
         _cachedSurfaceSelector = surfaceSel
         _cachedSimulator = simulator
+        os_unfair_lock_unlock(&_cacheLock)
 
         return surface
     }
@@ -143,7 +153,10 @@ enum CoreSimCapture {
     // MARK: - Service Context (cached)
 
     private static func getServiceContext() throws -> NSObject {
-        if let cached = _serviceContext { return cached }
+        os_unfair_lock_lock(&_cacheLock)
+        let cachedCtx = _serviceContext
+        os_unfair_lock_unlock(&_cacheLock)
+        if let cachedCtx { return cachedCtx }
 
         guard let ctxClass = NSClassFromString("SimServiceContext") as? NSObject.Type else {
             throw CaptureError.frameworkNotFound
@@ -162,7 +175,9 @@ enum CoreSimCapture {
                 "SimServiceContext creation failed: \(error?.localizedDescription ?? "unknown")")
         }
 
+        os_unfair_lock_lock(&_cacheLock)
         _serviceContext = serviceContext
+        os_unfair_lock_unlock(&_cacheLock)
         return serviceContext
     }
 

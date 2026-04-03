@@ -1118,7 +1118,7 @@ public struct DiagnosisStartWorkflow: Sendable {
         let result = try await Shell.run("/usr/bin/xcrun", arguments: ["--find", tool], timeout: 15)
         guard result.succeeded else {
             let detail = result.stderr.isEmpty ? result.stdout : result.stderr
-            throw SmartContextError(
+            throw ResolverError(
                 "Required tool '\(tool)' is unavailable in the active developer environment: \(detail.trimmingCharacters(in: .whitespacesAndNewlines))"
             )
         }

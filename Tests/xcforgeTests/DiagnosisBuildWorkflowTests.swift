@@ -310,7 +310,7 @@ struct DiagnosisBuildWorkflowTests {
             loadRun: { runId in try store.load(runId: runId) },
             persistRun: { run in try store.update(run) },
             executeBuild: { _ in
-                throw SmartContextError("xcodebuild invocation crashed")
+                throw ResolverError("xcodebuild invocation crashed")
             }
         )
 

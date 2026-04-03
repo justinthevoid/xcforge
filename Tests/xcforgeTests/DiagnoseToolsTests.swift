@@ -56,7 +56,9 @@ struct DiagnoseToolsTests {
 
     @Test("diagnose_start with no args returns structured JSON result")
     func diagnoseStartReturnsJSON() async {
-        let result = await DiagnoseTools.diagnoseStart(nil, session: SessionState(defaultsStore: DefaultsStore(baseDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))))
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let result = await DiagnoseTools.diagnoseStart(nil, session: SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir)))
         let text = extractText(result)
         let json = text.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
         #expect(json?["schemaVersion"] as? String == WorkflowRunRecord.currentSchemaVersion)
@@ -116,7 +118,9 @@ struct DiagnoseToolsTests {
     func mcpStartMatchesCLIEncoding() async {
         // Both paths must share the same session so resolved context is identical.
         // JSON still differs in runId/attemptId (unique per call), so compare structure not exact strings.
-        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)))
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir))
 
         let request = DiagnosisStartRequest()
         let workflow = DiagnosisStartWorkflow(session: session)

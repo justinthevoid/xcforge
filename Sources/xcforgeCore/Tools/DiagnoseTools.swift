@@ -221,6 +221,9 @@ enum DiagnoseTools {
         switch ToolInput.decode(RunIdInput.self, from: args) {
         case .failure(let err): return err
         case .success(let input):
+            guard !input.run_id.isEmpty else {
+                return .fail("run_id must not be empty")
+            }
             let workflow = DiagnosisBuildWorkflow()
             let result = await workflow.diagnose(
                 request: DiagnosisBuildRequest(runId: input.run_id)
@@ -233,6 +236,9 @@ enum DiagnoseTools {
         switch ToolInput.decode(RunIdInput.self, from: args) {
         case .failure(let err): return err
         case .success(let input):
+            guard !input.run_id.isEmpty else {
+                return .fail("run_id must not be empty")
+            }
             let workflow = DiagnosisTestWorkflow()
             let result = await workflow.diagnose(
                 request: DiagnosisTestRequest(runId: input.run_id)
@@ -245,6 +251,9 @@ enum DiagnoseTools {
         switch ToolInput.decode(RuntimeInput.self, from: args) {
         case .failure(let err): return err
         case .success(let input):
+            guard !input.run_id.isEmpty else {
+                return .fail("run_id must not be empty")
+            }
             let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
             let result = await workflow.diagnose(
                 request: DiagnosisRuntimeRequest(
@@ -284,6 +293,9 @@ enum DiagnoseTools {
         switch ToolInput.decode(VerifyInput.self, from: args) {
         case .failure(let err): return err
         case .success(let input):
+            guard !input.run_id.isEmpty else {
+                return .fail("run_id must not be empty")
+            }
             let workflow = DiagnosisVerifyWorkflow()
             let result = await workflow.verify(
                 request: DiagnosisVerifyRequest(

@@ -91,7 +91,7 @@ struct DiagnosisRuntimeWorkflowTests {
             persistRun: { run in try store.update(run) },
             resolveSimulator: { $0 },
             captureRuntime: { _, _ in
-                throw SmartContextError("Simulator runtime services are unavailable")
+                throw ResolverError("Simulator runtime services are unavailable")
             },
             captureScreenshot: { _, _ in
                 ScreenshotTools.WorkflowCaptureResult(
@@ -319,7 +319,7 @@ struct DiagnosisRuntimeWorkflowTests {
                         combinedText: ""
                     )
                 }
-                throw SmartContextError("launchctl continuity probe failed")
+                throw ResolverError("launchctl continuity probe failed")
             },
             resetRuntimeContinuity: { simulatorUDID, bundleId, _ in
                 SimTools.RuntimeContinuityReset(
@@ -657,7 +657,7 @@ struct DiagnosisRuntimeWorkflowTests {
             loadRun: { runId in try store.load(runId: runId) },
             persistRun: { run in try store.update(run) },
             resolveSimulator: { _ in
-                throw SmartContextError("Simulator device is unavailable")
+                throw ResolverError("Simulator device is unavailable")
             },
             captureRuntime: { _, _ in
                 throw LocalTestFailure.unusedResolver

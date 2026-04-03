@@ -31,6 +31,7 @@ public enum ToolRegistry {
                 return result
             }
         }
+        Log.warn("Unknown tool: \(name)")
         return .fail("Unknown tool: \(name)")
     }
 }

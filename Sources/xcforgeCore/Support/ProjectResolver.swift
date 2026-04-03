@@ -1,13 +1,13 @@
 import Foundation
 
 /// Error with a rich message for LLM consumption (e.g. lists available options).
-struct SmartContextError: Error, CustomStringConvertible {
+struct ResolverError: Error, CustomStringConvertible {
     let description: String
     init(_ message: String) { self.description = message }
 }
 
 /// Zero-config auto-detection for project, scheme, and simulator.
-/// Throws SmartContextError with rich messages when ambiguous.
+/// Throws ResolverError with rich messages when ambiguous.
 enum AutoDetect {
 
     private struct SimulatorDevice: Sendable {
@@ -27,11 +27,11 @@ enum AutoDetect {
         )
         let normalizedLower = normalized.lowercased()
         guard normalizedLower.hasSuffix(".xcodeproj") || normalizedLower.hasSuffix(".xcworkspace") else {
-            throw SmartContextError("Project path must point to a .xcodeproj or .xcworkspace: \(project)")
+            throw ResolverError("Project path must point to a .xcodeproj or .xcworkspace: \(project)")
         }
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: normalized, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw SmartContextError("Project path not found: \(project)")
+            throw ResolverError("Project path not found: \(project)")
         }
     }
 
@@ -45,7 +45,7 @@ enum AutoDetect {
                     lines.append("  \(candidate)")
                 }
             }
-            throw SmartContextError(lines.joined(separator: "\n"))
+            throw ResolverError(lines.joined(separator: "\n"))
         }
     }
 
@@ -110,7 +110,7 @@ enum AutoDetect {
 
         switch candidates.count {
         case 0:
-            throw SmartContextError("No Xcode project found in \(cwd). Pass project explicitly.")
+            throw ResolverError("No Xcode project found in \(cwd). Pass project explicitly.")
         case 1:
             return candidates[0]
         default:
@@ -119,7 +119,7 @@ enum AutoDetect {
                 let short = (p as NSString).lastPathComponent
                 lines.append("  \(short) — \(p)")
             }
-            throw SmartContextError(lines.joined(separator: "\n"))
+            throw ResolverError(lines.joined(separator: "\n"))
         }
     }
 
@@ -135,7 +135,7 @@ enum AutoDetect {
         default:
             var lines = ["\(schemes.count) schemes found — specify which one:"]
             for s in schemes { lines.append("  \(s)") }
-            throw SmartContextError(lines.joined(separator: "\n"))
+            throw ResolverError(lines.joined(separator: "\n"))
         }
     }
 
@@ -150,13 +150,13 @@ enum AutoDetect {
         guard result.succeeded,
               let data = result.stdout.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SmartContextError("Failed to list schemes for \((project as NSString).lastPathComponent)")
+            throw ResolverError("Failed to list schemes for \((project as NSString).lastPathComponent)")
         }
 
         let key = isWorkspace ? "workspace" : "project"
         guard let info = json[key] as? [String: Any],
               let schemes = info["schemes"] as? [String], !schemes.isEmpty else {
-            throw SmartContextError("No schemes in \((project as NSString).lastPathComponent). Pass scheme explicitly.")
+            throw ResolverError("No schemes in \((project as NSString).lastPathComponent). Pass scheme explicitly.")
         }
 
         return schemes
@@ -255,7 +255,7 @@ enum AutoDetect {
         if exactMatches.count == 1 {
             let exactMatch = exactMatches[0]
             guard exactMatch.isAvailable else {
-                throw SmartContextError(
+                throw ResolverError(
                     "Simulator '\(simulator)' is not available for this workflow context.\nMatched simulator:\n  \(Self.describe(exactMatch))"
                 )
             }
@@ -267,7 +267,7 @@ enum AutoDetect {
             for match in exactMatches {
                 lines.append("  \(Self.describe(match))")
             }
-            throw SmartContextError(lines.joined(separator: "\n"))
+            throw ResolverError(lines.joined(separator: "\n"))
         }
 
         var lines = ["Simulator '\(simulator)' is not available for this workflow context."]
@@ -277,7 +277,7 @@ enum AutoDetect {
                 lines.append("  \(match)")
             }
         }
-        throw SmartContextError(lines.joined(separator: "\n"))
+        throw ResolverError(lines.joined(separator: "\n"))
     }
 
     private static func resolveBootedSimulatorDevice(from devices: [SimulatorDevice]? = nil) async throws -> SimulatorDevice {
@@ -291,7 +291,7 @@ enum AutoDetect {
 
         switch booted.count {
         case 0:
-            throw SmartContextError("No booted simulator found. Boot one with boot_sim or pass simulator explicitly.")
+            throw ResolverError("No booted simulator found. Boot one with boot_sim or pass simulator explicitly.")
         case 1:
             return booted[0]
         default:
@@ -299,7 +299,7 @@ enum AutoDetect {
             for sim in booted {
                 lines.append("  \(Self.describe(sim))")
             }
-            throw SmartContextError(lines.joined(separator: "\n"))
+            throw ResolverError(lines.joined(separator: "\n"))
         }
     }
 
@@ -308,14 +308,14 @@ enum AutoDetect {
         do {
             shellResult = try await Shell.xcrun(timeout: 15, "simctl", "list", "devices", "-j")
         } catch {
-            throw SmartContextError("Simulator validation failed: \(error)")
+            throw ResolverError("Simulator validation failed: \(error)")
         }
 
         guard shellResult.succeeded,
               let data = shellResult.stdout.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let devices = json["devices"] as? [String: [[String: Any]]] else {
-            throw SmartContextError("Failed to parse simulator list")
+            throw ResolverError("Failed to parse simulator list")
         }
 
         var results: [SimulatorDevice] = []
@@ -363,7 +363,7 @@ enum AutoDetect {
         do {
             bootResult = try await Shell.xcrun(timeout: 60, "simctl", "boot", device.udid)
         } catch {
-            throw SmartContextError(
+            throw ResolverError(
                 "Simulator '\(requested)' resolved to \(describe(device)) but could not be prepared for this workflow: \(error)"
             )
         }
@@ -371,7 +371,7 @@ enum AutoDetect {
         let alreadyBooted = bootResult.stderr.contains("current state: Booted")
         guard bootResult.succeeded || alreadyBooted else {
             let detail = bootResult.stderr.isEmpty ? "simctl boot returned a non-zero status." : bootResult.stderr
-            throw SmartContextError(
+            throw ResolverError(
                 "Simulator '\(requested)' resolved to \(describe(device)) but could not be prepared for this workflow: \(detail)"
             )
         }
@@ -388,14 +388,14 @@ enum AutoDetect {
         do {
             _ = try await Shell.xcrun(timeout: 30, "simctl", "bootstatus", device.udid, "-b")
         } catch {
-            throw SmartContextError(
+            throw ResolverError(
                 "Simulator '\(requested)' resolved to \(describe(device)) but could not be prepared for this workflow: \(error)"
             )
         }
 
         let refreshed = try await resolveSimulatorDevice(device.udid)
         guard refreshed.state == "Booted" else {
-            throw SmartContextError(
+            throw ResolverError(
                 "Simulator '\(requested)' resolved to \(describe(device)) but could not be prepared for this workflow: selected target remained \(describe(refreshed))."
             )
         }

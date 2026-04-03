@@ -374,23 +374,10 @@ extension DiagnosisFinalResult {
     func withDerivedFollowOnAction() -> DiagnosisFinalResult {
         guard followOnAction == nil else { return self }
         let derived = Self.deriveFollowOnAction(for: self)
-        guard derived != nil else { return self }
-        return DiagnosisFinalResult(
-            phase: phase,
-            status: status,
-            runId: runId,
-            attemptId: attemptId,
-            sourceAttemptId: sourceAttemptId,
-            summary: summary,
-            recoveryHistory: recoveryHistory,
-            currentAttempt: currentAttempt,
-            sourceAttempt: sourceAttempt,
-            comparison: comparison,
-            comparisonNote: comparisonNote,
-            followOnAction: derived,
-            failure: failure,
-            persistedRunPath: persistedRunPath
-        )
+        guard let derived else { return self }
+        var result = self
+        result.followOnAction = derived
+        return result
     }
 
     private static func deriveFollowOnAction(for result: DiagnosisFinalResult) -> WorkflowFollowOnAction? {

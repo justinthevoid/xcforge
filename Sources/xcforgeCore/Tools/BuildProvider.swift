@@ -236,14 +236,7 @@ public enum BuildTools {
             let structured = extractStructuredErrors(stderr: result.stderr, failureReason: reason)
 
             // Keep legacy errors field for backward compat
-            let errorLines = result.stderr.split(separator: "\n")
-                .filter { $0.contains(": error:") }
-                .prefix(20)
-                .map(String.init)
-            let stderrTail = String(result.stderr.suffix(2000))
-            let errors = errorLines.isEmpty
-                ? (stderrTail.isEmpty ? [] : [stderrTail])
-                : Array(errorLines)
+            let errors = extractLegacyErrors(from: result.stderr)
 
             return BuildExecution(
                 succeeded: false,
@@ -291,6 +284,17 @@ public enum BuildTools {
         }
     }
 
+    private static func extractLegacyErrors(from stderr: String) -> [String] {
+        let errorLines = stderr.split(separator: "\n")
+            .filter { $0.contains(": error:") }
+            .prefix(20)
+            .map(String.init)
+        let stderrTail = String(stderr.suffix(2000))
+        return errorLines.isEmpty
+            ? (stderrTail.isEmpty ? [] : [stderrTail])
+            : Array(errorLines)
+    }
+
     static func formatBuildFailure(_ execution: BuildExecution) -> String {
         var lines: [String] = []
         lines.append("Build FAILED in \(execution.elapsed)s")
@@ -301,6 +305,7 @@ public enum BuildTools {
 
         lines.append("Scheme: \(execution.scheme)")
         lines.append("Simulator: \(execution.simulator)")
+        lines.append("Configuration: \(execution.configuration)")
 
         if let structured = execution.structuredErrors, !structured.isEmpty {
             lines.append("")
@@ -310,7 +315,10 @@ public enum BuildTools {
             }
         } else if !execution.errors.isEmpty {
             lines.append("")
-            lines.append(execution.errors.joined(separator: "\n"))
+            lines.append("Errors (\(execution.errors.count)):")
+            for error in execution.errors {
+                lines.append("  \(error)")
+            }
         }
 
         return lines.joined(separator: "\n")
@@ -437,14 +445,7 @@ public enum BuildTools {
         guard buildResult.succeeded else {
             let reason = classifyFailureReason(stderr: buildResult.stderr)
             let structured = extractStructuredErrors(stderr: buildResult.stderr, failureReason: reason)
-            let errorLines = buildResult.stderr.split(separator: "\n")
-                .filter { $0.contains(": error:") }
-                .prefix(20)
-                .map(String.init)
-            let stderrTail = String(buildResult.stderr.suffix(2000))
-            let legacyErrors = errorLines.isEmpty
-                ? (stderrTail.isEmpty ? [] : [stderrTail])
-                : Array(errorLines)
+            let legacyErrors = extractLegacyErrors(from: buildResult.stderr)
 
             let execution = BuildExecution(
                 succeeded: false,
@@ -625,7 +626,7 @@ public enum BuildTools {
 
         guard result.succeeded else {
             let details = result.stderr.isEmpty ? result.stdout : result.stderr
-            throw SmartContextError("Unable to resolve app context for \(scheme): \(details.trimmingCharacters(in: .whitespacesAndNewlines))")
+            throw ResolverError("Unable to resolve app context for \(scheme): \(details.trimmingCharacters(in: .whitespacesAndNewlines))")
         }
 
         var bundleId: String?
@@ -644,10 +645,10 @@ public enum BuildTools {
         }
 
         guard let bundleId else {
-            throw SmartContextError("Build settings did not contain PRODUCT_BUNDLE_IDENTIFIER for \(scheme)")
+            throw ResolverError("Build settings did not contain PRODUCT_BUNDLE_IDENTIFIER for \(scheme)")
         }
         guard let builtProductsDir, let fullProductName else {
-            throw SmartContextError("Build settings did not contain an app product path for \(scheme)")
+            throw ResolverError("Build settings did not contain an app product path for \(scheme)")
         }
 
         return BuildProductInfo(bundleId: bundleId, appPath: "\(builtProductsDir)/\(fullProductName)")

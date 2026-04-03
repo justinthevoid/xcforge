@@ -1091,7 +1091,7 @@ public enum TestTools {
         guard let coverageJSON = await parseCoverage(resolvedPath, env: env),
               let data = coverageJSON.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw SmartContextError("Failed to parse coverage from \(resolvedPath). Was coverage enabled during the test run?")
+            throw ResolverError("Failed to parse coverage from \(resolvedPath). Was coverage enabled during the test run?")
         }
 
         let overallCoverage = json["lineCoverage"] as? Double
@@ -1135,15 +1135,15 @@ public enum TestTools {
                 timeout: 30
             )
         } catch {
-            throw SmartContextError("xccov error for '\(file)': \(error)")
+            throw ResolverError("xccov error for '\(file)': \(error)")
         }
         guard result.succeeded, !result.stdout.isEmpty else {
-            throw SmartContextError("No coverage data for '\(file)'. File not in coverage report or coverage not enabled.\n\(result.stderr)")
+            throw ResolverError("No coverage data for '\(file)'. File not in coverage report or coverage not enabled.\n\(result.stderr)")
         }
 
         guard let data = result.stdout.data(using: .utf8),
               let raw = try? JSONSerialization.jsonObject(with: data) else {
-            throw SmartContextError("Failed to parse xccov JSON for '\(file)'")
+            throw ResolverError("Failed to parse xccov JSON for '\(file)'")
         }
 
         var fileObjects: [[String: Any]] = []
@@ -1166,7 +1166,7 @@ public enum TestTools {
 
         guard let fileObj = matched.first else {
             let available = fileObjects.compactMap { $0["name"] as? String }.prefix(10)
-            throw SmartContextError("'\(file)' not found in coverage. Available: \(available.joined(separator: ", "))")
+            throw ResolverError("'\(file)' not found in coverage. Available: \(available.joined(separator: ", "))")
         }
 
         let fileName = (fileObj["name"] as? String) ?? file
@@ -1311,6 +1311,20 @@ public enum TestTools {
         let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
         let projectFlag = isWorkspace ? "-workspace" : "-project"
 
+        // Verify Xcode 16+ is available (required for -enumerate-tests)
+        let xcodeVersionResult = try await env.shell.run(
+            "/usr/bin/xcodebuild", arguments: ["-version"], timeout: 10
+        )
+        if let versionLine = xcodeVersionResult.stdout.split(separator: "\n").first,
+           let versionString = versionLine.split(separator: " ").last,
+           let majorVersion = Int(versionString.split(separator: ".").first ?? "") {
+            guard majorVersion >= 16 else {
+                throw ResolverError("-enumerate-tests requires Xcode 16 or later (found Xcode \(majorVersion))")
+            }
+        } else {
+            Log.warn("Could not parse Xcode version from: \(xcodeVersionResult.stdout.prefix(100))")
+        }
+
         // xcodebuild test -enumerate-tests builds for testing then lists tests without running them
         let enumerateResult = try await env.shell.run(
             "/usr/bin/xcodebuild", arguments: [
@@ -1329,7 +1343,7 @@ public enum TestTools {
                 .prefix(10)
                 .map(String.init)
             let detail = errorLines.isEmpty ? String(enumerateResult.stderr.suffix(1000)) : errorLines.joined(separator: "\n")
-            throw SmartContextError("enumerate-tests failed:\n\(detail)")
+            throw ResolverError("enumerate-tests failed:\n\(detail)")
         }
 
         var tests: [TestIdentifier] = []
@@ -1396,12 +1410,12 @@ public enum TestTools {
         if tests.isEmpty {
             let testTargets = try await AutoDetect.testTargets(project: resolvedProject, env: env)
             if !testTargets.isEmpty {
-                throw SmartContextError(
+                throw ResolverError(
                     "Could not enumerate individual tests, but found test targets: \(testTargets.joined(separator: ", ")). " +
                     "Use these as filter prefixes, e.g. filter: \"\(testTargets[0])/YourTestClass/testMethodName\""
                 )
             }
-            throw SmartContextError("No tests found for scheme '\(resolvedScheme)'.")
+            throw ResolverError("No tests found for scheme '\(resolvedScheme)'.")
         }
 
         return ListTestsResult(

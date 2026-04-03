@@ -1517,7 +1517,7 @@ public struct DiagnosisFinalResult: Codable, Sendable, Equatable {
     public let sourceAttempt: DiagnosisCompareAttemptSnapshot?
     public let comparison: DiagnosisFinalComparison?
     public let comparisonNote: String?
-    public let followOnAction: WorkflowFollowOnAction?
+    public var followOnAction: WorkflowFollowOnAction?
     public let failure: WorkflowFailure?
     public let persistedRunPath: String?
 
