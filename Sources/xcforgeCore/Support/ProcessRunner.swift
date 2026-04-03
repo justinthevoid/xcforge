@@ -120,12 +120,16 @@ public struct LiveShell: ShellExecutor {
 
 public enum Shell {
     /// Run a command with arguments, returning stdout/stderr/exitCode.
+    /// Maximum bytes of stdout/stderr to retain. Default 2 MB.
+    static let defaultOutputLimit = 2 * 1024 * 1024
+
     static func run(
         _ executable: String,
         arguments: [String],
         workingDirectory: String? = nil,
         environment: [String: String]? = nil,
-        timeout: TimeInterval = 300
+        timeout: TimeInterval = 300,
+        outputLimit: Int = Shell.defaultOutputLimit
     ) async throws -> ShellResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -169,11 +173,11 @@ public enum Shell {
             kill(pid, SIGKILL)
         }
 
-        // Read output concurrently
-        async let stdoutData = stdoutPipe.fileHandleForReading.readToEndAsync()
-        async let stderrData = stderrPipe.fileHandleForReading.readToEndAsync()
+        // Read output concurrently, capping retained data to avoid OOM on large builds
+        async let stdoutData = stdoutPipe.fileHandleForReading.readTailAsync(limit: outputLimit)
+        async let stderrData = stderrPipe.fileHandleForReading.readTailAsync(limit: outputLimit)
 
-        let (out, err) = try await (stdoutData, stderrData)
+        let (out, err) = await (stdoutData, stderrData)
 
         // Await process exit without blocking the cooperative thread pool.
         // Note: for-await on AsyncStream breaks early if the Task is cancelled
@@ -223,11 +227,36 @@ public enum Shell {
 // MARK: - FileHandle async read
 
 extension FileHandle {
-    func readToEndAsync() async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+    /// Read pipe data incrementally, retaining only the last `limit` bytes.
+    /// Prevents unbounded memory growth when subprocesses emit large output
+    /// (e.g. xcodebuild builds that produce hundreds of MB).
+    func readTailAsync(limit: Int) async -> Data {
+        precondition(limit > 0, "outputLimit must be positive")
+        return await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                let data = self.readDataToEndOfFile()
-                continuation.resume(returning: data)
+                var tail = Data()
+                while true {
+                    let chunk = self.availableData
+                    if chunk.isEmpty { break }
+                    tail.append(chunk)
+                    if tail.count > limit {
+                        tail = Data(tail.suffix(limit))
+                    }
+                }
+                // Align to a valid UTF-8 start byte so String(data:encoding:)
+                // doesn't return nil when truncation splits a multi-byte character.
+                if tail.count == limit {
+                    var dropCount = 0
+                    for byte in tail {
+                        if byte & 0xC0 != 0x80 { break } // found a non-continuation byte
+                        dropCount += 1
+                        if dropCount >= 4 { break } // max UTF-8 sequence is 4 bytes
+                    }
+                    if dropCount > 0 {
+                        tail = Data(tail.dropFirst(dropCount))
+                    }
+                }
+                continuation.resume(returning: tail)
             }
         }
     }
