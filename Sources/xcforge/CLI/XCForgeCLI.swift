@@ -516,7 +516,11 @@ func runAsync(_ operation: @escaping @Sendable () async throws -> Void) throws {
         }
     }
 
-    semaphore.wait()
+    let timeoutSeconds = 120
+    let waitResult = semaphore.wait(timeout: .now() + .seconds(timeoutSeconds))
+    if waitResult == .timedOut {
+        throw ValidationError("Async operation timed out after \(timeoutSeconds) seconds")
+    }
 
     if case let .failure(error) = box.result {
         throw error

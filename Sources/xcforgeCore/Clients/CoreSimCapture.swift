@@ -142,6 +142,18 @@ enum CoreSimCapture {
         let (surface, descriptor, surfaceSel) = try findFramebufferSurface(device: device)
 
         os_unfair_lock_lock(&_cacheLock)
+        if simulator == _cachedSimulator,
+           let existingDesc = _cachedDescriptor,
+           let existingSel = _cachedSurfaceSelector,
+           let result = existingDesc.perform(existingSel)?.takeUnretainedValue()
+        {
+            let raw = Unmanaged.passUnretained(result).toOpaque()
+            let ref = unsafeBitCast(raw, to: IOSurfaceRef.self)
+            if IOSurfaceGetWidth(ref) > 0 && IOSurfaceGetHeight(ref) > 0 {
+                os_unfair_lock_unlock(&_cacheLock)
+                return ref
+            }
+        }
         _cachedDescriptor = descriptor
         _cachedSurfaceSelector = surfaceSel
         _cachedSimulator = simulator
@@ -176,6 +188,10 @@ enum CoreSimCapture {
         }
 
         os_unfair_lock_lock(&_cacheLock)
+        if let existing = _serviceContext {
+            os_unfair_lock_unlock(&_cacheLock)
+            return existing
+        }
         _serviceContext = serviceContext
         os_unfair_lock_unlock(&_cacheLock)
         return serviceContext

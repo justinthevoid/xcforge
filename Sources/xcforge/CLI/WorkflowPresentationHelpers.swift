@@ -2,6 +2,14 @@ import Foundation
 import xcforgeCore
 
 enum WorkflowPresentationHelpers {
+    private static func sanitizeField(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: " | ", with: " / ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func phaseLabel(_ phase: WorkflowPhase?) -> String {
         guard let phase else { return "diagnosis" }
 
@@ -171,10 +179,11 @@ enum WorkflowPresentationHelpers {
     static func formatEvidenceRecord(_ record: WorkflowEvidenceRecord, layout: TerminalLayout, indent: String = "    ") -> String {
         let reference: String
         if let recordReference = record.reference, !recordReference.isEmpty {
-            reference = recordReference
+            reference = sanitizeField(recordReference)
         } else {
             reference = "<missing>"
         }
+        let source = sanitizeField(record.source)
 
         switch layout {
         case .narrow:
@@ -183,14 +192,14 @@ enum WorkflowPresentationHelpers {
                 "\(indent)  phase: \(record.phase.rawValue)",
                 "\(indent)  attempt: \(record.attemptNumber)",
                 "\(indent)  state: \(record.availabilityLabel)",
-                "\(indent)  source: \(record.source)",
+                "\(indent)  source: \(source)",
                 "\(indent)  reference: \(reference)",
             ].joined(separator: "\n")
         case .medium:
             return "\(indent)- \(record.kind.rawValue) | phase=\(record.phase.rawValue) | attempt=\(record.attemptNumber)"
-                + "\n\(indent)  state=\(record.availabilityLabel) | source=\(record.source) | reference=\(reference)"
+                + "\n\(indent)  state=\(record.availabilityLabel) | source=\(source) | reference=\(reference)"
         case .wide:
-            return "\(indent)- \(record.kind.rawValue) | phase=\(record.phase.rawValue) | attempt=\(record.attemptNumber) | state=\(record.availabilityLabel) | source=\(record.source) | reference=\(reference)"
+            return "\(indent)- \(record.kind.rawValue) | phase=\(record.phase.rawValue) | attempt=\(record.attemptNumber) | state=\(record.availabilityLabel) | source=\(source) | reference=\(reference)"
         }
     }
 
@@ -199,14 +208,14 @@ enum WorkflowPresentationHelpers {
             ("phase", record.phase.rawValue),
             ("attempt", "\(record.attemptNumber)"),
             ("state", record.availabilityLabel),
-            ("source", record.source),
+            ("source", sanitizeField(record.source)),
             ("producing step", record.producingWorkflowStep),
         ]
         if let reason = record.unavailableReasonLabel {
-            fields.append(("reason", reason))
+            fields.append(("reason", sanitizeField(reason)))
         }
         if let detail = record.detail {
-            fields.append(("detail", detail))
+            fields.append(("detail", sanitizeField(detail)))
         }
 
         switch layout {
@@ -229,14 +238,6 @@ enum WorkflowPresentationHelpers {
     }
 
     static func formatRecoveryRecord(_ recovery: WorkflowRecoveryRecord, layout: TerminalLayout, indent: String = "  ") -> String {
-        let sanitize = { (value: String) -> String in
-            value
-                .replacingOccurrences(of: "\r\n", with: " ")
-                .replacingOccurrences(of: "\n", with: " ")
-                .replacingOccurrences(of: " | ", with: " / ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
         switch layout {
         case .narrow:
             var lines = [
@@ -245,20 +246,20 @@ enum WorkflowPresentationHelpers {
                 "\(indent)  action: \(recovery.action.label)",
                 "\(indent)  status: \(recovery.status.rawValue)",
                 "\(indent)  resumed: \(recovery.resumed ? "yes" : "no")",
-                "\(indent)  detected: \(sanitize(recovery.detectedIssue))",
-                "\(indent)  summary: \(sanitize(recovery.summary))",
+                "\(indent)  detected: \(sanitizeField(recovery.detectedIssue))",
+                "\(indent)  summary: \(sanitizeField(recovery.summary))",
             ]
             if let detail = recovery.detail {
-                lines.append("\(indent)  detail: \(sanitize(detail))")
+                lines.append("\(indent)  detail: \(sanitizeField(detail))")
             }
             return lines.joined(separator: "\n")
         case .medium:
             let line1 = "\(indent)- \(recovery.recoveryId) | issue=\(recovery.issue.label) | action=\(recovery.action.label)"
             var line2 = "\(indent)  status=\(recovery.status.rawValue) | resumed=\(recovery.resumed ? "yes" : "no")"
-            line2 += " | detected=\(sanitize(recovery.detectedIssue))"
-            var line3 = "\(indent)  summary=\(sanitize(recovery.summary))"
+            line2 += " | detected=\(sanitizeField(recovery.detectedIssue))"
+            var line3 = "\(indent)  summary=\(sanitizeField(recovery.summary))"
             if let detail = recovery.detail {
-                line3 += " | detail=\(sanitize(detail))"
+                line3 += " | detail=\(sanitizeField(detail))"
             }
             return [line1, line2, line3].joined(separator: "\n")
         case .wide:
@@ -267,10 +268,10 @@ enum WorkflowPresentationHelpers {
             line += " | action=\(recovery.action.label)"
             line += " | status=\(recovery.status.rawValue)"
             line += " | resumed=\(recovery.resumed ? "yes" : "no")"
-            line += " | detected=\(sanitize(recovery.detectedIssue))"
-            line += " | summary=\(sanitize(recovery.summary))"
+            line += " | detected=\(sanitizeField(recovery.detectedIssue))"
+            line += " | summary=\(sanitizeField(recovery.summary))"
             if let detail = recovery.detail {
-                line += " | detail=\(sanitize(detail))"
+                line += " | detail=\(sanitizeField(detail))"
             }
             return line
         }
