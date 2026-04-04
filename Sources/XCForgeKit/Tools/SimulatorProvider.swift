@@ -656,8 +656,7 @@ public enum SimTools {
     }
   }
 
-  public static func executeSetOrientation(orientation: String, env: Environment) async -> SimResult
-  {
+  public static func executeSetOrientation(orientation: String, env: Environment) async -> SimResult {
     do {
       let result = try await env.wdaClient.setOrientation(orientation)
       return SimResult(succeeded: true, message: "Orientation set to \(result)")

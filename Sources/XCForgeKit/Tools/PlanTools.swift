@@ -93,8 +93,7 @@ public enum PlanTools {
     }
   }
 
-  private static func runPlanImpl(_ input: RunPlanInput, env: Environment) async -> CallTool.Result
-  {
+  private static func runPlanImpl(_ input: RunPlanInput, env: Environment) async -> CallTool.Result {
     // Parse steps
     let steps: [PlanStep]
     do {

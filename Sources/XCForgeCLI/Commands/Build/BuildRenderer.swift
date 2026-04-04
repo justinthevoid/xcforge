@@ -49,8 +49,7 @@ enum BuildRenderer {
     let status = execution.succeeded ? "SUCCEEDED" : "FAILED"
     lines.append("Build \(status) in \(execution.elapsed)s")
 
-    if execution.errorCount > 0 || execution.warningCount > 0 || execution.analyzerWarningCount > 0
-    {
+    if execution.errorCount > 0 || execution.warningCount > 0 || execution.analyzerWarningCount > 0 {
       var parts: [String] = []
       if execution.errorCount > 0 { parts.append("\(execution.errorCount) error(s)") }
       if execution.warningCount > 0 { parts.append("\(execution.warningCount) warning(s)") }

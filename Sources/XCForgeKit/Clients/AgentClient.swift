@@ -778,8 +778,7 @@ public actor WDAClient {
   }
 
   /// Accept the current alert or all visible alerts.
-  public func acceptAlert(buttonLabel: String? = nil, all: Bool = false) async throws -> AlertInfo?
-  {
+  public func acceptAlert(buttonLabel: String? = nil, all: Bool = false) async throws -> AlertInfo? {
     let sid = try await ensureSession()
     var body: [String: Any] = [:]
     if let label = buttonLabel { body["name"] = label }
@@ -796,8 +795,7 @@ public actor WDAClient {
   }
 
   /// Dismiss the current alert or all visible alerts.
-  public func dismissAlert(buttonLabel: String? = nil, all: Bool = false) async throws -> AlertInfo?
-  {
+  public func dismissAlert(buttonLabel: String? = nil, all: Bool = false) async throws -> AlertInfo? {
     let sid = try await ensureSession()
     var body: [String: Any] = [:]
     if let label = buttonLabel { body["name"] = label }

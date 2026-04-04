@@ -207,8 +207,7 @@ enum ConsoleTools {
     let stream: String?
   }
 
-  static func launchAppConsole(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func launchAppConsole(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(LaunchConsoleInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):

@@ -227,8 +227,7 @@ public enum Shell {
   }
 
   /// Convenience for xcrun commands. Accepts an optional timeout (default: 300s).
-  static func xcrun(timeout: TimeInterval = 300, _ arguments: String...) async throws -> ShellResult
-  {
+  static func xcrun(timeout: TimeInterval = 300, _ arguments: String...) async throws -> ShellResult {
     try await run("/usr/bin/xcrun", arguments: Array(arguments), timeout: timeout)
   }
 

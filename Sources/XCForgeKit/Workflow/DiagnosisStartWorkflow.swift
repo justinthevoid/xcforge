@@ -1078,8 +1078,7 @@ public struct DiagnosisStartWorkflow: Sendable {
     return .resolutionFailed
   }
 
-  private static func classifySchemeValidationError(_ error: Error) -> WorkflowFailureClassification
-  {
+  private static func classifySchemeValidationError(_ error: Error) -> WorkflowFailureClassification {
     let message = "\(error)".lowercased()
     if message.contains("not found") {
       return .notFound

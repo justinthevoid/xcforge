@@ -407,8 +407,7 @@ public enum BuildTools {
     }
   }
 
-  static func discoverProjects(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func discoverProjects(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(DiscoverInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):

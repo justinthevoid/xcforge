@@ -128,8 +128,7 @@ enum DiagnosisCompareRenderer {
     }
   }
 
-  private static func renderArtifactLine(_ record: WorkflowEvidenceRecord, indent: String) -> String
-  {
+  private static func renderArtifactLine(_ record: WorkflowEvidenceRecord, indent: String) -> String {
     let reference = record.reference ?? "unavailable"
     return
       "\(indent)- \(record.kind.rawValue) | phase=\(record.phase.rawValue) | attempt=\(record.attemptNumber) | state=\(record.availabilityLabel) | source=\(record.source) | reference=\(reference)"

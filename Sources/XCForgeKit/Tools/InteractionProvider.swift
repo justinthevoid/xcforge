@@ -662,8 +662,7 @@ enum UITools {
     }
   }
 
-  static func findElements(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result
-  {
+  static func findElements(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
     switch ToolInput.decode(FindElementsInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
@@ -877,8 +876,7 @@ enum UITools {
 
   // MARK: - Clipboard Tools
 
-  static func clipboardGet(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result
-  {
+  static func clipboardGet(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
     do {
       let text = try await wdaClient.getPasteboard()
       if text.isEmpty {
@@ -890,8 +888,7 @@ enum UITools {
     }
   }
 
-  static func clipboardSet(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result
-  {
+  static func clipboardSet(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
     switch ToolInput.decode(ClipboardSetInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):

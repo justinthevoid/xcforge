@@ -176,8 +176,7 @@ enum DiagnosisFinalResultRenderer {
     lines.append("  workflow: \(result.workflow.rawValue)")
     lines.append("  phase: \(WorkflowPresentationHelpers.phaseLabel(result.phase))")
 
-    if let context = result.currentAttempt?.resolvedContext ?? result.sourceAttempt?.resolvedContext
-    {
+    if let context = result.currentAttempt?.resolvedContext ?? result.sourceAttempt?.resolvedContext {
       lines.append(
         "  target: \(sanitizeSummaryField(context.scheme)) on \(sanitizeSummaryField(context.simulator)) (\(sanitizeSummaryField(context.configuration)))"
       )
@@ -230,8 +229,7 @@ enum DiagnosisFinalResultRenderer {
     if let status = result.status {
       lines.append("  canonical_status: \(status.rawValue)")
     }
-    if let context = result.currentAttempt?.resolvedContext ?? result.sourceAttempt?.resolvedContext
-    {
+    if let context = result.currentAttempt?.resolvedContext ?? result.sourceAttempt?.resolvedContext {
       lines.append("  project: \(sanitizeSummaryField(context.project))")
       lines.append("  scheme: \(sanitizeSummaryField(context.scheme))")
       lines.append("  simulator: \(sanitizeSummaryField(context.simulator))")

@@ -229,8 +229,7 @@ public enum PlanParser {
     }
   }
 
-  private static func parseVerifyCondition(_ value: Value?, index i: Int) throws -> VerifyCondition
-  {
+  private static func parseVerifyCondition(_ value: Value?, index i: Int) throws -> VerifyCondition {
     // Can be an object with one key
     guard let obj = value?.objectValue else {
       // Or a string shorthand for screenContains

@@ -238,8 +238,7 @@ public enum DeviceTools {
 
   // MARK: - Typed Execute Methods
 
-  public static func executeListDevices(filter: String?, env: Environment) async -> DeviceListResult
-  {
+  public static func executeListDevices(filter: String?, env: Environment) async -> DeviceListResult {
     do {
       let (result, json) = try await runDevicectl(
         arguments: ["list", "devices"],
@@ -539,8 +538,7 @@ public enum DeviceTools {
 
   // MARK: - Physical Device UDID Detection
 
-  public static func isConnectedPhysicalDevice(_ identifier: String, env: Environment) async -> Bool
-  {
+  public static func isConnectedPhysicalDevice(_ identifier: String, env: Environment) async -> Bool {
     let list = await executeListDevices(filter: nil, env: env)
     return list.devices.contains { $0.udid == identifier || $0.name == identifier }
   }

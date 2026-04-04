@@ -846,8 +846,7 @@ public struct DiagnosisVerifyWorkflow: Sendable {
       && lhsObserved.expectedFailureCount == rhsObserved.expectedFailureCount
   }
 
-  private static func classifyBuildExecutionFailure(message: String) -> DiagnosisVerifyWorkflowError
-  {
+  private static func classifyBuildExecutionFailure(message: String) -> DiagnosisVerifyWorkflowError {
     let lowercaseMessage = message.lowercased()
     let unsupportedPatterns = [
       "unable to find a destination matching",

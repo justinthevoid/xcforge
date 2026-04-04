@@ -103,8 +103,7 @@ enum DiagnosisEvidenceRenderer {
     return lines.joined(separator: "\n")
   }
 
-  private static func appendBuildEvidence(_ lines: inout [String], _ summary: BuildDiagnosisSummary)
-  {
+  private static func appendBuildEvidence(_ lines: inout [String], _ summary: BuildDiagnosisSummary) {
     lines.append("Build evidence:")
     lines.append("  observed: \(summary.observedEvidence.summary)")
     if let primarySignal = summary.observedEvidence.primarySignal {
@@ -221,15 +220,13 @@ enum DiagnosisEvidenceRenderer {
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  private static func shouldExplainMissingBuildEvidence(for result: DiagnosisEvidenceResult) -> Bool
-  {
+  private static func shouldExplainMissingBuildEvidence(for result: DiagnosisEvidenceResult) -> Bool {
     result.buildSummary == nil
       && (result.phase == .diagnosisBuild || result.phase == .diagnosisTest
         || result.evidenceState == .empty)
   }
 
-  private static func shouldExplainMissingTestEvidence(for result: DiagnosisEvidenceResult) -> Bool
-  {
+  private static func shouldExplainMissingTestEvidence(for result: DiagnosisEvidenceResult) -> Bool {
     result.testSummary == nil && (result.phase == .diagnosisTest || result.evidenceState == .empty)
   }
 

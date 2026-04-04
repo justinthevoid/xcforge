@@ -440,8 +440,7 @@ public struct DiagnosisTestWorkflow: Sendable {
     )
   }
 
-  static func buildSummary(from execution: TestTools.TestDiagnosisExecution) -> TestDiagnosisSummary
-  {
+  static func buildSummary(from execution: TestTools.TestDiagnosisExecution) -> TestDiagnosisSummary {
     var supportingEvidence = [
       EvidenceReference(
         kind: "xcresult",

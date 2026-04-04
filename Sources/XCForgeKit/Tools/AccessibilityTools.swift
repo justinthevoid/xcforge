@@ -291,8 +291,7 @@ public enum AccessibilityTools {
 
   // MARK: - Localization Check
 
-  static func localizationCheck(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func localizationCheck(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(LocalizationInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input): return await localizationCheckImpl(input, env: env)

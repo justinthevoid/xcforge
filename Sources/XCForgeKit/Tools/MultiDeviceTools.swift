@@ -127,8 +127,7 @@ enum MultiDeviceTools {
 
   // MARK: - Entry Point
 
-  static func multiDeviceCheck(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func multiDeviceCheck(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(MultiDeviceInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input): return await multiDeviceCheckImpl(input, env: env)

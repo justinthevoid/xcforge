@@ -1928,8 +1928,7 @@ public enum TestTools {
     return .ok(lines.joined(separator: "\n"))
   }
 
-  static func buildAndDiagnose(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func buildAndDiagnose(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(BuildAndDiagnoseInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
@@ -2423,8 +2422,7 @@ public enum TestTools {
     return .ok(truncated)
   }
 
-  private static func formatBuildDiagnosis(_ execution: BuildDiagnosisExecution) -> CallTool.Result
-  {
+  private static func formatBuildDiagnosis(_ execution: BuildDiagnosisExecution) -> CallTool.Result {
     let summary = DiagnosisBuildWorkflow.buildSummary(from: execution)
     var lines: [String] = []
     let status = execution.succeeded ? "SUCCEEDED" : "FAILED"
@@ -2636,8 +2634,7 @@ public enum TestTools {
     )
   }
 
-  private static func persistCommandStderr(_ stderr: String, path: String, label: String) -> String?
-  {
+  private static func persistCommandStderr(_ stderr: String, path: String, label: String) -> String? {
     let url = URL(fileURLWithPath: path + ".\(label).txt")
     do {
       try stderr.write(to: url, atomically: true, encoding: .utf8)

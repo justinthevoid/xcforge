@@ -407,8 +407,7 @@ public actor SessionState {
     let name: String
   }
 
-  static func handleSetDefaults(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func handleSetDefaults(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(SetDefaultsInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
@@ -433,8 +432,7 @@ public actor SessionState {
     }
   }
 
-  static func handleProfileSave(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func handleProfileSave(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(ProfileNameInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input): return .ok(await env.session.profileSave(name: input.name))
@@ -450,8 +448,7 @@ public actor SessionState {
     }
   }
 
-  static func handleProfileList(_ args: [String: Value]?, env: Environment) async -> CallTool.Result
-  {
+  static func handleProfileList(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     .ok(await env.session.profileList())
   }
 
