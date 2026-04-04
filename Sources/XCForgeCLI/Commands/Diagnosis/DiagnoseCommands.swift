@@ -45,6 +45,7 @@ struct DiagnoseStart: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisStartWorkflow(session: Environment.live.session)
       let result = await workflow.start(
@@ -57,7 +58,7 @@ struct DiagnoseStart: AsyncParsableCommand {
         )
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisStartRenderer.render(result))
@@ -67,7 +68,7 @@ struct DiagnoseStart: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -87,13 +88,14 @@ struct DiagnoseBuild: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisBuildWorkflow()
       let result = await workflow.diagnose(
         request: DiagnosisBuildRequest(runId: runId)
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisBuildRenderer.render(result))
@@ -103,7 +105,7 @@ struct DiagnoseBuild: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -123,13 +125,14 @@ struct DiagnoseTest: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisTestWorkflow()
       let result = await workflow.diagnose(
         request: DiagnosisTestRequest(runId: runId)
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisTestRenderer.render(result))
@@ -139,7 +142,7 @@ struct DiagnoseTest: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -162,6 +165,7 @@ struct DiagnoseRuntime: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let env = Environment.live
       let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
@@ -172,7 +176,7 @@ struct DiagnoseRuntime: AsyncParsableCommand {
         )
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisRuntimeRenderer.render(result))
@@ -182,7 +186,7 @@ struct DiagnoseRuntime: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -205,13 +209,14 @@ struct DiagnoseStatus: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisStatusWorkflow()
       let result = await workflow.inspect(
         request: DiagnosisStatusRequest(runId: runId)
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisStatusRenderer.render(result))
@@ -221,7 +226,7 @@ struct DiagnoseStatus: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -244,13 +249,17 @@ struct DiagnoseEvidence: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
+      // DiagnosisStatusWorkflow handles both status and evidence inspection for a diagnosis run.
+      // Run-lookup and validation logic is shared between inspect() and inspectEvidence(),
+      // so DiagnoseEvidence intentionally reuses this workflow rather than a dedicated type.
       let workflow = DiagnosisStatusWorkflow()
       let result = await workflow.inspectEvidence(
         request: DiagnosisStatusRequest(runId: runId)
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisEvidenceRenderer.render(result))
@@ -260,7 +269,7 @@ struct DiagnoseEvidence: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -283,13 +292,14 @@ struct DiagnoseInspect: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisInspectWorkflow()
       let result = await workflow.inspect(
         request: DiagnosisInspectRequest(runId: runId)
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisInspectRenderer.render(result))
@@ -299,7 +309,7 @@ struct DiagnoseInspect: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -331,6 +341,7 @@ struct DiagnoseVerify: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisVerifyWorkflow()
       let result = await workflow.verify(
@@ -343,7 +354,7 @@ struct DiagnoseVerify: AsyncParsableCommand {
         )
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisVerifyRenderer.render(result))
@@ -353,7 +364,7 @@ struct DiagnoseVerify: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -376,13 +387,14 @@ struct DiagnoseCompare: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisCompareWorkflow()
       let result = await workflow.compare(
         request: DiagnosisCompareRequest(runId: runId)
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisCompareRenderer.render(result))
@@ -392,7 +404,7 @@ struct DiagnoseCompare: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }
@@ -412,13 +424,14 @@ struct DiagnoseResult: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let workflow = DiagnosisFinalResultWorkflow()
       let result = await workflow.assemble(
         request: DiagnosisFinalResultRequest(runId: runId)
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(DiagnosisFinalResultRenderer.render(result))
@@ -428,7 +441,7 @@ struct DiagnoseResult: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } catch {
-      try rethrowOrJSONError(error, json: json)
+      try rethrowOrJSONError(error, json: useJSON)
     }
   }
 }

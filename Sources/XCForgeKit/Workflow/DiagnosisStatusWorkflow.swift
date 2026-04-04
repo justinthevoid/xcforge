@@ -1,5 +1,11 @@
 import Foundation
 
+/// Handles status and evidence inspection for a diagnosis run.
+///
+/// Both `inspect(request:)` and `inspectEvidence(request:)` share the same run-lookup
+/// and validation logic, so this workflow serves both `DiagnoseStatus` and `DiagnoseEvidence`.
+/// If evidence inspection grows significantly more complex, extract it to a dedicated
+/// `DiagnosisEvidenceWorkflow` at that point.
 public struct DiagnosisStatusWorkflow: Sendable {
   typealias LoadRun = @Sendable (String) throws -> WorkflowRunRecord
   typealias LoadLatestActiveRun = @Sendable () throws -> WorkflowRunRecord?
