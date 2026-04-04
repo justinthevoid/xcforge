@@ -21,7 +21,7 @@ enum MultiDeviceTools {
     Tool(
       name: "multi_device_check",
       description:
-        "Install and launch an app on multiple simulators in parallel, take screenshots, and compare them. Supports Dark Mode, Landscape, and iPad. Returns inline screenshots, pixel-diff for same-resolution pairs, and a Layout Score.",
+        "Install and launch an app on multiple simulators in parallel, take screenshots, and compare them. Supports Dark Mode, Landscape, and iPad. Returns inline screenshots, pixel-diff for same-resolution pairs, and a Layout Score (0-100, weighted average of per-pair similarity across all device combinations). Use to verify responsive layout across different screen sizes in a single call.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([

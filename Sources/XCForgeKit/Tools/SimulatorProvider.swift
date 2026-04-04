@@ -26,7 +26,7 @@ public enum SimTools {
   public static let tools: [Tool] = [
     Tool(
       name: "list_sims",
-      description: "List available iOS simulators with their state and UDID.",
+      description: "List available iOS simulators with their name, state (Booted/Shutdown), runtime version, and UDID. Use to discover simulator names before boot_sim, or to check which simulators are currently booted.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -39,7 +39,7 @@ public enum SimTools {
     ),
     Tool(
       name: "boot_sim",
-      description: "Boot an iOS simulator by name or UDID.",
+      description: "Boot an iOS simulator by name or UDID. The simulator must be in Shutdown state. Use list_sims first to find available simulators if needed.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -52,7 +52,7 @@ public enum SimTools {
     ),
     Tool(
       name: "shutdown_sim",
-      description: "Shutdown a running simulator.",
+      description: "Shutdown a running simulator gracefully. Use 'all' to shutdown all booted simulators at once. Required before erase_sim or delete_sim.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -192,7 +192,7 @@ public enum SimTools {
     ),
     Tool(
       name: "record_video_stop",
-      description: "Stop an active video recording and return the file path.",
+      description: "Stop an active video recording started by record_video_start and return the saved file path (.mov).",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([:]),
@@ -200,7 +200,7 @@ public enum SimTools {
     ),
     Tool(
       name: "set_sim_location",
-      description: "Set simulated GPS location on a simulator.",
+      description: "Set simulated GPS location on a simulator. The location persists until changed or reset with reset_sim_location. Use to test location-dependent features like maps, geofencing, or weather.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([

@@ -14,7 +14,7 @@ enum ScreenshotTools {
     Tool(
       name: "screenshot",
       description:
-        "Take a screenshot of a booted simulator. Returns the image inline. 3-tier: burst (~10ms, native) → stream (~20ms, ScreenCaptureKit) → safe (~320ms, simctl). Simulator is auto-detected if omitted.",
+        "Take a screenshot of a booted simulator and return the image inline. Automatically selects the fastest available capture method (native framebuffer <10ms, ScreenCaptureKit ~20ms, or simctl ~320ms fallback). Use after any UI interaction to verify the result visually. Simulator is auto-detected if omitted.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([

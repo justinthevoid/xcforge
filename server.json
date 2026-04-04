@@ -2,11 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.justinthevoid/xcforge",
   "title": "xcforge - iOS MCP Server & CLI",
-  "description": "MCP server and CLI for iOS development — 95 tools for build, test, simulator, UI automation, screenshots, logs, accessibility, visual regression, and diagnosis. Single 8.5MB Swift binary.",
+  "description": "95 MCP tools for iOS — build, test, simulate, automate UI, capture, and diagnose.",
   "repository": {
     "url": "https://github.com/justinthevoid/xcforge",
     "source": "github"
   },
+  "version": "1.0.0",
   "version_detail": {
     "version": "1.0.0"
   },
