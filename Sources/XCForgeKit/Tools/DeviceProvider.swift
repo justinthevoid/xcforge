@@ -223,7 +223,7 @@ public enum DeviceTools {
     let jsonPath = NSTemporaryDirectory() + "xcforge-devicectl-\(UUID().uuidString).json"
     defer { try? FileManager.default.removeItem(atPath: jsonPath) }
 
-    var fullArgs = ["devicectl"] + arguments + ["--json-output", jsonPath]
+    let fullArgs = ["devicectl"] + arguments + ["--json-output", jsonPath]
     let result = try await env.shell.xcrun(timeout: timeout, arguments: fullArgs)
 
     var jsonOutput: [String: Any]?

@@ -1,10 +1,10 @@
 import AppKit
 import CoreGraphics
-import CoreImage
+@preconcurrency import CoreImage
 import CoreMedia
 import Foundation
 import ImageIO
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 /// 3-tier Simulator screenshot capture with automatic fallback:
 ///
