@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build universal binary
+        run: swift build -c release --arch arm64 --arch x86_64 --disable-sandbox
+
+      - name: Package tarball
+        run: |
+          BINARY=.build/apple/Products/Release/xcforge
+          VERSION="${GITHUB_REF_NAME}"
+          TARBALL="xcforge-${VERSION}-macos.tar.gz"
+          tar -czf "${TARBALL}" -C "$(dirname "${BINARY}")" "$(basename "${BINARY}")"
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+          echo "SHA256=$(shasum -a 256 "${TARBALL}" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Upload release asset
+        run: gh release upload "${GITHUB_REF_NAME}" "${TARBALL}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          SOURCE_URL="https://github.com/justinthevoid/xcforge/archive/refs/tags/${VERSION}.tar.gz"
+          SOURCE_SHA=$(curl -sL "${SOURCE_URL}" | shasum -a 256 | awk '{print $1}')
+
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/justinthevoid/homebrew-tap.git /tmp/tap
+          cd /tmp/tap
+
+          cat > Formula/xcforge.rb << EOF
+          class Xcforge < Formula
+            desc "MCP server and CLI for iOS development"
+            homepage "https://github.com/justinthevoid/xcforge"
+            url "${SOURCE_URL}"
+            sha256 "${SOURCE_SHA}"
+            license "MIT"
+
+            depends_on xcode: ["15.0", :build]
+            depends_on :macos
+
+            def install
+              system "swift", "build", "-c", "release", "--disable-sandbox"
+              bin.install ".build/release/xcforge"
+            end
+
+            test do
+              assert_match "xcforge", shell_output("#{bin}/xcforge --help 2>&1", 0)
+            end
+          end
+          EOF
+
+          # Remove leading whitespace from heredoc
+          sed -i '' 's/^          //' Formula/xcforge.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/xcforge.rb
+          git commit -m "Update xcforge to ${VERSION}"
+          git push

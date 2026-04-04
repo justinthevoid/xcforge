@@ -16,9 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
-
       - name: Build
         run: swift build
 
@@ -33,8 +30,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
-
       - name: swift-format lint
-        run: swift-format lint --strict --recursive Sources/ Tests/
+        run: swift format lint --strict --recursive Sources/ Tests/
