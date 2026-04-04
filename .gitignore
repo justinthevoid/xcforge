@@ -1,0 +1,20 @@
+# === Build artifacts ===
+/.build
+DerivedData/
+*.xcresult
+
+# === SPM & Xcode workspace ===
+.swiftpm/
+xcuserdata/
+/Packages
+
+# === xcforge runtime ===
+/tmp/
+_bmad-output/
+
+# === Secrets & environment ===
+.env
+.netrc
+
+# === OS clutter ===
+.DS_Store
