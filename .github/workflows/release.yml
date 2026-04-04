@@ -24,8 +24,41 @@ jobs:
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
           echo "SHA256=$(shasum -a 256 "${TARBALL}" | awk '{print $1}')" >> "$GITHUB_ENV"
 
-      - name: Upload release asset
-        run: gh release upload "${GITHUB_REF_NAME}" "${TARBALL}"
+      - name: Package mcpb bundle
+        run: |
+          BINARY=.build/apple/Products/Release/xcforge
+          VERSION="${GITHUB_REF_NAME}"
+          MCPB="xcforge-${VERSION}.mcpb"
+          tar -czf "${MCPB}" -C "$(dirname "${BINARY}")" "$(basename "${BINARY}")"
+          MCPB_SHA=$(shasum -a 256 "${MCPB}" | awk '{print $1}')
+          echo "MCPB=${MCPB}" >> "$GITHUB_ENV"
+          echo "MCPB_SHA=${MCPB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Update server.json
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          DOWNLOAD_URL="https://github.com/justinthevoid/xcforge/releases/download/${VERSION}/xcforge-${VERSION}.mcpb"
+          # Strip leading 'v' for the version field
+          SEMVER="${VERSION#v}"
+          jq \
+            --arg ver "$SEMVER" \
+            --arg url "$DOWNLOAD_URL" \
+            --arg sha "$MCPB_SHA" \
+            '.version_detail.version = $ver | .packages[0].identifier = $url | .packages[0].fileSha256 = $sha' \
+            server.json > server.json.tmp && mv server.json.tmp server.json
+
+      - name: Upload release assets
+        run: gh release upload "${GITHUB_REF_NAME}" "${TARBALL}" "${MCPB}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit updated server.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add server.json
+          git diff --cached --quiet || git commit -m "chore: update server.json for ${GITHUB_REF_NAME}"
+          git push origin HEAD:main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
