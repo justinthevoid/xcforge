@@ -5,7 +5,8 @@ enum UITools {
   public static let tools: [Tool] = [
     Tool(
       name: "wda_status",
-      description: "Check if WebDriverAgent (WDA) is running and reachable. Call this first to verify the UI automation backend is available before using find_element, click_element, or other WDA-dependent tools.",
+      description:
+        "Check if WebDriverAgent (WDA) is running and reachable. Call this first to verify the UI automation backend is available before using find_element, click_element, or other WDA-dependent tools.",
       inputSchema: .object(["type": .string("object"), "properties": .object([:])])
     ),
     Tool(
@@ -33,7 +34,8 @@ enum UITools {
     ),
     Tool(
       name: "wda_create_session",
-      description: "Create a new WebDriverAgent session, optionally targeting a specific app by bundle ID. A session is required before using UI interaction tools (find_element, click_element, type_text, etc.). Sessions are auto-created by most tools, so this is only needed to explicitly switch the target app.",
+      description:
+        "Create a new WebDriverAgent session, optionally targeting a specific app by bundle ID. A session is required before using UI interaction tools (find_element, click_element, type_text, etc.). Sessions are auto-created by most tools, so this is only needed to explicitly switch the target app.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -79,7 +81,8 @@ enum UITools {
     ),
     Tool(
       name: "find_elements",
-      description: "Find all UI elements matching a query. Returns an array of element IDs and properties. Use when you need to count items, iterate over a list, or verify multiple elements exist. For finding a single element (especially off-screen), prefer find_element with scroll: true.",
+      description:
+        "Find all UI elements matching a query. Returns an array of element IDs and properties. Use when you need to count items, iterate over a list, or verify multiple elements exist. For finding a single element (especially off-screen), prefer find_element with scroll: true.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -96,7 +99,8 @@ enum UITools {
     ),
     Tool(
       name: "click_element",
-      description: "Tap a UI element by its ID (obtained from find_element or find_elements). Equivalent to a single finger tap on the element's center.",
+      description:
+        "Tap a UI element by its ID (obtained from find_element or find_elements). Equivalent to a single finger tap on the element's center.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -109,7 +113,8 @@ enum UITools {
     ),
     Tool(
       name: "tap_coordinates",
-      description: "Tap at specific x,y coordinates (in points) on the simulator screen. Use when you have coordinates from a screenshot or when an element doesn't have an accessibility identifier.",
+      description:
+        "Tap at specific x,y coordinates (in points) on the simulator screen. Use when you have coordinates from a screenshot or when an element doesn't have an accessibility identifier.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -121,7 +126,8 @@ enum UITools {
     ),
     Tool(
       name: "double_tap",
-      description: "Double-tap at specific coordinates (in points). Use for zoom-in gestures on maps, text selection, or any UI that responds to double-tap.",
+      description:
+        "Double-tap at specific coordinates (in points). Use for zoom-in gestures on maps, text selection, or any UI that responds to double-tap.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -133,7 +139,8 @@ enum UITools {
     ),
     Tool(
       name: "long_press",
-      description: "Long-press at specific coordinates (in points). Triggers context menus, drag mode activation, or any long-press gesture recognizer.",
+      description:
+        "Long-press at specific coordinates (in points). Triggers context menus, drag mode activation, or any long-press gesture recognizer.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -149,7 +156,8 @@ enum UITools {
     ),
     Tool(
       name: "swipe",
-      description: "Swipe from one point to another (coordinates in points). Use for scrolling, dismissing sheets, navigating carousels, or any directional gesture. For scrolling to find elements, prefer find_element with scroll: true.",
+      description:
+        "Swipe from one point to another (coordinates in points). Use for scrolling, dismissing sheets, navigating carousels, or any directional gesture. For scrolling to find elements, prefer find_element with scroll: true.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -249,7 +257,8 @@ enum UITools {
     ),
     Tool(
       name: "get_text",
-      description: "Get the text content (value or label) of a UI element by its ID. Use to read labels, text fields, or any element's displayed text for verification.",
+      description:
+        "Get the text content (value or label) of a UI element by its ID. Use to read labels, text fields, or any element's displayed text for verification.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -262,7 +271,8 @@ enum UITools {
     ),
     Tool(
       name: "get_source",
-      description: "Get the full view hierarchy (source tree) of the current screen. Returns all elements with their types, labels, frames, and accessibility identifiers. Use to discover element identifiers before using find_element, or to debug layout issues.",
+      description:
+        "Get the full view hierarchy (source tree) of the current screen. Returns all elements with their types, labels, frames, and accessibility identifiers. Use to discover element identifiers before using find_element, or to debug layout issues.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -294,7 +304,8 @@ enum UITools {
     ),
     Tool(
       name: "clipboard_get",
-      description: "Read the device clipboard (pasteboard) text content. Use to verify copy operations or to retrieve text that was copied by the app under test.",
+      description:
+        "Read the device clipboard (pasteboard) text content. Use to verify copy operations or to retrieve text that was copied by the app under test.",
       inputSchema: .object(["type": .string("object"), "properties": .object([:])])
     ),
     Tool(

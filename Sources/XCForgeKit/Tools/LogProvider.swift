@@ -531,7 +531,8 @@ public enum LogTools {
     ),
     Tool(
       name: "stop_log_capture",
-      description: "Stop the running log capture and release system resources. Any unread logs in the buffer are discarded. Call read_logs first if you need the captured data.",
+      description:
+        "Stop the running log capture and release system resources. Any unread logs in the buffer are discarded. Call read_logs first if you need the captured data.",
       inputSchema: .object(["type": .string("object"), "properties": .object([:])])
     ),
     Tool(
