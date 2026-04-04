@@ -17,7 +17,6 @@ xcuserdata/
 .vscode/
 _bmad/
 _bmad-output/
-docs/
 
 # === Secrets & environment ===
 .env

@@ -11,7 +11,7 @@ An MCP server and CLI for iOS development — build, test, automate, and diagnos
 ## Install
 
 ```bash
-brew tap justinthevoid/xcforge && brew install xcforge
+brew tap justinthevoid/tap && brew install xcforge
 ```
 
 Or from source:
@@ -49,23 +49,23 @@ Every tool available over MCP has a matching CLI command. Every CLI command supp
 
 ## Tools Overview
 
-| Category | Count | Highlights |
-|---|---|---|
-| **Build** | 5 | `build_sim`, `build_run_sim` (build + boot + install + launch), `clean`, project/scheme discovery |
-| **Test** | 6 | `test_sim` with xcresult parsing, `test_failures` with screenshots, `test_coverage`, `list_tests` |
-| **Simulator** | 17 | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override |
-| **Physical Devices** | 7 | Via `devicectl` — list, install, launch, screenshot, pair |
-| **UI Automation** | 19 | WebDriverAgent + native AX bridge — find, tap, swipe, drag, type, alerts, hierarchy |
-| **Screenshots** | 2 | Framebuffer capture (0.3s), point-space coordinate alignment |
-| **Visual Regression** | 2 | Pixel-diff baselines, multi-device checks (Dark Mode, Landscape, iPad) |
-| **Logs** | 4 | 4-layer filtered capture, 8 topic categories, regex wait |
-| **Console** | 3 | stdout/stderr capture for launched apps |
-| **SPM** | 5 | Resolve, update, show deps, reset, clean |
-| **Accessibility** | 5 | Audit labels, traits, VoiceOver order, contrast |
-| **Git** | 5 | Status, diff, log, commit, branch |
-| **Diagnosis** | 10 | Multi-step workflows: build, run, inspect, capture evidence, compare, verify |
-| **Plan Execution** | 2 | Scripted multi-step automation with assertions |
-| **Session** | 3 | Persistent defaults, `.xcforge.yaml` repo config, session profiles |
+| Category              | Count | Highlights                                                                                        |
+| --------------------- | ----- | ------------------------------------------------------------------------------------------------- |
+| **Build**             | 5     | `build_sim`, `build_run_sim` (build + boot + install + launch), `clean`, project/scheme discovery |
+| **Test**              | 6     | `test_sim` with xcresult parsing, `test_failures` with screenshots, `test_coverage`, `list_tests` |
+| **Simulator**         | 17    | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override      |
+| **Physical Devices**  | 7     | Via `devicectl` — list, install, launch, screenshot, pair                                         |
+| **UI Automation**     | 19    | WebDriverAgent + native AX bridge — find, tap, swipe, drag, type, alerts, hierarchy               |
+| **Screenshots**       | 2     | Framebuffer capture (0.3s), point-space coordinate alignment                                      |
+| **Visual Regression** | 2     | Pixel-diff baselines, multi-device checks (Dark Mode, Landscape, iPad)                            |
+| **Logs**              | 4     | 4-layer filtered capture, 8 topic categories, regex wait                                          |
+| **Console**           | 3     | stdout/stderr capture for launched apps                                                           |
+| **SPM**               | 5     | Resolve, update, show deps, reset, clean                                                          |
+| **Accessibility**     | 5     | Audit labels, traits, VoiceOver order, contrast                                                   |
+| **Git**               | 5     | Status, diff, log, commit, branch                                                                 |
+| **Diagnosis**         | 10    | Multi-step workflows: build, run, inspect, capture evidence, compare, verify                      |
+| **Plan Execution**    | 2     | Scripted multi-step automation with assertions                                                    |
+| **Session**           | 3     | Persistent defaults, `.xcforge.yaml` repo config, session profiles                                |
 
 ## Key Capabilities
 
