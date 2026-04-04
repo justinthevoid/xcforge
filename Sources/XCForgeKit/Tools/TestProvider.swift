@@ -1052,7 +1052,8 @@ public enum TestTools {
       let result = try await env.shell.run(
         "/usr/bin/xcrun",
         arguments: ["xccov", "view", "--report", "--json", path],
-        timeout: 30
+        timeout: 30,
+        outputLimit: 20 * 1024 * 1024  // full coverage reports for large projects can exceed the 2 MB default
       )
       guard result.succeeded else {
         Log.warn("parseCoverage failed: \(result.stderr)")

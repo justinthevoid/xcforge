@@ -18,7 +18,8 @@ public protocol ShellExecutor: Sendable {
     arguments: [String],
     workingDirectory: String?,
     environment: [String: String]?,
-    timeout: TimeInterval
+    timeout: TimeInterval,
+    outputLimit: Int
   ) async throws -> ShellResult
 
   func xcrun(timeout: TimeInterval, arguments: [String]) async throws -> ShellResult
@@ -39,11 +40,12 @@ extension ShellExecutor {
     arguments: [String],
     workingDirectory: String? = nil,
     environment: [String: String]? = nil,
-    timeout: TimeInterval = 300
+    timeout: TimeInterval = 300,
+    outputLimit: Int = Shell.defaultOutputLimit
   ) async throws -> ShellResult {
     try await run(
       executable, arguments: arguments, workingDirectory: workingDirectory,
-      environment: environment, timeout: timeout)
+      environment: environment, timeout: timeout, outputLimit: outputLimit)
   }
 
   /// Default parameter convenience for git.
@@ -113,11 +115,12 @@ public struct LiveShell: ShellExecutor {
     arguments: [String],
     workingDirectory: String?,
     environment: [String: String]?,
-    timeout: TimeInterval
+    timeout: TimeInterval,
+    outputLimit: Int
   ) async throws -> ShellResult {
     try await Shell.run(
       executable, arguments: arguments, workingDirectory: workingDirectory,
-      environment: environment, timeout: timeout)
+      environment: environment, timeout: timeout, outputLimit: outputLimit)
   }
 
   public func xcrun(timeout: TimeInterval, arguments: [String]) async throws -> ShellResult {
@@ -136,7 +139,7 @@ public struct LiveShell: ShellExecutor {
 public enum Shell {
   /// Run a command with arguments, returning stdout/stderr/exitCode.
   /// Maximum bytes of stdout/stderr to retain. Default 2 MB.
-  static let defaultOutputLimit = 2 * 1024 * 1024
+  public static let defaultOutputLimit = 2 * 1024 * 1024
 
   static func run(
     _ executable: String,

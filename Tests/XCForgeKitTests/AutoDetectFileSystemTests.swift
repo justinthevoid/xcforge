@@ -110,7 +110,8 @@ private struct StubShell: ShellExecutor {
     arguments: [String],
     workingDirectory: String?,
     environment: [String: String]?,
-    timeout: TimeInterval
+    timeout: TimeInterval,
+    outputLimit: Int
   ) async throws -> ShellResult {
     try await runHandler(executable, arguments, workingDirectory, environment, timeout)
   }
