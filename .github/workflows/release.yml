@@ -15,14 +15,9 @@ jobs:
       - name: Build release binary
         run: |
           swift build -c release --disable-sandbox
-          BINARY=.build/release/xcforge
-          if [ ! -f "$BINARY" ]; then
-            echo "::error::Binary not found at $BINARY"
-            find .build -name xcforge -type f 2>/dev/null || true
-            exit 1
-          fi
-          file "$BINARY"
-          echo "BINARY_PATH=${BINARY}" >> "$GITHUB_ENV"
+          cp .build/release/XCForgeCLI .build/release/xcforge
+          file .build/release/xcforge
+          echo "BINARY_PATH=.build/release/xcforge" >> "$GITHUB_ENV"
 
       - name: Package tarball
         run: |
