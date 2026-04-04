@@ -15,16 +15,19 @@ jobs:
       - name: Build universal binary
         run: |
           swift build -c release --arch arm64 --arch x86_64 --disable-sandbox || true
-          BINARY=.build/apple/Products/Release/xcforge
+          BIN_PATH=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path 2>/dev/null)
+          BINARY="${BIN_PATH}/xcforge"
           if [ ! -f "$BINARY" ]; then
             echo "::error::Binary not found at $BINARY"
+            find .build -name xcforge -type f 2>/dev/null || true
             exit 1
           fi
           file "$BINARY"
+          echo "BINARY_PATH=${BINARY}" >> "$GITHUB_ENV"
 
       - name: Package tarball
         run: |
-          BINARY=.build/apple/Products/Release/xcforge
+          BINARY="${BINARY_PATH}"
           VERSION="${GITHUB_REF_NAME}"
           TARBALL="xcforge-${VERSION}-macos.tar.gz"
           tar -czf "${TARBALL}" -C "$(dirname "${BINARY}")" "$(basename "${BINARY}")"
@@ -33,7 +36,7 @@ jobs:
 
       - name: Package mcpb bundle
         run: |
-          BINARY=.build/apple/Products/Release/xcforge
+          BINARY="${BINARY_PATH}"
           VERSION="${GITHUB_REF_NAME}"
           MCPB="xcforge-${VERSION}.mcpb"
           tar -czf "${MCPB}" -C "$(dirname "${BINARY}")" "$(basename "${BINARY}")"
