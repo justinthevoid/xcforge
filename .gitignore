@@ -10,7 +10,14 @@ xcuserdata/
 
 # === xcforge runtime ===
 /tmp/
+
+# === Local dev config ===
+.claude/
+.agents/
+.vscode/
+_bmad/
 _bmad-output/
+docs/
 
 # === Secrets & environment ===
 .env
