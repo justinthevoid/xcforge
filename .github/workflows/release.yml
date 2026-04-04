@@ -16,19 +16,16 @@ jobs:
         run: |
           swift build -c release --arch arm64 --disable-sandbox
           swift build -c release --arch x86_64 --disable-sandbox
-          ARM_BIN=$(find .build -path '*/arm64*/release/xcforge' -type f | head -1)
-          X86_BIN=$(find .build -path '*/x86_64*/release/xcforge' -type f | head -1)
-          echo "arm64 binary: $ARM_BIN"
-          echo "x86_64 binary: $X86_BIN"
-          if [ -z "$ARM_BIN" ] || [ -z "$X86_BIN" ]; then
-            echo "::error::Could not find arch binaries"
-            find .build -name xcforge -type f
-            exit 1
-          fi
-          mkdir -p .build/universal
-          lipo -create "$ARM_BIN" "$X86_BIN" -output .build/universal/xcforge
-          file .build/universal/xcforge
-          echo "BINARY_PATH=.build/universal/xcforge" >> "$GITHUB_ENV"
+          echo "=== Searching for xcforge binary ==="
+          find .build -name 'xcforge' -not -path '*/checkouts/*' -not -path '*/Intermediates*' 2>/dev/null || true
+          echo "=== Listing .build/apple/Products if exists ==="
+          ls -laR .build/apple/Products/ 2>/dev/null | head -40 || true
+          echo "=== Listing .build/release if exists ==="
+          ls -la .build/release/ 2>/dev/null | head -20 || true
+          echo "=== Listing .build/arm64* if exists ==="
+          find .build/arm64* -maxdepth 3 -type f -name 'xcforge*' 2>/dev/null || true
+          echo "=== End debug ==="
+          exit 1
 
       - name: Package tarball
         run: |
