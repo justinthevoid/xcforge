@@ -7,7 +7,7 @@ import XCForgeKit
 struct Main {
     static func main() async throws {
         if CommandLine.arguments.count > 1 {
-            XCForgeCLI.main()
+            await XCForgeCLI.main()
         } else {
             let logger = Logger(label: "com.xcforge.mcp")
 

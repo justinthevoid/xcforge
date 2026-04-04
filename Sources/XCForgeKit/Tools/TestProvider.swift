@@ -565,7 +565,7 @@ public enum TestTools {
         args += ["test"]
 
         let result = try await env.shell.run(
-            "/usr/bin/xcodebuild", arguments: args, timeout: 600
+            "/usr/bin/xcodebuild", arguments: args, timeout: 1800
         )
         return (result, resultPath)
     }
@@ -590,7 +590,7 @@ public enum TestTools {
         args += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
 
         let result = try await env.shell.run(
-            "/usr/bin/xcodebuild", arguments: args, timeout: 600
+            "/usr/bin/xcodebuild", arguments: args, timeout: 1800
         )
         return (result, resultPath)
     }
@@ -1353,7 +1353,7 @@ public enum TestTools {
                 "-skipMacroValidation",
                 "-enumerate-tests",
                 "test",
-            ], timeout: 600
+            ], timeout: 1800
         )
 
         guard enumerateResult.succeeded || !enumerateResult.stdout.isEmpty else {

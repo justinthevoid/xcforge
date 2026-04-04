@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import XCForgeKit
 
-struct BuildTest: ParsableCommand {
+struct BuildTest: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "build-test",
         abstract: "Build then test in one step. Short-circuits on build failure with structured diagnostics."
@@ -32,36 +32,27 @@ struct BuildTest: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
+    mutating func run() async throws {
         let configuration = self.configuration ?? "Debug"
-        let testplan = self.testplan
-        let filter = self.filter
-        let coverage = self.coverage
-        let json = self.json
 
-        try runAsync {
-            let result = try await TestTools.executeBuildAndTest(
-                project: project,
-                scheme: scheme,
-                simulator: simulator,
-                configuration: configuration,
-                testplan: testplan,
-                filter: filter,
-                coverage: coverage
-            )
+        let result = try await TestTools.executeBuildAndTest(
+            project: project,
+            scheme: scheme,
+            simulator: simulator,
+            configuration: configuration,
+            testplan: testplan,
+            filter: filter,
+            coverage: coverage
+        )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(BuildTestRenderer.render(result))
-            }
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(BuildTestRenderer.render(result))
+        }
 
-            if !result.buildSucceeded || (result.testResult?.succeeded == false) {
-                throw ExitCode.failure
-            }
+        if !result.buildSucceeded || (result.testResult?.succeeded == false) {
+            throw ExitCode.failure
         }
     }
 }

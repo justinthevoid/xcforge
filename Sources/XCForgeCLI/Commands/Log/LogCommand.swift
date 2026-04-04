@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import XCForgeKit
 
-struct Logs: ParsableCommand {
+struct Logs: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "log",
         abstract: "Stream, read, and wait on simulator logs.",
@@ -21,7 +21,7 @@ struct LogResult: Codable {
 
 // MARK: - log start
 
-struct LogStart: ParsableCommand {
+struct LogStart: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "start",
         abstract: "Start capturing real-time logs from a simulator with smart filtering."
@@ -48,59 +48,52 @@ struct LogStart: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
+    mutating func run() async throws {
         let mode = self.mode ?? "smart"
-        let process = self.process
-        let subsystem = self.subsystem
-        let predicate = self.predicate
         let level = self.level ?? "debug"
-        let json = self.json
 
-        try runAsync {
-            let env = Environment.live
-            let sim: String
-            do {
-                sim = try await env.session.resolveSimulator(simulator)
-            } catch {
-                let msg = "Failed to resolve simulator: \(error)"
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
-                } else {
-                    print(msg)
-                }
-                throw ExitCode.failure
+        let env = Environment.live
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            let msg = "Failed to resolve simulator: \(error)"
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
+            } else {
+                print(msg)
             }
+            throw ExitCode.failure
+        }
 
-            let (logArgs, note) = await LogTools.buildLogArgs(
-                simulator: sim, mode: mode, level: level,
-                process: process, subsystem: subsystem, predicate: predicate
-            )
+        let (logArgs, note) = await LogTools.buildLogArgs(
+            simulator: sim, mode: mode, level: level,
+            process: process, subsystem: subsystem, predicate: predicate
+        )
 
-            do {
-                try await LogCapture.shared.start(arguments: logArgs, mode: mode)
-                let msg = "Log capture started (\(note))"
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: nil)))
-                } else {
-                    print(msg)
-                }
-            } catch {
-                let msg = "Failed to start log capture: \(error)"
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
-                } else {
-                    print(msg)
-                }
-                throw ExitCode.failure
+        do {
+            try await LogCapture.shared.start(arguments: logArgs, mode: mode)
+            let msg = "Log capture started (\(note))"
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: nil)))
+            } else {
+                print(msg)
             }
+        } catch {
+            let msg = "Failed to start log capture: \(error)"
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
+            } else {
+                print(msg)
+            }
+            throw ExitCode.failure
         }
     }
 }
 
 // MARK: - log stop
 
-struct LogStop: ParsableCommand {
+struct LogStop: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "stop",
         abstract: "Stop the running log capture."
@@ -109,24 +102,20 @@ struct LogStop: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let json = self.json
-
-        try runAsync {
-            await LogCapture.shared.stop()
-            let msg = "Log capture stopped"
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: nil)))
-            } else {
-                print(msg)
-            }
+    mutating func run() async throws {
+        await LogCapture.shared.stop()
+        let msg = "Log capture stopped"
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: nil)))
+        } else {
+            print(msg)
         }
     }
 }
 
 // MARK: - log read
 
-struct LogRead: ParsableCommand {
+struct LogRead: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "read",
         abstract: "Read captured log lines with topic-based filtering."
@@ -144,78 +133,71 @@ struct LogRead: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let includeTopics = self.include
-        let last = self.last
-        let clear = self.clear
-        let json = self.json
+    mutating func run() async throws {
+        var topics: Set<String> = ["app", "crashes"]
+        for t in include {
+            topics.insert(t)
+        }
 
-        try runAsync {
-            var topics: Set<String> = ["app", "crashes"]
-            for t in includeTopics {
-                topics.insert(t)
-            }
+        let isRunning = await LogCapture.shared.isRunning
+        let captureMode = await LogCapture.shared.captureMode
+        let allLines: [String]
+        if clear {
+            allLines = await LogCapture.shared.readAndClear()
+        } else {
+            allLines = await LogCapture.shared.read(last: nil)
+        }
 
-            let isRunning = await LogCapture.shared.isRunning
-            let captureMode = await LogCapture.shared.captureMode
-            let allLines: [String]
-            if clear {
-                allLines = await LogCapture.shared.readAndClear()
-            } else {
-                allLines = await LogCapture.shared.read(last: nil)
-            }
-
-            if allLines.isEmpty {
-                let statusNote = isRunning ? " (capture is running)" : " (capture not running)"
-                let msg = "No log lines captured\(statusNote)"
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: 0)))
-                } else {
-                    print(msg)
-                }
-                return
-            }
-
-            // Get session info for topic categorization
-            let env = Environment.live
-            let bundleId = await env.session.bundleId
-            let appPath = await env.session.appPath
-            let processName = appPath.flatMap { LogTools.deriveProcessName(from: $0) }
-
-            // Filter by topics
-            let filterResult = LogTools.filterByTopics(
-                lines: allLines, include: topics,
-                bundleId: bundleId, processName: processName
-            )
-
-            // Apply `last` AFTER filtering
-            let finalLines: [String]
-            if let n = last {
-                finalLines = Array(filterResult.filteredLines.suffix(n))
-            } else {
-                finalLines = filterResult.filteredLines
-            }
-
+        if allLines.isEmpty {
+            let statusNote = isRunning ? " (capture is running)" : " (capture not running)"
+            let msg = "No log lines captured\(statusNote)"
             if json {
-                let output = finalLines.joined(separator: "\n")
-                let truncated = output.count > 50000 ? String(output.prefix(50000)) + "\n... [truncated]" : output
-                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: truncated, lineCount: finalLines.count)))
+                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: 0)))
             } else {
-                let summary = LogTools.buildTopicSummary(
-                    result: filterResult, include: topics,
-                    captureMode: captureMode, bundleId: bundleId
-                )
-                let output = finalLines.joined(separator: "\n")
-                let truncated = output.count > 50000 ? String(output.prefix(50000)) + "\n... [truncated]" : output
-                print(LogRenderer.renderRead(summary: summary, logs: truncated, lineCount: finalLines.count))
+                print(msg)
             }
+            return
+        }
+
+        // Get session info for topic categorization
+        let env = Environment.live
+        let bundleId = await env.session.bundleId
+        let appPath = await env.session.appPath
+        let processName = appPath.flatMap { LogTools.deriveProcessName(from: $0) }
+
+        // Filter by topics
+        let filterResult = LogTools.filterByTopics(
+            lines: allLines, include: topics,
+            bundleId: bundleId, processName: processName
+        )
+
+        // Apply `last` AFTER filtering
+        let finalLines: [String]
+        if let n = last {
+            finalLines = Array(filterResult.filteredLines.suffix(n))
+        } else {
+            finalLines = filterResult.filteredLines
+        }
+
+        if json {
+            let output = finalLines.joined(separator: "\n")
+            let truncated = output.count > 50000 ? String(output.prefix(50000)) + "\n... [truncated]" : output
+            print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: truncated, lineCount: finalLines.count)))
+        } else {
+            let summary = LogTools.buildTopicSummary(
+                result: filterResult, include: topics,
+                captureMode: captureMode, bundleId: bundleId
+            )
+            let output = finalLines.joined(separator: "\n")
+            let truncated = output.count > 50000 ? String(output.prefix(50000)) + "\n... [truncated]" : output
+            print(LogRenderer.renderRead(summary: summary, logs: truncated, lineCount: finalLines.count))
         }
     }
 }
 
 // MARK: - log wait
 
-struct LogWait: ParsableCommand {
+struct LogWait: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "wait",
         abstract: "Wait for a specific log pattern to appear in the log stream."
@@ -236,102 +218,96 @@ struct LogWait: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let pattern = self.pattern
+    mutating func run() async throws {
         let timeout = self.timeout ?? 30.0
-        let simulator = self.simulator
-        let subsystem = self.subsystem
-        let json = self.json
 
-        try runAsync {
-            // Compile regex
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-                let msg = "Invalid regex pattern: \(pattern)"
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
-                } else {
-                    print(msg)
-                }
-                throw ExitCode.failure
-            }
-
-            // Resolve simulator
-            let env = Environment.live
-            let sim: String
-            do {
-                sim = try await env.session.resolveSimulator(simulator)
-            } catch {
-                let msg = "Failed to resolve simulator: \(error)"
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
-                } else {
-                    print(msg)
-                }
-                throw ExitCode.failure
-            }
-
-            // Start log capture if not running
-            let wasRunning = await LogCapture.shared.isRunning
-            if !wasRunning {
-                let (logArgs, _) = await LogTools.buildLogArgs(
-                    simulator: sim, mode: "smart", level: "debug",
-                    process: nil, subsystem: subsystem, predicate: nil
-                )
-                do {
-                    try await LogCapture.shared.start(arguments: logArgs)
-                } catch {
-                    let msg = "Failed to start log capture: \(error)"
-                    if json {
-                        print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
-                    } else {
-                        print(msg)
-                    }
-                    throw ExitCode.failure
-                }
-            }
-
-            // Clear existing buffer to only match new lines
-            _ = await LogCapture.shared.readAndClear()
-
-            let startTime = CFAbsoluteTimeGetCurrent()
-            let deadline = startTime + timeout
-            var matchedLines: [String] = []
-
-            // Poll for matches
-            while CFAbsoluteTimeGetCurrent() < deadline {
-                let lines = await LogCapture.shared.readAndClear()
-                for line in lines {
-                    let range = NSRange(line.startIndex..., in: line)
-                    if regex.firstMatch(in: line, range: range) != nil {
-                        matchedLines.append(line)
-                    }
-                }
-
-                if !matchedLines.isEmpty {
-                    let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - startTime)
-                    let output = matchedLines.joined(separator: "\n")
-                    let truncated = output.count > 10000 ? String(output.prefix(10000)) + "\n... [truncated]" : output
-                    let msg = "Pattern matched after \(elapsed)s (\(matchedLines.count) line(s)):\n\(truncated)"
-                    if json {
-                        print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: matchedLines.count)))
-                    } else {
-                        print(msg)
-                    }
-                    return
-                }
-
-                try await Task.sleep(nanoseconds: 200_000_000) // 200ms
-            }
-
-            // Timeout
-            let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - startTime)
-            let msg = "Timeout after \(elapsed)s -- pattern '\(pattern)' not found"
+        // Compile regex
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            let msg = "Invalid regex pattern: \(pattern)"
             if json {
-                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: 0)))
+                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
             } else {
                 print(msg)
             }
             throw ExitCode.failure
         }
+
+        // Resolve simulator
+        let env = Environment.live
+        let sim: String
+        do {
+            sim = try await env.session.resolveSimulator(simulator)
+        } catch {
+            let msg = "Failed to resolve simulator: \(error)"
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
+            } else {
+                print(msg)
+            }
+            throw ExitCode.failure
+        }
+
+        // Start log capture if not running
+        let wasRunning = await LogCapture.shared.isRunning
+        if !wasRunning {
+            let (logArgs, _) = await LogTools.buildLogArgs(
+                simulator: sim, mode: "smart", level: "debug",
+                process: nil, subsystem: subsystem, predicate: nil
+            )
+            do {
+                try await LogCapture.shared.start(arguments: logArgs)
+            } catch {
+                let msg = "Failed to start log capture: \(error)"
+                if json {
+                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: nil)))
+                } else {
+                    print(msg)
+                }
+                throw ExitCode.failure
+            }
+        }
+
+        // Clear existing buffer to only match new lines
+        _ = await LogCapture.shared.readAndClear()
+
+        let startTime = CFAbsoluteTimeGetCurrent()
+        let deadline = startTime + timeout
+        var matchedLines: [String] = []
+
+        // Poll for matches
+        while CFAbsoluteTimeGetCurrent() < deadline {
+            let lines = await LogCapture.shared.readAndClear()
+            for line in lines {
+                let range = NSRange(line.startIndex..., in: line)
+                if regex.firstMatch(in: line, range: range) != nil {
+                    matchedLines.append(line)
+                }
+            }
+
+            if !matchedLines.isEmpty {
+                let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - startTime)
+                let output = matchedLines.joined(separator: "\n")
+                let truncated = output.count > 10000 ? String(output.prefix(10000)) + "\n... [truncated]" : output
+                let msg = "Pattern matched after \(elapsed)s (\(matchedLines.count) line(s)):\n\(truncated)"
+                if json {
+                    print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: true, message: msg, lineCount: matchedLines.count)))
+                } else {
+                    print(msg)
+                }
+                return
+            }
+
+            try await Task.sleep(nanoseconds: 200_000_000) // 200ms
+        }
+
+        // Timeout
+        let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - startTime)
+        let msg = "Timeout after \(elapsed)s -- pattern '\(pattern)' not found"
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(LogResult(succeeded: false, message: msg, lineCount: 0)))
+        } else {
+            print(msg)
+        }
+        throw ExitCode.failure
     }
 }

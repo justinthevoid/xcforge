@@ -111,7 +111,7 @@ public enum SwiftPackageTools {
                 arguments: arguments,
                 workingDirectory: resolvedPath,
                 environment: nil,
-                timeout: 600
+                timeout: 1800
             )
             if result.succeeded {
                 return SPMResult(succeeded: true, message: result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -146,7 +146,7 @@ public enum SwiftPackageTools {
                 arguments: arguments,
                 workingDirectory: resolvedPath,
                 environment: nil,
-                timeout: 600
+                timeout: 1800
             )
             if result.succeeded {
                 return SPMResult(succeeded: true, message: result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))

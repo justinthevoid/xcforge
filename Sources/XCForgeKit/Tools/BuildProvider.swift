@@ -211,7 +211,7 @@ public enum BuildTools {
         buildArgs += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
 
         let start = CFAbsoluteTimeGetCurrent()
-        let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: 600)
+        let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: 1800)
         let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
 
         if result.succeeded {
@@ -433,7 +433,7 @@ public enum BuildTools {
         // Build is the critical path (~10-60s). Settings extraction, simulator boot,
         // and Simulator.app launch run concurrently — they complete while the build
         // is still compiling, adding zero wall-clock overhead.
-        async let buildTask = env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: 600)
+        async let buildTask = env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: 1800)
         async let settingsTask = env.shell.run("/usr/bin/xcodebuild", arguments: settingsArgs, timeout: 30)
         async let bootTask = env.shell.run("/usr/bin/xcrun", arguments: ["simctl", "boot", udid], timeout: 60)
         async let openTask = env.shell.run("/usr/bin/open", arguments: ["-a", "Simulator"], timeout: 10)

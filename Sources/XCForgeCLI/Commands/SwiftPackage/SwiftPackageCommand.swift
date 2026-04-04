@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import XCForgeKit
 
-struct SPM: ParsableCommand {
+struct SPM: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "spm",
         abstract: "Swift Package Manager operations (build, test, run, list, clean).",
@@ -11,7 +11,7 @@ struct SPM: ParsableCommand {
     )
 }
 
-struct SPMBuild: ParsableCommand {
+struct SPMBuild: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "build",
         abstract: "Build a Swift package."
@@ -26,29 +26,23 @@ struct SPMBuild: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let path = self.path
-        let configuration = self.configuration
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SwiftPackageTools.executeBuild(path: path, configuration: configuration, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SwiftPackageTools.executeBuild(path: path, configuration: configuration, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(result.message)
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(result.message)
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SPMTest: ParsableCommand {
+struct SPMTest: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "test",
         abstract: "Run tests for a Swift package."
@@ -66,30 +60,23 @@ struct SPMTest: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let path = self.path
-        let filter = self.filter
-        let parallel = self.parallel
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SwiftPackageTools.executeTest(path: path, filter: filter, parallel: parallel, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SwiftPackageTools.executeTest(path: path, filter: filter, parallel: parallel, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(result.message)
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(result.message)
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SPMRun: ParsableCommand {
+struct SPMRun: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
         abstract: "Run a Swift package executable."
@@ -107,30 +94,23 @@ struct SPMRun: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let path = self.path
-        let executable = self.executable
-        let arguments = self.arguments
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SwiftPackageTools.executeRun(path: path, executable: executable, arguments: arguments, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SwiftPackageTools.executeRun(path: path, executable: executable, arguments: arguments, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(result.message)
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(result.message)
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SPMList: ParsableCommand {
+struct SPMList: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
         abstract: "List targets and dependencies of a Swift package."
@@ -142,28 +122,23 @@ struct SPMList: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let path = self.path
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SwiftPackageTools.executeList(path: path, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SwiftPackageTools.executeList(path: path, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(result.message)
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(result.message)
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SPMClean: ParsableCommand {
+struct SPMClean: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "clean",
         abstract: "Clean the build artifacts of a Swift package."
@@ -175,23 +150,18 @@ struct SPMClean: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let path = self.path
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SwiftPackageTools.executeClean(path: path, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SwiftPackageTools.executeClean(path: path, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(result.message)
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(result.message)
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }

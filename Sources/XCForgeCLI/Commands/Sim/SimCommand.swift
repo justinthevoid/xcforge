@@ -18,7 +18,7 @@ struct Sim: ParsableCommand {
     )
 }
 
-struct SimList: ParsableCommand {
+struct SimList: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
         abstract: "List available iOS simulators with their state and UDID."
@@ -30,28 +30,23 @@ struct SimList: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let filter = self.filter
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeListSims(filter: filter, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeListSims(filter: filter, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimBoot: ParsableCommand {
+struct SimBoot: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "boot",
         abstract: "Boot an iOS simulator by name or UDID."
@@ -63,28 +58,23 @@ struct SimBoot: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeBootSim(simulator: simulator, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeBootSim(simulator: simulator, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimShutdown: ParsableCommand {
+struct SimShutdown: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "shutdown",
         abstract: "Shutdown a running simulator. Use 'all' to shutdown all simulators."
@@ -96,28 +86,23 @@ struct SimShutdown: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeShutdownSim(simulator: simulator, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeShutdownSim(simulator: simulator, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimInstall: ParsableCommand {
+struct SimInstall: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "install",
         abstract: "Install an app bundle on a booted simulator. Auto-detects from last build if omitted."
@@ -132,29 +117,23 @@ struct SimInstall: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let appPath = self.appPath
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeInstallApp(simulator: simulator, appPath: appPath, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeInstallApp(simulator: simulator, appPath: appPath, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimLaunch: ParsableCommand {
+struct SimLaunch: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "launch",
         abstract: "Launch an app on a booted simulator. Auto-detects from last build if omitted."
@@ -169,29 +148,23 @@ struct SimLaunch: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let bundleId = self.bundleId
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeLaunchApp(simulator: simulator, bundleId: bundleId, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeLaunchApp(simulator: simulator, bundleId: bundleId, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimTerminate: ParsableCommand {
+struct SimTerminate: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "terminate",
         abstract: "Terminate a running app on a simulator. Auto-detects from last build if omitted."
@@ -206,29 +179,23 @@ struct SimTerminate: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let bundleId = self.bundleId
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeTerminateApp(simulator: simulator, bundleId: bundleId, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeTerminateApp(simulator: simulator, bundleId: bundleId, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimClone: ParsableCommand {
+struct SimClone: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "clone",
         abstract: "Clone a simulator to create a snapshot of its current state."
@@ -243,29 +210,23 @@ struct SimClone: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let name = self.name
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeCloneSim(simulator: simulator, name: name, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeCloneSim(simulator: simulator, name: name, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimErase: ParsableCommand {
+struct SimErase: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "erase",
         abstract: "Erase a simulator to factory state. Simulator must be shut down first."
@@ -277,28 +238,23 @@ struct SimErase: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeEraseSim(simulator: simulator, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeEraseSim(simulator: simulator, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimDelete: ParsableCommand {
+struct SimDelete: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "delete",
         abstract: "Permanently delete a simulator."
@@ -310,28 +266,23 @@ struct SimDelete: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeDeleteSim(simulator: simulator, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeDeleteSim(simulator: simulator, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimOrientation: ParsableCommand {
+struct SimOrientation: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "orientation",
         abstract: "Set device orientation via WDA (PORTRAIT, LANDSCAPE, LANDSCAPE_LEFT, LANDSCAPE_RIGHT)."
@@ -343,30 +294,25 @@ struct SimOrientation: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let orientation = self.orientation
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeSetOrientation(orientation: orientation, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeSetOrientation(orientation: orientation, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
 // MARK: - Video Recording
 
-struct SimRecordStart: ParsableCommand {
+struct SimRecordStart: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "record-start",
         abstract: "Start recording simulator screen to a video file."
@@ -381,29 +327,23 @@ struct SimRecordStart: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let path = self.path
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeRecordVideoStart(simulator: simulator, path: path, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeRecordVideoStart(simulator: simulator, path: path, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimRecordStop: ParsableCommand {
+struct SimRecordStop: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "record-stop",
         abstract: "Stop an active video recording and return the file path."
@@ -412,28 +352,24 @@ struct SimRecordStop: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let json = self.json
+    mutating func run() async throws {
+        let result = await SimTools.executeRecordVideoStop()
 
-        try runAsync {
-            let result = await SimTools.executeRecordVideoStop()
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
 // MARK: - Simulator Location
 
-struct SimLocation: ParsableCommand {
+struct SimLocation: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "location",
         abstract: "Set simulated GPS location on a simulator."
@@ -451,30 +387,23 @@ struct SimLocation: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let latitude = self.latitude
-        let longitude = self.longitude
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeSetSimLocation(simulator: simulator, latitude: latitude, longitude: longitude, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeSetSimLocation(simulator: simulator, latitude: latitude, longitude: longitude, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimLocationReset: ParsableCommand {
+struct SimLocationReset: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "location-reset",
         abstract: "Reset simulator location to default."
@@ -486,30 +415,25 @@ struct SimLocationReset: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeResetSimLocation(simulator: simulator, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeResetSimLocation(simulator: simulator, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
 // MARK: - Simulator Appearance
 
-struct SimAppearance: ParsableCommand {
+struct SimAppearance: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "appearance",
         abstract: "Set simulator appearance to light or dark mode."
@@ -524,31 +448,25 @@ struct SimAppearance: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let appearance = self.appearance
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeSetSimAppearance(simulator: simulator, appearance: appearance, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeSetSimAppearance(simulator: simulator, appearance: appearance, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
 // MARK: - Status Bar
 
-struct SimStatusBar: ParsableCommand {
+struct SimStatusBar: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "statusbar",
         abstract: "Override simulator status bar values for clean screenshots."
@@ -578,38 +496,27 @@ struct SimStatusBar: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let time = self.time
-        let batteryLevel = self.batteryLevel
-        let batteryState = self.batteryState
-        let cellularBars = self.cellularBars
-        let wifiBars = self.wifiBars
-        let operatorName = self.operatorName
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeSimStatusBar(
+            simulator: simulator, time: time, batteryLevel: batteryLevel,
+            batteryState: batteryState, cellularBars: cellularBars,
+            wifiBars: wifiBars, operatorName: operatorName, env: env
+        )
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeSimStatusBar(
-                simulator: simulator, time: time, batteryLevel: batteryLevel,
-                batteryState: batteryState, cellularBars: cellularBars,
-                wifiBars: wifiBars, operatorName: operatorName, env: env
-            )
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct SimStatusBarClear: ParsableCommand {
+struct SimStatusBarClear: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "statusbar-clear",
         abstract: "Clear all status bar overrides and restore defaults."
@@ -621,23 +528,18 @@ struct SimStatusBarClear: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let simulator = self.simulator
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        let result = await SimTools.executeSimStatusBarClear(simulator: simulator, env: env)
 
-        try runAsync {
-            let env = Environment.live
-            let result = await SimTools.executeSimStatusBarClear(simulator: simulator, env: env)
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(SimRenderer.render(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(SimRenderer.render(result))
-            }
-
-            if !result.succeeded {
-                throw ExitCode.failure
-            }
+        if !result.succeeded {
+            throw ExitCode.failure
         }
     }
 }

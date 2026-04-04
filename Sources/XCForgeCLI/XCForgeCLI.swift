@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import XCForgeKit
 
-struct XCForgeCLI: ParsableCommand {
+struct XCForgeCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "xcforge",
         abstract: "CLI-first workflow entrypoints for xcforge.",
@@ -10,7 +10,7 @@ struct XCForgeCLI: ParsableCommand {
     )
 }
 
-struct Defaults: ParsableCommand {
+struct Defaults: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "defaults",
         abstract: "Show, set, or clear persisted workflow defaults.",
@@ -19,21 +19,19 @@ struct Defaults: ParsableCommand {
     )
 }
 
-struct DefaultsShow: ParsableCommand {
+struct DefaultsShow: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "show",
         abstract: "Display current persisted workflow defaults."
     )
 
-    mutating func run() throws {
-        try runAsync {
-            let env = Environment.live
-            print(await env.session.showDefaults())
-        }
+    mutating func run() async throws {
+        let env = Environment.live
+        print(await env.session.showDefaults())
     }
 }
 
-struct DefaultsSet: ParsableCommand {
+struct DefaultsSet: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "set",
         abstract: "Set one or more persisted workflow defaults."
@@ -48,42 +46,34 @@ struct DefaultsSet: ParsableCommand {
     @Option(help: "Default simulator name or UDID.")
     var simulator: String?
 
-    mutating func run() throws {
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
-
+    mutating func run() async throws {
         guard project != nil || scheme != nil || simulator != nil else {
             print("No defaults specified. Use --project, --scheme, or --simulator.")
             throw ExitCode.validationFailure
         }
 
-        try runAsync {
-            let env = Environment.live
-            await env.session.setDefaults(
-                project: project, scheme: scheme, simulator: simulator
-            )
-            print(await env.session.showDefaults())
-        }
+        let env = Environment.live
+        await env.session.setDefaults(
+            project: project, scheme: scheme, simulator: simulator
+        )
+        print(await env.session.showDefaults())
     }
 }
 
-struct DefaultsClear: ParsableCommand {
+struct DefaultsClear: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "clear",
         abstract: "Clear all persisted workflow defaults."
     )
 
-    mutating func run() throws {
-        try runAsync {
-            let env = Environment.live
-            await env.session.clearDefaults()
-            print("Defaults cleared. Auto-detection will be used for all parameters.")
-        }
+    mutating func run() async throws {
+        let env = Environment.live
+        await env.session.clearDefaults()
+        print("Defaults cleared. Auto-detection will be used for all parameters.")
     }
 }
 
-struct Diagnose: ParsableCommand {
+struct Diagnose: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "diagnose",
         abstract: "Start diagnosis workflows and inspect or summarize their results.",
@@ -91,7 +81,7 @@ struct Diagnose: ParsableCommand {
     )
 }
 
-struct DiagnoseStart: ParsableCommand {
+struct DiagnoseStart: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "start",
         abstract: "Create a diagnosis run with explicit resolved context."
@@ -115,15 +105,8 @@ struct DiagnoseStart: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
-        let reuseRunId = self.reuseRunId
-        let configuration = self.configuration
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisStartWorkflow(session: Environment.live.session)
             let result = await workflow.start(
                 request: DiagnosisStartRequest(
@@ -144,11 +127,13 @@ struct DiagnoseStart: ParsableCommand {
             if !result.isSuccessfulStart {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseBuild: ParsableCommand {
+struct DiagnoseBuild: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "build",
         abstract: "Diagnose a build for an existing diagnosis run."
@@ -160,11 +145,8 @@ struct DiagnoseBuild: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisBuildWorkflow()
             let result = await workflow.diagnose(
                 request: DiagnosisBuildRequest(runId: runId)
@@ -179,11 +161,13 @@ struct DiagnoseBuild: ParsableCommand {
             if result.status == .failed {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseTest: ParsableCommand {
+struct DiagnoseTest: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "test",
         abstract: "Diagnose a test run for an existing diagnosis run."
@@ -195,11 +179,8 @@ struct DiagnoseTest: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisTestWorkflow()
             let result = await workflow.diagnose(
                 request: DiagnosisTestRequest(runId: runId)
@@ -214,11 +195,13 @@ struct DiagnoseTest: ParsableCommand {
             if result.status != .succeeded {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseRuntime: ParsableCommand {
+struct DiagnoseRuntime: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "runtime",
         abstract: "Launch the app for an existing diagnosis run and capture supported runtime signals."
@@ -233,12 +216,8 @@ struct DiagnoseRuntime: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let captureScreenshot = self.captureScreenshot
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let env = Environment.live
             let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
             let result = await workflow.diagnose(
@@ -257,11 +236,13 @@ struct DiagnoseRuntime: ParsableCommand {
             if result.status != .succeeded {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseStatus: ParsableCommand {
+struct DiagnoseStatus: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "status",
         abstract: "Inspect the status of an active or recent diagnosis run."
@@ -273,11 +254,8 @@ struct DiagnoseStatus: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisStatusWorkflow()
             let result = await workflow.inspect(
                 request: DiagnosisStatusRequest(runId: runId)
@@ -292,11 +270,13 @@ struct DiagnoseStatus: ParsableCommand {
             if !result.isSuccessfulInspection {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseEvidence: ParsableCommand {
+struct DiagnoseEvidence: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "evidence",
         abstract: "Inspect all available evidence for an active or recent diagnosis run."
@@ -308,11 +288,8 @@ struct DiagnoseEvidence: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisStatusWorkflow()
             let result = await workflow.inspectEvidence(
                 request: DiagnosisStatusRequest(runId: runId)
@@ -327,11 +304,13 @@ struct DiagnoseEvidence: ParsableCommand {
             if !result.isSuccessfulInspection {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseInspect: ParsableCommand {
+struct DiagnoseInspect: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "inspect",
         abstract: "Consolidated troubleshooting view for investigating workflow outcomes."
@@ -343,11 +322,8 @@ struct DiagnoseInspect: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisInspectWorkflow()
             let result = await workflow.inspect(
                 request: DiagnosisInspectRequest(runId: runId)
@@ -362,11 +338,13 @@ struct DiagnoseInspect: ParsableCommand {
             if !result.isSuccessfulInspection {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseVerify: ParsableCommand {
+struct DiagnoseVerify: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "verify",
         abstract: "Rerun validation for a prior diagnosis run."
@@ -390,15 +368,8 @@ struct DiagnoseVerify: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
-        let configuration = self.configuration
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisVerifyWorkflow()
             let result = await workflow.verify(
                 request: DiagnosisVerifyRequest(
@@ -419,11 +390,13 @@ struct DiagnoseVerify: ParsableCommand {
             if !result.isSuccessfulVerification {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseCompare: ParsableCommand {
+struct DiagnoseCompare: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "compare",
         abstract: "Compare an original diagnosis result against the latest rerun."
@@ -435,11 +408,8 @@ struct DiagnoseCompare: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisCompareWorkflow()
             let result = await workflow.compare(
                 request: DiagnosisCompareRequest(runId: runId)
@@ -454,11 +424,13 @@ struct DiagnoseCompare: ParsableCommand {
             if !result.isSuccessfulComparison {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
 
-struct DiagnoseResult: ParsableCommand {
+struct DiagnoseResult: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "result",
         abstract: "Return the final proof-oriented result for a diagnosis run."
@@ -470,11 +442,8 @@ struct DiagnoseResult: ParsableCommand {
     @Flag(help: "Emit the final result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let runId = self.runId
-        let json = self.json
-
-        try runAsyncJSON(json: json) {
+    mutating func run() async throws {
+        do {
             let workflow = DiagnosisFinalResultWorkflow()
             let result = await workflow.assemble(
                 request: DiagnosisFinalResultRequest(runId: runId)
@@ -489,6 +458,8 @@ struct DiagnoseResult: ParsableCommand {
             if !result.isSuccessfulFinalResult {
                 throw ExitCode.failure
             }
+        } catch {
+            try rethrowOrJSONError(error, json: json)
         }
     }
 }
@@ -502,48 +473,17 @@ private extension Int32 {
     var asBool: Bool { self != 0 }
 }
 
-func runAsync(_ operation: @escaping @Sendable () async throws -> Void) throws {
-    let semaphore = DispatchSemaphore(value: 0)
-    let box = AsyncResultBox<Void>()
-
-    Task {
-        defer { semaphore.signal() }
-        do {
-            try await operation()
-            box.result = .success(())
-        } catch {
-            box.result = .failure(error)
-        }
+/// Rethrow an error, formatting as JSON if the flag is set.
+func rethrowOrJSONError(_ error: Error, json: Bool) throws {
+    if let exitCode = error as? ExitCode { throw exitCode }
+    guard json else { throw error }
+    let envelope = CLIErrorEnvelope(error: "\(error)", code: errorCode(for: error))
+    if let data = try? JSONEncoder().encode(envelope),
+       let jsonString = String(data: data, encoding: .utf8)
+    {
+        print(jsonString)
     }
-
-    let timeoutSeconds = 120
-    let waitResult = semaphore.wait(timeout: .now() + .seconds(timeoutSeconds))
-    if waitResult == .timedOut {
-        throw ValidationError("Async operation timed out after \(timeoutSeconds) seconds")
-    }
-
-    if case let .failure(error) = box.result {
-        throw error
-    }
-}
-
-/// Variant of `runAsync` that catches errors and emits a JSON error envelope on stdout
-/// when the `--json` flag is active, instead of letting ArgumentParser render plain text.
-func runAsyncJSON(json: Bool, _ operation: @escaping @Sendable () async throws -> Void) throws {
-    do {
-        try runAsync(operation)
-    } catch let error as ExitCode {
-        throw error  // ExitCode is already handled — don't wrap it
-    } catch {
-        guard json else { throw error }
-        let envelope = CLIErrorEnvelope(error: "\(error)", code: errorCode(for: error))
-        if let data = try? JSONEncoder().encode(envelope),
-           let jsonString = String(data: data, encoding: .utf8)
-        {
-            print(jsonString)
-        }
-        throw ExitCode.failure
-    }
+    throw ExitCode.failure
 }
 
 struct CLIErrorEnvelope: Encodable {
@@ -562,8 +502,4 @@ private func errorCode(for error: Error) -> String {
     if error is EncodingError { return "encoding_failed" }
     if error is DecodingError { return "decoding_failed" }
     return "execution_failed"
-}
-
-final class AsyncResultBox<T>: @unchecked Sendable {
-    var result: Result<T, Error>?
 }

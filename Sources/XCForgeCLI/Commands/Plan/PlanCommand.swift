@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import XCForgeKit
 
-struct Plan: ParsableCommand {
+struct Plan: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "plan",
         abstract: "Execute multi-step UI automation plans.",
@@ -12,7 +12,7 @@ struct Plan: ParsableCommand {
 
 // MARK: - plan run
 
-struct PlanRun: ParsableCommand {
+struct PlanRun: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
         abstract: "Execute a UI automation plan from a JSON file or stdin."
@@ -33,23 +33,20 @@ struct PlanRun: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let filePath = self.file
-        let readStdin = self.stdin
+    mutating func run() async throws {
         var errorStrategy = self.errorStrategy
         var timeout = self.timeout
-        let json = self.json
 
         // Read plan JSON
         let planJSON: String
-        if let path = filePath {
+        if let path = file {
             guard let data = FileManager.default.contents(atPath: path),
                   let str = String(data: data, encoding: .utf8) else {
                 print("Error: Could not read file at '\(path)'")
                 throw ExitCode.failure
             }
             planJSON = str
-        } else if readStdin {
+        } else if stdin {
             var input = ""
             while let line = readLine(strippingNewline: false) {
                 input += line
@@ -95,65 +92,60 @@ struct PlanRun: ParsableCommand {
             throw ExitCode.failure
         }
 
-        let resolvedErrorStrategy = errorStrategy
-        let resolvedTimeout = timeout
+        // Parse
+        let planSteps: [PlanStep]
+        do {
+            planSteps = try PlanParser.parse(steps)
+        } catch {
+            print("Parse error: \(error)")
+            throw ExitCode.failure
+        }
 
-        try runAsync {
-            // Parse
-            let planSteps: [PlanStep]
-            do {
-                planSteps = try PlanParser.parse(steps)
-            } catch {
-                print("Parse error: \(error)")
-                throw ExitCode.failure
+        if planSteps.isEmpty {
+            let report = PlanReport(steps: [])
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(report))
+            } else {
+                print(PlanRenderer.render(report))
             }
+            return
+        }
 
-            if planSteps.isEmpty {
-                let report = PlanReport(steps: [])
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(report))
-                } else {
-                    print(PlanRenderer.render(report))
-                }
-                return
+        let strategy = ErrorStrategy(rawValue: errorStrategy) ?? .abortWithScreenshot
+
+        // Ensure WDA
+        let env = Environment.live
+        do {
+            let sim = try await env.session.resolveSimulator(nil)
+            try await env.wdaClient.ensureWDARunning(simulator: sim)
+        } catch {
+            print("WDA setup failed: \(error)")
+            throw ExitCode.failure
+        }
+
+        let executor = PlanExecutor(session: env.session, wdaClient: env.wdaClient, errorStrategy: strategy, timeoutSeconds: timeout)
+        let result = await executor.execute(steps: planSteps)
+
+        switch result {
+        case .completed(let report):
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(report))
+            } else {
+                print(PlanRenderer.render(report))
             }
+            if report.failed > 0 { throw ExitCode.failure }
 
-            let strategy = ErrorStrategy(rawValue: resolvedErrorStrategy) ?? .abortWithScreenshot
-
-            // Ensure WDA
-            let env = Environment.live
-            do {
-                let sim = try await env.session.resolveSimulator(nil)
-                try await env.wdaClient.ensureWDARunning(simulator: sim)
-            } catch {
-                print("WDA setup failed: \(error)")
-                throw ExitCode.failure
-            }
-
-            let executor = PlanExecutor(session: env.session, wdaClient: env.wdaClient, errorStrategy: strategy, timeoutSeconds: resolvedTimeout)
-            let result = await executor.execute(steps: planSteps)
-
-            switch result {
-            case .completed(let report):
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(report))
-                } else {
-                    print(PlanRenderer.render(report))
-                }
-                if report.failed > 0 { throw ExitCode.failure }
-
-            case .suspended(let suspended, _):
-                let sessionId = await PlanSessionStore.shared.store(suspended)
-                let report = PlanReport(
-                    steps: suspended.completedResults,
-                    sessionId: sessionId,
-                    suspendQuestion: suspended.question
-                )
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(report))
-                } else {
-                    print(PlanRenderer.render(report))
-                }
+        case .suspended(let suspended, _):
+            let sessionId = await PlanSessionStore.shared.store(suspended)
+            let report = PlanReport(
+                steps: suspended.completedResults,
+                sessionId: sessionId,
+                suspendQuestion: suspended.question
+            )
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(report))
+            } else {
+                print(PlanRenderer.render(report))
             }
         }
     }
@@ -161,7 +153,7 @@ struct PlanRun: ParsableCommand {
 
 // MARK: - plan decide
 
-struct PlanDecide: ParsableCommand {
+struct PlanDecide: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "decide",
         abstract: "Resume a suspended plan with a decision."
@@ -176,68 +168,62 @@ struct PlanDecide: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let sessionId = self.sessionId
-        let decision = self.decision
-        let json = self.json
+    mutating func run() async throws {
+        let env = Environment.live
+        guard let suspended = await PlanSessionStore.shared.consume(sessionId) else {
+            print("Session '\(sessionId)' not found or expired (5-minute TTL). Re-run the plan.")
+            throw ExitCode.failure
+        }
 
-        try runAsync {
-            let env = Environment.live
-            guard let suspended = await PlanSessionStore.shared.consume(sessionId) else {
-                print("Session '\(sessionId)' not found or expired (5-minute TTL). Re-run the plan.")
-                throw ExitCode.failure
+        if decision == "abort" {
+            let report = PlanReport(steps: suspended.completedResults)
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(report))
+            } else {
+                print(PlanRenderer.render(report))
             }
+            return
+        }
 
-            if decision == "abort" {
-                let report = PlanReport(steps: suspended.completedResults)
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(report))
+        if decision == "accept" || decision == "dismiss" {
+            do {
+                if decision == "accept" {
+                    _ = try await env.wdaClient.acceptAlert()
                 } else {
-                    print(PlanRenderer.render(report))
+                    _ = try await env.wdaClient.dismissAlert()
                 }
-                return
-            }
+            } catch { /* continue anyway */ }
+        }
 
-            if decision == "accept" || decision == "dismiss" {
-                do {
-                    if decision == "accept" {
-                        _ = try await env.wdaClient.acceptAlert()
-                    } else {
-                        _ = try await env.wdaClient.dismissAlert()
-                    }
-                } catch { /* continue anyway */ }
-            }
+        let startAt = decision == "skip" ? suspended.pauseIndex + 1 : suspended.pauseIndex + 1
+        let executor = PlanExecutor(session: env.session, wdaClient: env.wdaClient, errorStrategy: suspended.errorStrategy, timeoutSeconds: suspended.timeoutSeconds)
+        executor.restore(
+            priorResults: suspended.completedResults,
+            savedBindings: suspended.variableBindings,
+            startTime: suspended.startTime
+        )
+        let result = await executor.execute(steps: suspended.steps, startAt: startAt)
 
-            let startAt = decision == "skip" ? suspended.pauseIndex + 1 : suspended.pauseIndex + 1
-            let executor = PlanExecutor(session: env.session, wdaClient: env.wdaClient, errorStrategy: suspended.errorStrategy, timeoutSeconds: suspended.timeoutSeconds)
-            executor.restore(
-                priorResults: suspended.completedResults,
-                savedBindings: suspended.variableBindings,
-                startTime: suspended.startTime
+        switch result {
+        case .completed(let report):
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(report))
+            } else {
+                print(PlanRenderer.render(report))
+            }
+            if report.failed > 0 { throw ExitCode.failure }
+
+        case .suspended(let newSuspended, _):
+            let newSessionId = await PlanSessionStore.shared.store(newSuspended)
+            let report = PlanReport(
+                steps: newSuspended.completedResults,
+                sessionId: newSessionId,
+                suspendQuestion: newSuspended.question
             )
-            let result = await executor.execute(steps: suspended.steps, startAt: startAt)
-
-            switch result {
-            case .completed(let report):
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(report))
-                } else {
-                    print(PlanRenderer.render(report))
-                }
-                if report.failed > 0 { throw ExitCode.failure }
-
-            case .suspended(let newSuspended, _):
-                let newSessionId = await PlanSessionStore.shared.store(newSuspended)
-                let report = PlanReport(
-                    steps: newSuspended.completedResults,
-                    sessionId: newSessionId,
-                    suspendQuestion: newSuspended.question
-                )
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(report))
-                } else {
-                    print(PlanRenderer.render(report))
-                }
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(report))
+            } else {
+                print(PlanRenderer.render(report))
             }
         }
     }

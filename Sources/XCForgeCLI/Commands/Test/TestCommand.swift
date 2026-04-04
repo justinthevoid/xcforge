@@ -11,7 +11,7 @@ struct Test: ParsableCommand {
     )
 }
 
-struct TestRun: ParsableCommand {
+struct TestRun: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
         abstract: "Run xcodebuild test on simulator."
@@ -41,41 +41,32 @@ struct TestRun: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
+    mutating func run() async throws {
         let configuration = self.configuration ?? "Debug"
-        let testplan = self.testplan
-        let filter = self.filter
-        let coverage = self.coverage
-        let json = self.json
 
-        try runAsync {
-            let execution = try await TestTools.executeTest(
-                project: project,
-                scheme: scheme,
-                simulator: simulator,
-                configuration: configuration,
-                testplan: testplan,
-                filter: filter,
-                coverage: coverage
-            )
+        let execution = try await TestTools.executeTest(
+            project: project,
+            scheme: scheme,
+            simulator: simulator,
+            configuration: configuration,
+            testplan: testplan,
+            filter: filter,
+            coverage: coverage
+        )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(execution))
-            } else {
-                print(TestRenderer.renderTest(execution))
-            }
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(execution))
+        } else {
+            print(TestRenderer.renderTest(execution))
+        }
 
-            if !execution.succeeded {
-                throw ExitCode.failure
-            }
+        if !execution.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
-struct TestFailures: ParsableCommand {
+struct TestFailures: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "failures",
         abstract: "Extract failed tests with error messages, console output, and screenshots."
@@ -99,37 +90,28 @@ struct TestFailures: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let xcresultPath = self.xcresultPath
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
-        let includeConsole = self.includeConsole
-        let json = self.json
+    mutating func run() async throws {
+        let result = try await TestTools.extractFailures(
+            xcresultPath: xcresultPath,
+            project: project,
+            scheme: scheme,
+            simulator: simulator,
+            includeConsole: includeConsole
+        )
 
-        try runAsync {
-            let result = try await TestTools.extractFailures(
-                xcresultPath: xcresultPath,
-                project: project,
-                scheme: scheme,
-                simulator: simulator,
-                includeConsole: includeConsole
-            )
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(TestRenderer.renderFailures(result))
+        }
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(TestRenderer.renderFailures(result))
-            }
-
-            if !result.failures.isEmpty {
-                throw ExitCode.failure
-            }
+        if !result.failures.isEmpty {
+            throw ExitCode.failure
         }
     }
 }
 
-struct TestCoverage: ParsableCommand {
+struct TestCoverage: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "coverage",
         abstract: "Show code coverage report. Without --file: per-file overview. With --file: per-function detail."
@@ -156,59 +138,51 @@ struct TestCoverage: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let file = self.file
-        let xcresultPath = self.xcresultPath
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
+    mutating func run() async throws {
         let minCoverage = self.minCoverage ?? 100.0
-        let json = self.json
 
-        try runAsync {
-            if let file {
-                // Per-function drill-down
-                let resolvedXcresult: String
-                if let provided = xcresultPath {
-                    resolvedXcresult = provided
-                } else {
-                    let coverageResult = try await TestTools.extractCoverage(
-                        project: project, scheme: scheme, simulator: simulator
-                    )
-                    resolvedXcresult = coverageResult.xcresultPath
-                }
-
-                let detail = try await TestTools.extractFileCoverage(
-                    file: file,
-                    xcresultPath: resolvedXcresult
-                )
-
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(detail))
-                } else {
-                    print(TestRenderer.renderFileCoverage(detail))
-                }
+        if let file {
+            // Per-function drill-down
+            let resolvedXcresult: String
+            if let provided = xcresultPath {
+                resolvedXcresult = provided
             } else {
-                // Overview
-                let result = try await TestTools.extractCoverage(
-                    xcresultPath: xcresultPath,
-                    project: project,
-                    scheme: scheme,
-                    simulator: simulator,
-                    minCoverage: minCoverage
+                let coverageResult = try await TestTools.extractCoverage(
+                    project: project, scheme: scheme, simulator: simulator
                 )
+                resolvedXcresult = coverageResult.xcresultPath
+            }
 
-                if json {
-                    print(try WorkflowJSONRenderer.renderJSON(result))
-                } else {
-                    print(TestRenderer.renderCoverage(result))
-                }
+            let detail = try await TestTools.extractFileCoverage(
+                file: file,
+                xcresultPath: resolvedXcresult
+            )
+
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(detail))
+            } else {
+                print(TestRenderer.renderFileCoverage(detail))
+            }
+        } else {
+            // Overview
+            let result = try await TestTools.extractCoverage(
+                xcresultPath: xcresultPath,
+                project: project,
+                scheme: scheme,
+                simulator: simulator,
+                minCoverage: minCoverage
+            )
+
+            if json {
+                print(try WorkflowJSONRenderer.renderJSON(result))
+            } else {
+                print(TestRenderer.renderCoverage(result))
             }
         }
     }
 }
 
-struct TestList: ParsableCommand {
+struct TestList: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
         abstract: "List available test identifiers (Target/Class/method) for a scheme."
@@ -226,24 +200,17 @@ struct TestList: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
-        let json = self.json
+    mutating func run() async throws {
+        let result = try await TestTools.executeListTests(
+            project: project,
+            scheme: scheme,
+            simulator: simulator
+        )
 
-        try runAsync {
-            let result = try await TestTools.executeListTests(
-                project: project,
-                scheme: scheme,
-                simulator: simulator
-            )
-
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(TestRenderer.renderListTests(result))
-            }
+        if json {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+        } else {
+            print(TestRenderer.renderListTests(result))
         }
     }
 }

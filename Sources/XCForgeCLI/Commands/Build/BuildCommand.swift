@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 import XCForgeKit
 
-struct Build: ParsableCommand {
+struct Build: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "build",
         abstract: "Build, clean, and inspect Xcode projects.",
@@ -13,7 +13,7 @@ struct Build: ParsableCommand {
 
 // MARK: - build run (default)
 
-struct BuildRun: ParsableCommand {
+struct BuildRun: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "run",
         abstract: "Build an iOS app for simulator."
@@ -37,54 +37,48 @@ struct BuildRun: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let project = self.project
-        let scheme = self.scheme
-        let simulator = self.simulator
+    mutating func run() async throws {
         let configuration = self.configuration ?? "Debug"
-        let diagnose = self.diagnose
-        let useJSON = shouldOutputJSON(flag: self.json)
+        let useJSON = shouldOutputJSON(flag: json)
 
-        try runAsync {
-            let env = Environment.live
-            if diagnose {
-                let resolvedProject = try await env.session.resolveProject(project)
-                let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
-                let resolvedSimulator = try await env.session.resolveSimulator(simulator)
+        let env = Environment.live
+        if diagnose {
+            let resolvedProject = try await env.session.resolveProject(project)
+            let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
+            let resolvedSimulator = try await env.session.resolveSimulator(simulator)
 
-                let execution = try await TestTools.executeBuildDiagnosis(
-                    project: resolvedProject,
-                    scheme: resolvedScheme,
-                    simulator: resolvedSimulator,
-                    configuration: configuration
-                )
+            let execution = try await TestTools.executeBuildDiagnosis(
+                project: resolvedProject,
+                scheme: resolvedScheme,
+                simulator: resolvedSimulator,
+                configuration: configuration
+            )
 
-                if useJSON {
-                    print(try WorkflowJSONRenderer.renderJSON(execution))
-                } else {
-                    print(BuildRenderer.renderDiagnose(execution))
-                }
-
-                if !execution.succeeded {
-                    throw ExitCode.failure
-                }
+            if useJSON {
+                print(try WorkflowJSONRenderer.renderJSON(execution))
             } else {
-                let execution = try await BuildTools.executeBuild(
-                    project: project,
-                    scheme: scheme,
-                    simulator: simulator,
-                    configuration: configuration
-                )
+                print(BuildRenderer.renderDiagnose(execution))
+            }
 
-                if useJSON {
-                    print(try WorkflowJSONRenderer.renderJSON(execution))
-                } else {
-                    print(BuildRenderer.renderBuild(execution))
-                }
+            if !execution.succeeded {
+                throw ExitCode.failure
+            }
+        } else {
+            let execution = try await BuildTools.executeBuild(
+                project: project,
+                scheme: scheme,
+                simulator: simulator,
+                configuration: configuration
+            )
 
-                if !execution.succeeded {
-                    throw ExitCode.failure
-                }
+            if useJSON {
+                print(try WorkflowJSONRenderer.renderJSON(execution))
+            } else {
+                print(BuildRenderer.renderBuild(execution))
+            }
+
+            if !execution.succeeded {
+                throw ExitCode.failure
             }
         }
     }
@@ -92,7 +86,7 @@ struct BuildRun: ParsableCommand {
 
 // MARK: - build clean
 
-struct BuildClean: ParsableCommand {
+struct BuildClean: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "clean",
         abstract: "Clean build artifacts for a project and scheme."
@@ -107,33 +101,29 @@ struct BuildClean: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let project = self.project
-        let scheme = self.scheme
-        let useJSON = shouldOutputJSON(flag: self.json)
+    mutating func run() async throws {
+        let useJSON = shouldOutputJSON(flag: json)
 
-        try runAsync {
-            let execution = try await BuildTools.executeClean(
-                project: project,
-                scheme: scheme
-            )
+        let execution = try await BuildTools.executeClean(
+            project: project,
+            scheme: scheme
+        )
 
-            if useJSON {
-                print(try WorkflowJSONRenderer.renderJSON(execution))
-            } else {
-                print(BuildRenderer.renderClean(execution))
-            }
+        if useJSON {
+            print(try WorkflowJSONRenderer.renderJSON(execution))
+        } else {
+            print(BuildRenderer.renderClean(execution))
+        }
 
-            if !execution.succeeded {
-                throw ExitCode.failure
-            }
+        if !execution.succeeded {
+            throw ExitCode.failure
         }
     }
 }
 
 // MARK: - build discover
 
-struct BuildDiscover: ParsableCommand {
+struct BuildDiscover: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "discover",
         abstract: "Find .xcodeproj and .xcworkspace files in a directory."
@@ -145,25 +135,23 @@ struct BuildDiscover: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let path = self.path ?? FileManager.default.currentDirectoryPath
-        let useJSON = shouldOutputJSON(flag: self.json)
+        let useJSON = shouldOutputJSON(flag: json)
 
-        try runAsync {
-            let execution = try await BuildTools.executeDiscover(path: path)
+        let execution = try await BuildTools.executeDiscover(path: path)
 
-            if useJSON {
-                print(try WorkflowJSONRenderer.renderJSON(execution))
-            } else {
-                print(BuildRenderer.renderDiscover(execution))
-            }
+        if useJSON {
+            print(try WorkflowJSONRenderer.renderJSON(execution))
+        } else {
+            print(BuildRenderer.renderDiscover(execution))
         }
     }
 }
 
 // MARK: - build schemes
 
-struct BuildSchemes: ParsableCommand {
+struct BuildSchemes: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "schemes",
         abstract: "List available schemes for a project."
@@ -175,22 +163,19 @@ struct BuildSchemes: ParsableCommand {
     @Flag(help: "Emit the result as machine-readable JSON.")
     var json = false
 
-    mutating func run() throws {
-        let project = self.project
-        let useJSON = shouldOutputJSON(flag: self.json)
+    mutating func run() async throws {
+        let useJSON = shouldOutputJSON(flag: json)
 
-        try runAsync {
-            let execution = try await BuildTools.executeListSchemes(project: project)
+        let execution = try await BuildTools.executeListSchemes(project: project)
 
-            if useJSON {
-                print(try WorkflowJSONRenderer.renderJSON(execution))
-            } else {
-                print(BuildRenderer.renderSchemes(execution))
-            }
+        if useJSON {
+            print(try WorkflowJSONRenderer.renderJSON(execution))
+        } else {
+            print(BuildRenderer.renderSchemes(execution))
+        }
 
-            if !execution.succeeded {
-                throw ExitCode.failure
-            }
+        if !execution.succeeded {
+            throw ExitCode.failure
         }
     }
 }
