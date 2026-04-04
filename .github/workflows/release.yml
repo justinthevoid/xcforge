@@ -16,8 +16,15 @@ jobs:
         run: |
           swift build -c release --arch arm64 --disable-sandbox
           swift build -c release --arch x86_64 --disable-sandbox
-          ARM_BIN=$(swift build -c release --arch arm64 --show-bin-path)/xcforge
-          X86_BIN=$(swift build -c release --arch x86_64 --show-bin-path)/xcforge
+          ARM_BIN=$(find .build -path '*/arm64*/release/xcforge' -type f | head -1)
+          X86_BIN=$(find .build -path '*/x86_64*/release/xcforge' -type f | head -1)
+          echo "arm64 binary: $ARM_BIN"
+          echo "x86_64 binary: $X86_BIN"
+          if [ -z "$ARM_BIN" ] || [ -z "$X86_BIN" ]; then
+            echo "::error::Could not find arch binaries"
+            find .build -name xcforge -type f
+            exit 1
+          fi
           mkdir -p .build/universal
           lipo -create "$ARM_BIN" "$X86_BIN" -output .build/universal/xcforge
           file .build/universal/xcforge
