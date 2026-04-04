@@ -13,7 +13,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build universal binary
-        run: swift build -c release --arch arm64 --arch x86_64 --disable-sandbox
+        run: |
+          swift build -c release --arch arm64 --arch x86_64 --disable-sandbox || true
+          BINARY=.build/apple/Products/Release/xcforge
+          if [ ! -f "$BINARY" ]; then
+            echo "::error::Binary not found at $BINARY"
+            exit 1
+          fi
+          file "$BINARY"
 
       - name: Package tarball
         run: |

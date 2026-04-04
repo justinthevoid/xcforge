@@ -21,6 +21,8 @@ _bmad-output/
 # === Secrets & environment ===
 .env
 .netrc
+.mcpregistry_github_token
+.mcpregistry_registry_token
 
 # === OS clutter ===
 .DS_Store
