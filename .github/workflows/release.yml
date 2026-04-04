@@ -14,16 +14,14 @@ jobs:
 
       - name: Build universal binary
         run: |
-          swift build -c release --arch arm64 --arch x86_64 --disable-sandbox || true
-          BIN_PATH=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path 2>/dev/null)
-          BINARY="${BIN_PATH}/xcforge"
-          if [ ! -f "$BINARY" ]; then
-            echo "::error::Binary not found at $BINARY"
-            find .build -name xcforge -type f 2>/dev/null || true
-            exit 1
-          fi
-          file "$BINARY"
-          echo "BINARY_PATH=${BINARY}" >> "$GITHUB_ENV"
+          swift build -c release --arch arm64 --disable-sandbox
+          swift build -c release --arch x86_64 --disable-sandbox
+          ARM_BIN=$(swift build -c release --arch arm64 --show-bin-path)/xcforge
+          X86_BIN=$(swift build -c release --arch x86_64 --show-bin-path)/xcforge
+          mkdir -p .build/universal
+          lipo -create "$ARM_BIN" "$X86_BIN" -output .build/universal/xcforge
+          file .build/universal/xcforge
+          echo "BINARY_PATH=.build/universal/xcforge" >> "$GITHUB_ENV"
 
       - name: Package tarball
         run: |
