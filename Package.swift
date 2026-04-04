@@ -11,7 +11,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "xcforgeCore",
+            name: "XCForgeKit",
             dependencies: [
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "Logging", package: "swift-log"),
@@ -21,19 +21,19 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "xcforge",
+            name: "XCForgeCLI",
             dependencies: [
-                "xcforgeCore",
+                "XCForgeKit",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
         .testTarget(
-            name: "xcforgeTests",
+            name: "XCForgeKitTests",
             dependencies: [
-                "xcforgeCore",
-                "xcforge",
+                "XCForgeKit",
+                "XCForgeCLI",
             ]
         ),
     ]
