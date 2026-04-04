@@ -12,20 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build universal binary
+      - name: Build release binary
         run: |
-          swift build -c release --arch arm64 --disable-sandbox
-          swift build -c release --arch x86_64 --disable-sandbox
-          echo "=== Searching for xcforge binary ==="
-          find .build -name 'xcforge' -not -path '*/checkouts/*' -not -path '*/Intermediates*' 2>/dev/null || true
-          echo "=== Listing .build/apple/Products if exists ==="
-          ls -laR .build/apple/Products/ 2>/dev/null | head -40 || true
-          echo "=== Listing .build/release if exists ==="
-          ls -la .build/release/ 2>/dev/null | head -20 || true
-          echo "=== Listing .build/arm64* if exists ==="
-          find .build/arm64* -maxdepth 3 -type f -name 'xcforge*' 2>/dev/null || true
-          echo "=== End debug ==="
-          exit 1
+          swift build -c release --disable-sandbox
+          BINARY=.build/release/xcforge
+          if [ ! -f "$BINARY" ]; then
+            echo "::error::Binary not found at $BINARY"
+            find .build -name xcforge -type f 2>/dev/null || true
+            exit 1
+          fi
+          file "$BINARY"
+          echo "BINARY_PATH=${BINARY}" >> "$GITHUB_ENV"
 
       - name: Package tarball
         run: |
