@@ -3,503 +3,527 @@ import Foundation
 import XCForgeKit
 
 struct XCForgeCLI: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "xcforge",
-        abstract: "CLI-first workflow entrypoints for xcforge.",
-        subcommands: [Build.self, Test.self, BuildTest.self, Sim.self, Device.self, Diagnose.self, Defaults.self, Console.self, Git.self, Logs.self, Screenshot.self, UI.self, Accessibility.self, Plan.self, SPM.self]
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "xcforge",
+    abstract: "CLI-first workflow entrypoints for xcforge.",
+    subcommands: [
+      Build.self, Test.self, BuildTest.self, Sim.self, Device.self, Diagnose.self, Defaults.self,
+      Console.self, Git.self, Logs.self, Screenshot.self, UI.self, Accessibility.self, Plan.self,
+      SPM.self,
+    ]
+  )
 }
 
 struct Defaults: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "defaults",
-        abstract: "Show, set, or clear persisted workflow defaults.",
-        subcommands: [DefaultsShow.self, DefaultsSet.self, DefaultsClear.self],
-        defaultSubcommand: DefaultsShow.self
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "defaults",
+    abstract: "Show, set, or clear persisted workflow defaults.",
+    subcommands: [DefaultsShow.self, DefaultsSet.self, DefaultsClear.self],
+    defaultSubcommand: DefaultsShow.self
+  )
 }
 
 struct DefaultsShow: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "show",
-        abstract: "Display current persisted workflow defaults."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "show",
+    abstract: "Display current persisted workflow defaults."
+  )
 
-    mutating func run() async throws {
-        let env = Environment.live
-        print(await env.session.showDefaults())
-    }
+  mutating func run() async throws {
+    let env = Environment.live
+    print(await env.session.showDefaults())
+  }
 }
 
 struct DefaultsSet: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "set",
-        abstract: "Set one or more persisted workflow defaults."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "set",
+    abstract: "Set one or more persisted workflow defaults."
+  )
 
-    @Option(help: "Default project path (.xcodeproj or .xcworkspace).")
-    var project: String?
+  @Option(help: "Default project path (.xcodeproj or .xcworkspace).")
+  var project: String?
 
-    @Option(help: "Default scheme name.")
-    var scheme: String?
+  @Option(help: "Default scheme name.")
+  var scheme: String?
 
-    @Option(help: "Default simulator name or UDID.")
-    var simulator: String?
+  @Option(help: "Default simulator name or UDID.")
+  var simulator: String?
 
-    mutating func run() async throws {
-        guard project != nil || scheme != nil || simulator != nil else {
-            print("No defaults specified. Use --project, --scheme, or --simulator.")
-            throw ExitCode.validationFailure
-        }
-
-        let env = Environment.live
-        await env.session.setDefaults(
-            project: project, scheme: scheme, simulator: simulator
-        )
-        print(await env.session.showDefaults())
+  mutating func run() async throws {
+    guard project != nil || scheme != nil || simulator != nil else {
+      print("No defaults specified. Use --project, --scheme, or --simulator.")
+      throw ExitCode.validationFailure
     }
+
+    let env = Environment.live
+    await env.session.setDefaults(
+      project: project, scheme: scheme, simulator: simulator
+    )
+    print(await env.session.showDefaults())
+  }
 }
 
 struct DefaultsClear: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "clear",
-        abstract: "Clear all persisted workflow defaults."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "clear",
+    abstract: "Clear all persisted workflow defaults."
+  )
 
-    mutating func run() async throws {
-        let env = Environment.live
-        await env.session.clearDefaults()
-        print("Defaults cleared. Auto-detection will be used for all parameters.")
-    }
+  mutating func run() async throws {
+    let env = Environment.live
+    await env.session.clearDefaults()
+    print("Defaults cleared. Auto-detection will be used for all parameters.")
+  }
 }
 
 struct Diagnose: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "diagnose",
-        abstract: "Start diagnosis workflows and inspect or summarize their results.",
-        subcommands: [DiagnoseStart.self, DiagnoseBuild.self, DiagnoseTest.self, DiagnoseRuntime.self, DiagnoseStatus.self, DiagnoseEvidence.self, DiagnoseInspect.self, DiagnoseVerify.self, DiagnoseCompare.self, DiagnoseResult.self]
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "diagnose",
+    abstract: "Start diagnosis workflows and inspect or summarize their results.",
+    subcommands: [
+      DiagnoseStart.self, DiagnoseBuild.self, DiagnoseTest.self, DiagnoseRuntime.self,
+      DiagnoseStatus.self, DiagnoseEvidence.self, DiagnoseInspect.self, DiagnoseVerify.self,
+      DiagnoseCompare.self, DiagnoseResult.self,
+    ]
+  )
 }
 
 struct DiagnoseStart: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "start",
-        abstract: "Create a diagnosis run with explicit resolved context."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "start",
+    abstract: "Create a diagnosis run with explicit resolved context."
+  )
 
-    @Option(help: "Path to the .xcodeproj or .xcworkspace to use for this run.")
-    var project: String?
+  @Option(help: "Path to the .xcodeproj or .xcworkspace to use for this run.")
+  var project: String?
 
-    @Option(help: "Scheme name to use for this run.")
-    var scheme: String?
+  @Option(help: "Scheme name to use for this run.")
+  var scheme: String?
 
-    @Option(help: "Simulator UDID or display name to use for this run.")
-    var simulator: String?
+  @Option(help: "Simulator UDID or display name to use for this run.")
+  var simulator: String?
 
-    @Option(help: "Run ID to reuse context from. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one when context reuse is needed.")
-    var reuseRunId: String?
+  @Option(
+    help:
+      "Run ID to reuse context from. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one when context reuse is needed."
+  )
+  var reuseRunId: String?
 
-    @Option(help: "Build configuration used when resolving app context.")
-    var configuration: String?
+  @Option(help: "Build configuration used when resolving app context.")
+  var configuration: String?
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisStartWorkflow(session: Environment.live.session)
-            let result = await workflow.start(
-                request: DiagnosisStartRequest(
-                    project: project,
-                    scheme: scheme,
-                    simulator: simulator,
-                    reuseRunId: reuseRunId,
-                    configuration: configuration
-                )
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisStartWorkflow(session: Environment.live.session)
+      let result = await workflow.start(
+        request: DiagnosisStartRequest(
+          project: project,
+          scheme: scheme,
+          simulator: simulator,
+          reuseRunId: reuseRunId,
+          configuration: configuration
+        )
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisStartRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisStartRenderer.render(result))
+      }
 
-            if !result.isSuccessfulStart {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if !result.isSuccessfulStart {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseBuild: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "build",
-        abstract: "Diagnose a build for an existing diagnosis run."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "build",
+    abstract: "Diagnose a build for an existing diagnosis run."
+  )
 
-    @Option(help: "Run ID returned by `xcforge diagnose start`.")
-    var runId: String
+  @Option(help: "Run ID returned by `xcforge diagnose start`.")
+  var runId: String
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisBuildWorkflow()
-            let result = await workflow.diagnose(
-                request: DiagnosisBuildRequest(runId: runId)
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisBuildWorkflow()
+      let result = await workflow.diagnose(
+        request: DiagnosisBuildRequest(runId: runId)
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisBuildRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisBuildRenderer.render(result))
+      }
 
-            if result.status == .failed {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if result.status == .failed {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseTest: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "test",
-        abstract: "Diagnose a test run for an existing diagnosis run."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "test",
+    abstract: "Diagnose a test run for an existing diagnosis run."
+  )
 
-    @Option(help: "Run ID returned by `xcforge diagnose start`.")
-    var runId: String
+  @Option(help: "Run ID returned by `xcforge diagnose start`.")
+  var runId: String
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisTestWorkflow()
-            let result = await workflow.diagnose(
-                request: DiagnosisTestRequest(runId: runId)
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisTestWorkflow()
+      let result = await workflow.diagnose(
+        request: DiagnosisTestRequest(runId: runId)
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisTestRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisTestRenderer.render(result))
+      }
 
-            if result.status != .succeeded {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if result.status != .succeeded {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseRuntime: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "runtime",
-        abstract: "Launch the app for an existing diagnosis run and capture supported runtime signals."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "runtime",
+    abstract: "Launch the app for an existing diagnosis run and capture supported runtime signals."
+  )
 
-    @Option(help: "Run ID returned by `xcforge diagnose start`.")
-    var runId: String
+  @Option(help: "Run ID returned by `xcforge diagnose start`.")
+  var runId: String
 
-    @Flag(help: "Capture a simulator screenshot as part of runtime diagnosis.")
-    var captureScreenshot = false
+  @Flag(help: "Capture a simulator screenshot as part of runtime diagnosis.")
+  var captureScreenshot = false
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let env = Environment.live
-            let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
-            let result = await workflow.diagnose(
-                request: DiagnosisRuntimeRequest(
-                    runId: runId,
-                    captureScreenshot: captureScreenshot
-                )
-            )
+  mutating func run() async throws {
+    do {
+      let env = Environment.live
+      let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
+      let result = await workflow.diagnose(
+        request: DiagnosisRuntimeRequest(
+          runId: runId,
+          captureScreenshot: captureScreenshot
+        )
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisRuntimeRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisRuntimeRenderer.render(result))
+      }
 
-            if result.status != .succeeded {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if result.status != .succeeded {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseStatus: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "status",
-        abstract: "Inspect the status of an active or recent diagnosis run."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "status",
+    abstract: "Inspect the status of an active or recent diagnosis run."
+  )
 
-    @Option(help: "Run ID to inspect. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one.")
-    var runId: String?
+  @Option(
+    help:
+      "Run ID to inspect. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisStatusWorkflow()
-            let result = await workflow.inspect(
-                request: DiagnosisStatusRequest(runId: runId)
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisStatusWorkflow()
+      let result = await workflow.inspect(
+        request: DiagnosisStatusRequest(runId: runId)
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisStatusRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisStatusRenderer.render(result))
+      }
 
-            if !result.isSuccessfulInspection {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if !result.isSuccessfulInspection {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseEvidence: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "evidence",
-        abstract: "Inspect all available evidence for an active or recent diagnosis run."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "evidence",
+    abstract: "Inspect all available evidence for an active or recent diagnosis run."
+  )
 
-    @Option(help: "Run ID to inspect. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one.")
-    var runId: String?
+  @Option(
+    help:
+      "Run ID to inspect. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisStatusWorkflow()
-            let result = await workflow.inspectEvidence(
-                request: DiagnosisStatusRequest(runId: runId)
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisStatusWorkflow()
+      let result = await workflow.inspectEvidence(
+        request: DiagnosisStatusRequest(runId: runId)
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisEvidenceRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisEvidenceRenderer.render(result))
+      }
 
-            if !result.isSuccessfulInspection {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if !result.isSuccessfulInspection {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseInspect: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "inspect",
-        abstract: "Consolidated troubleshooting view for investigating workflow outcomes."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "inspect",
+    abstract: "Consolidated troubleshooting view for investigating workflow outcomes."
+  )
 
-    @Option(help: "Run ID to inspect. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one.")
-    var runId: String?
+  @Option(
+    help:
+      "Run ID to inspect. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisInspectWorkflow()
-            let result = await workflow.inspect(
-                request: DiagnosisInspectRequest(runId: runId)
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisInspectWorkflow()
+      let result = await workflow.inspect(
+        request: DiagnosisInspectRequest(runId: runId)
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisInspectRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisInspectRenderer.render(result))
+      }
 
-            if !result.isSuccessfulInspection {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if !result.isSuccessfulInspection {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseVerify: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "verify",
-        abstract: "Rerun validation for a prior diagnosis run."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "verify",
+    abstract: "Rerun validation for a prior diagnosis run."
+  )
 
-    @Option(help: "Run ID to rerun validation for.")
-    var runId: String
+  @Option(help: "Run ID to rerun validation for.")
+  var runId: String
 
-    @Option(help: "Override the project path for this rerun.")
-    var project: String?
+  @Option(help: "Override the project path for this rerun.")
+  var project: String?
 
-    @Option(help: "Override the scheme for this rerun.")
-    var scheme: String?
+  @Option(help: "Override the scheme for this rerun.")
+  var scheme: String?
 
-    @Option(help: "Override the simulator for this rerun.")
-    var simulator: String?
+  @Option(help: "Override the simulator for this rerun.")
+  var simulator: String?
 
-    @Option(help: "Override the build configuration for this rerun.")
-    var configuration: String?
+  @Option(help: "Override the build configuration for this rerun.")
+  var configuration: String?
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisVerifyWorkflow()
-            let result = await workflow.verify(
-                request: DiagnosisVerifyRequest(
-                    runId: runId,
-                    project: project,
-                    scheme: scheme,
-                    simulator: simulator,
-                    configuration: configuration
-                )
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisVerifyWorkflow()
+      let result = await workflow.verify(
+        request: DiagnosisVerifyRequest(
+          runId: runId,
+          project: project,
+          scheme: scheme,
+          simulator: simulator,
+          configuration: configuration
+        )
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisVerifyRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisVerifyRenderer.render(result))
+      }
 
-            if !result.isSuccessfulVerification {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if !result.isSuccessfulVerification {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseCompare: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "compare",
-        abstract: "Compare an original diagnosis result against the latest rerun."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "compare",
+    abstract: "Compare an original diagnosis result against the latest rerun."
+  )
 
-    @Option(help: "Run ID to compare. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one.")
-    var runId: String?
+  @Option(
+    help:
+      "Run ID to compare. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
-    @Flag(help: "Emit the result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisCompareWorkflow()
-            let result = await workflow.compare(
-                request: DiagnosisCompareRequest(runId: runId)
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisCompareWorkflow()
+      let result = await workflow.compare(
+        request: DiagnosisCompareRequest(runId: runId)
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisCompareRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisCompareRenderer.render(result))
+      }
 
-            if !result.isSuccessfulComparison {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if !result.isSuccessfulComparison {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 struct DiagnoseResult: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "result",
-        abstract: "Return the final proof-oriented result for a diagnosis run."
-    )
+  static let configuration = CommandConfiguration(
+    commandName: "result",
+    abstract: "Return the final proof-oriented result for a diagnosis run."
+  )
 
-    @Option(help: "Run ID to inspect. If omitted, xcforge uses the newest terminal diagnosis run.")
-    var runId: String?
+  @Option(help: "Run ID to inspect. If omitted, xcforge uses the newest terminal diagnosis run.")
+  var runId: String?
 
-    @Flag(help: "Emit the final result as machine-readable JSON.")
-    var json = false
+  @Flag(help: "Emit the final result as machine-readable JSON.")
+  var json = false
 
-    mutating func run() async throws {
-        do {
-            let workflow = DiagnosisFinalResultWorkflow()
-            let result = await workflow.assemble(
-                request: DiagnosisFinalResultRequest(runId: runId)
-            )
+  mutating func run() async throws {
+    do {
+      let workflow = DiagnosisFinalResultWorkflow()
+      let result = await workflow.assemble(
+        request: DiagnosisFinalResultRequest(runId: runId)
+      )
 
-            if json {
-                print(try WorkflowJSONRenderer.renderJSON(result))
-            } else {
-                print(DiagnosisFinalResultRenderer.render(result))
-            }
+      if json {
+        print(try WorkflowJSONRenderer.renderJSON(result))
+      } else {
+        print(DiagnosisFinalResultRenderer.render(result))
+      }
 
-            if !result.isSuccessfulFinalResult {
-                throw ExitCode.failure
-            }
-        } catch {
-            try rethrowOrJSONError(error, json: json)
-        }
+      if !result.isSuccessfulFinalResult {
+        throw ExitCode.failure
+      }
+    } catch {
+      try rethrowOrJSONError(error, json: json)
     }
+  }
 }
 
 /// Returns true when output should be JSON: either `--json` was passed or stdout is not a terminal.
 func shouldOutputJSON(flag: Bool) -> Bool {
-    flag || !isatty(STDOUT_FILENO).asBool
+  flag || !isatty(STDOUT_FILENO).asBool
 }
 
-private extension Int32 {
-    var asBool: Bool { self != 0 }
+extension Int32 {
+  fileprivate var asBool: Bool { self != 0 }
 }
 
 /// Rethrow an error, formatting as JSON if the flag is set.
 func rethrowOrJSONError(_ error: Error, json: Bool) throws {
-    if let exitCode = error as? ExitCode { throw exitCode }
-    guard json else { throw error }
-    let envelope = CLIErrorEnvelope(error: "\(error)", code: errorCode(for: error))
-    if let data = try? JSONEncoder().encode(envelope),
-       let jsonString = String(data: data, encoding: .utf8)
-    {
-        print(jsonString)
-    }
-    throw ExitCode.failure
+  if let exitCode = error as? ExitCode { throw exitCode }
+  guard json else { throw error }
+  let envelope = CLIErrorEnvelope(error: "\(error)", code: errorCode(for: error))
+  if let data = try? JSONEncoder().encode(envelope),
+    let jsonString = String(data: data, encoding: .utf8)
+  {
+    print(jsonString)
+  }
+  throw ExitCode.failure
 }
 
 struct CLIErrorEnvelope: Encodable {
-    let error: String
-    let code: String
+  let error: String
+  let code: String
 }
 
 private func errorCode(for error: Error) -> String {
-    let typeName = String(describing: type(of: error))
-    if typeName.contains("ResolverError") ||
-       typeName.contains("CoverageError") ||
-       typeName.contains("TestDiscoveryError") ||
-       typeName.contains("BuildSettingsError") ||
-       typeName.contains("ToolValidationError") { return "resolution_failed" }
-    if typeName.contains("ValidationError") { return "validation_error" }
-    if error is EncodingError { return "encoding_failed" }
-    if error is DecodingError { return "decoding_failed" }
-    return "execution_failed"
+  let typeName = String(describing: type(of: error))
+  if typeName.contains("ResolverError") || typeName.contains("CoverageError")
+    || typeName.contains("TestDiscoveryError") || typeName.contains("BuildSettingsError")
+    || typeName.contains("ToolValidationError")
+  {
+    return "resolution_failed"
+  }
+  if typeName.contains("ValidationError") { return "validation_error" }
+  if error is EncodingError { return "encoding_failed" }
+  if error is DecodingError { return "decoding_failed" }
+  return "execution_failed"
 }
