@@ -1,103 +1,30 @@
 # xcforge
 
-[![GitHub Release](https://img.shields.io/github/v/release/xcforge/xcforge)](https://github.com/xcforge/xcforge/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![MCP Registry](https://img.shields.io/badge/MCP_Registry-published-green)](https://registry.modelcontextprotocol.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-macOS_13%2B-blue)]()
 [![Swift 6.0](https://img.shields.io/badge/Swift-6.0-orange)](https://swift.org)
 
-The fastest, most complete MCP server for iOS development. One Swift binary, 51 tools, zero dependencies. **xcforge has the most complete toolset of any alternative out there.**
+An MCP server and CLI for iOS development — build, test, automate, and diagnose from any AI agent or terminal.
 
-Built for [Claude Code](https://claude.ai/claude-code), [Cursor](https://cursor.sh), and any MCP-compatible AI agent.
+95 MCP tools. 16 CLI command groups. Single 8.5MB Swift binary. No runtime dependencies.
 
-> **Looking for an alternative to existing iOS MCP servers?** xcforge covers the full feature set of both XcodeBuildMCP and Appium-MCP in a single binary — plus xcresult parsing, direct WDA UI automation, code coverage, and 44x faster screenshots. [See comparison below](#comparison-with-other-mcp-servers).
-
-## Why xcforge?
-
-Every iOS MCP server has the same problem: **raw xcodebuild output is useless for AI agents.** 500 lines of build log, stderr noise mistaken for errors, no structured test results. Agents waste minutes parsing what a human sees in seconds.
-
-xcforge fixes this. It parses `.xcresult` bundles — the same structured data Xcode uses internally — and returns exactly what the agent needs: pass/fail counts, failure messages with file:line, code coverage per file, and failure screenshots.
-
-| What you get | XcodeBuildMCP | Appium-MCP | xcforge |
-|---|---|---|---|
-| Build for simulator | Yes | — | **Yes** |
-| Build + Run in one call | Yes (sequential) | — | **Yes (parallel, ~9s faster)** |
-| Structured test results | Partial | — | **Full xcresult JSON** |
-| Failure screenshots from xcresult | — | — | **Auto-exported** |
-| Code coverage per file | Basic | — | **Sorted, filterable** |
-| Build error diagnosis | stderr parsing | — | **xcresult JSON with file:line** |
-| Find element | — | Yes | **Yes + auto-scroll** |
-| Tap / swipe / pinch | — | Yes | **Yes** |
-| Drag & drop | — | Coordinates only (3 calls) | **Element-to-element (1 call)** |
-| Scroll to element | — | Manual swipe loop | **3-tier auto-scroll (1 call)** |
-| Alert handling | — | Single alert | **3-tier search + batch accept_all** |
-| iOS 18 ContactsUI dialog | — | — | **Supported** |
-| Screenshot latency | 13.2s | ~500ms+ | **0.3s (44x)** |
-| View hierarchy | 15.5s | ~15s | **~20ms (750x)** |
-| Console log per failed test | — | — | **Optional** |
-| Log filtering | Subsystem only (bundleId required) | — | **Topic-filtered: agent reads only what matters, 90% fewer tokens** |
-| Wait for log pattern | — | — | **Regex + timeout** |
-| Visual regression | — | — | **Baseline + pixel diff** |
-| Multi-device check | — | — | **Dark Mode, Landscape, iPad** |
-| Cross-platform (Android) | — | Yes | — |
-| Runtime | Node.js (~50MB) | Node.js + Appium (~200MB) | **Native Swift (8.5MB)** |
-| Cold start | ~400ms | ~1s | **~50ms** |
-
-### Where xcforge really shines
-
-> ![killer feat](https://img.shields.io/badge/killer%20feat-%23FFD700?style=flat-square) **Screenshots in 0.3s instead of 13s** — 44x faster visual feedback
-
-xcforge reads the simulator framebuffer directly via CoreSimulator's IOSurface API. No simctl subprocess, no PNG round-trip. The agent gets a screenshot in 300ms. With the competition, it takes 13 seconds — long enough for the agent to lose context. Agents can take screenshots freely without penalty.
-
-> ![killer feat](https://img.shields.io/badge/killer%20feat-%23FFD700?style=flat-square) **Structured test results from xcresult bundles** — zero guesswork on failures
-
-When a test fails, the agent gets the error message, the exact file:line, a screenshot of the failure state, and optionally the console output — all parsed from Apple's `.xcresult` format. No guessing from 500 lines of xcodebuild stderr. This is the difference between "agent knows what broke" and "agent guesses what broke".
-
-> ![killer feat](https://img.shields.io/badge/killer%20feat-%23FFD700?style=flat-square) **Single binary, zero dependencies** — install in 10 seconds
-
-`brew install xcforge` — done. 8.5MB native Swift binary. No Node.js, no npm, no Appium server, no Python, no Java. Cold start in ~50ms. The fastest way to get an iOS MCP server running.
-
-> ![killer feat](https://img.shields.io/badge/killer%20feat-%23FFD700?style=flat-square) **Agent reads only what matters — 90% fewer tokens, zero wasted calls**
-
-`read_logs` returns only app logs + crashes by default, plus a topic menu with line counts: `network(87) lifecycle(12) springboard(8)`. The agent opens specific topics in one call — no guessing, no iteration. Four filter layers (noise exclusion, capture modes, topic filtering, deduplication) that no competitor has.
-
-> ![strong](https://img.shields.io/badge/strong-%23C0C0C0?style=flat-square) **One call to dismiss all permission dialogs** — 3 alerts in 1 roundtrip
-
-Every app shows 2–3 permission dialogs on first launch. Other servers require the agent to screenshot → find button → click, per dialog. `handle_alert(action: "accept_all")` clears them all in a single call, searching across SpringBoard, ContactsUI, and the active app.
-
-> ![strong](https://img.shields.io/badge/strong-%23C0C0C0?style=flat-square) **Drag & drop with element IDs** — 1 call instead of 3
-
-"Drag item A above item B" is a single call: `drag_and_drop(source_element: "el-0", target_element: "el-1")`. The competition only supports raw coordinates, forcing the agent to find both elements, extract their frames, and build a W3C Actions sequence — 3 calls minimum.
-
-> ![strong](https://img.shields.io/badge/strong-%23C0C0C0?style=flat-square) **Auto-scroll to off-screen elements** — no more manual swipe loops
-
-`find_element(using: "accessibility id", value: "Save", scroll: true)` scrolls automatically until the element appears. Three fallback strategies ensure it works with UIKit, SwiftUI, and lazy-loaded lists. No guessing scroll direction.
-
-> ![strong](https://img.shields.io/badge/strong-%23C0C0C0?style=flat-square) **View hierarchy in 20ms** — 750x faster element inspection
-
-`get_source` returns the full UI tree in ~20ms. The competition takes 15 seconds. This makes element inspection practically free for agents.
-
-## Quick Start
-
-### Install via Homebrew
+## Install
 
 ```bash
-brew tap xcforge/tools
-brew install xcforge
+brew tap justinthevoid/xcforge && brew install xcforge
 ```
 
-### Or build from source
+Or from source:
 
 ```bash
-git clone https://github.com/xcforge/xcforge.git
-cd xcforge
-swift build -c release
+git clone https://github.com/justinthevoid/xcforge.git
+cd xcforge && swift build -c release
 cp .build/release/xcforge /usr/local/bin/
 ```
 
-### Configure in Claude Code
+## Configure
 
-Add to your `.mcp.json`:
+Add to your MCP client config (Claude Code, Cursor, VS Code, Windsurf, etc.):
 
 ```json
 {
@@ -109,297 +36,126 @@ Add to your `.mcp.json`:
 }
 ```
 
-Or for global availability, add to `~/.claude/.mcp.json`.
+Claude Code users: add to `~/.claude/.mcp.json` for global availability.
 
-## 51 Tools in 11 Categories
-
-### Build (5 tools)
-
-| Tool | Description |
-|---|---|
-| `build_sim` | Build for iOS Simulator — returns structured errors + caches bundle ID & app path |
-| `build_run_sim` | Build + boot + install + launch in one call — parallel 2-phase pipeline, ~9s faster than sequential |
-| `clean` | Clean build artifacts |
-| `discover_projects` | Find .xcodeproj/.xcworkspace files |
-| `list_schemes` | List available schemes |
-
-### Testing & Diagnostics (4 tools)
-
-| Tool | Description |
-|---|---|
-| `test_sim` | Run tests + structured xcresult summary (pass/fail/duration) |
-| `test_failures` | Failed tests with error messages, file:line, and failure screenshots |
-| `test_coverage` | Code coverage per file, sorted and filterable |
-| `build_and_diagnose` | Build + structured errors/warnings from xcresult |
-
-### Simulator (10 tools)
-
-| Tool | Description |
-|---|---|
-| `list_sims` | List available simulators |
-| `boot_sim` | Boot a simulator |
-| `shutdown_sim` | Shut down a simulator |
-| `install_app` | Install .app bundle |
-| `launch_app` | Launch app by bundle ID |
-| `terminate_app` | Terminate running app |
-| `clone_sim` | Clone an existing simulator |
-| `erase_sim` | Erase simulator content and settings |
-| `delete_sim` | Delete a simulator |
-| `set_orientation` | Rotate device (PORTRAIT, LANDSCAPE_LEFT, LANDSCAPE_RIGHT) via WDA |
-
-### UI Automation via WebDriverAgent (15 tools)
-
-Direct HTTP communication with WDA — no Appium, no Node.js, no Python.
-
-| Tool | Description | Latency |
-|---|---|---|
-| `handle_alert` | **Accept, dismiss, or batch-handle system & in-app alerts** | ~200ms |
-| `find_element` / `find_elements` | Find elements by accessibility ID, predicate, class chain. **`scroll: true` auto-scrolls** until the element appears (3-tier: scrollToVisible → calculated drag → iterative with stall detection) | ~100ms |
-| `click_element` | Tap a UI element | ~400ms |
-| `tap_coordinates` / `double_tap` / `long_press` | Coordinate-based gestures | ~200ms |
-| `swipe` / `pinch` | Directional swipe, zoom in/out | ~400-600ms |
-| `drag_and_drop` | **Drag from source to target** — element-to-element, coordinates, or mixed. Smart defaults for reorderable lists, Kanban boards, sliders | ~2300ms |
-| `type_text` / `get_text` | Type into or read from elements | ~100-300ms |
-| `get_source` | Full view hierarchy (JSON/XML) | ~20ms |
-| `wda_status` / `wda_create_session` | WDA health check & session management | ~50-100ms |
-
-#### handle_alert — the smartest alert handler
+## Two Modes, Same Tools
 
 ```bash
-# Accept a single alert with smart defaults
-handle_alert(action: "accept")
-
-# Dismiss with a specific button label
-handle_alert(action: "dismiss", button_label: "Not Now")
-
-# Batch-accept ALL alerts after app launch (unique to xcforge)
-handle_alert(action: "accept_all")
+xcforge                          # MCP server (stdio JSON-RPC, 95 tools)
+xcforge build --scheme MyApp     # CLI mode (16 command groups)
 ```
 
-**3-tier alert search** — finds alerts across:
-1. **Springboard** — system permission dialogs (Location, Camera, Tracking)
-2. **ContactsUI** — iOS 18+ Contacts "Limited Access" dialog (separate process)
-3. **Active app** — in-app `UIAlertController` dialogs
+Every tool available over MCP has a matching CLI command. Every CLI command supports `--json`.
 
-**Smart defaults** — knows which button to tap:
-- Accept: "Allow" → "Allow While Using App" → "OK" → "Continue" → last button
-- Dismiss: "Don't Allow" (handles Unicode U+2019) → "Cancel" → "Not Now" → first button
+## Tools Overview
 
-**Batch mode** — `accept_all` / `dismiss_all` loops through multiple sequential alerts server-side. One HTTP roundtrip instead of N. Returns details of every handled alert.
+| Category | Count | Highlights |
+|---|---|---|
+| **Build** | 5 | `build_sim`, `build_run_sim` (build + boot + install + launch), `clean`, project/scheme discovery |
+| **Test** | 6 | `test_sim` with xcresult parsing, `test_failures` with screenshots, `test_coverage`, `list_tests` |
+| **Simulator** | 17 | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override |
+| **Physical Devices** | 7 | Via `devicectl` — list, install, launch, screenshot, pair |
+| **UI Automation** | 19 | WebDriverAgent + native AX bridge — find, tap, swipe, drag, type, alerts, hierarchy |
+| **Screenshots** | 2 | Framebuffer capture (0.3s), point-space coordinate alignment |
+| **Visual Regression** | 2 | Pixel-diff baselines, multi-device checks (Dark Mode, Landscape, iPad) |
+| **Logs** | 4 | 4-layer filtered capture, 8 topic categories, regex wait |
+| **Console** | 3 | stdout/stderr capture for launched apps |
+| **SPM** | 5 | Resolve, update, show deps, reset, clean |
+| **Accessibility** | 5 | Audit labels, traits, VoiceOver order, contrast |
+| **Git** | 5 | Status, diff, log, commit, branch |
+| **Diagnosis** | 10 | Multi-step workflows: build, run, inspect, capture evidence, compare, verify |
+| **Plan Execution** | 2 | Scripted multi-step automation with assertions |
+| **Session** | 3 | Persistent defaults, `.xcforge.yaml` repo config, session profiles |
 
-These capabilities go beyond what other iOS MCP servers currently offer.
+## Key Capabilities
 
-### Screenshots (1 tool)
+### Structured Test Results
 
-| Tool | Latency |
-|---|---|
-| `screenshot` | **0.3s** (3-tier: CoreSimulator IOSurface → ScreenCaptureKit → simctl) |
+Test output is parsed from `.xcresult` bundles — the structured format Xcode generates internally — not from raw xcodebuild stdout/stderr.
 
-### Logs (4 tools)
+A single `test_sim` call returns: pass/fail counts, failure messages with source location, exported failure screenshots, and the xcresult path for deeper inspection via `test_failures` or `test_coverage`.
 
-| Tool | Description |
-|---|---|
-| `start_log_capture` | **Smart-filtered os_log stream** — 3 modes: `smart` (default, topic filtering enabled), `app` (tight stream, auto-detected), `verbose` (unfiltered). Deduplicates repetitive lines. |
-| `stop_log_capture` | Stop capture |
-| `read_logs` | **Topic-filtered reading** — default: app + crashes only. Response includes topic menu with line counts. Add topics via `include` parameter. |
-| `wait_for_log` | Wait for regex pattern with timeout — eliminates sleep() hacks |
+### Fast Screenshots
 
-#### Smart Log Filtering — 4 layers, zero config
+The `screenshot` tool reads the simulator framebuffer via CoreSimulator's IOSurface API, falling back to ScreenCaptureKit, then simctl. Typical latency is ~300ms.
+
+### UI Automation Without Appium
+
+xcforge communicates directly with WebDriverAgent over HTTP and supplements it with a native Accessibility API bridge (AXPBridge). This means:
+
+- `find_element` with `scroll: true` auto-scrolls using 3 fallback strategies
+- `handle_alert` searches across SpringBoard, ContactsUI, and the active app — `accept_all` clears multiple permission dialogs in one call
+- `drag_and_drop` works with element IDs, not just coordinates
+- `get_source` returns the full view hierarchy in ~20ms
+
+### Topic-Filtered Logs
+
+`start_log_capture` streams os_log through 4 filter layers:
+
+1. **Noise exclusion** — strips 15 known noisy processes at the stream level
+2. **Capture modes** — `smart` (broad + topic-ready), `app` (tight, auto-detected bundle), `verbose`
+3. **Topic filtering** — `read_logs` classifies lines into 8 topics (app, crashes, network, lifecycle, springboard, widgets, background, system) and shows only app + crashes by default
+4. **Deduplication** — collapses repeated lines
+
+The response includes a topic menu with counts, so the agent can pull in specific topics on demand without re-querying.
+
+### Diagnosis Workflows
+
+10 tools that chain together into structured diagnostic pipelines — start a session, build, launch, capture runtime signals, collect evidence (screenshots, logs, accessibility state), compare against previous runs, and verify fixes. Designed for agents to systematically debug issues across multiple iterations.
+
+### Physical Device Support
+
+7 tools wrapping Apple's `devicectl` for real devices — list connected devices, install/launch/terminate apps, take screenshots, and manage pairing.
+
+## CLI Examples
 
 ```bash
-# Start capture (default: smart mode — broad stream, topic filtering enabled)
-start_log_capture()
-
-# Read logs — default shows only app logs + crashes + topic menu
-read_logs()
-# → --- 230 buffered, 42 shown [app, crashes] ---
-# → Topics: app(35) crashes(2) | network(87) lifecycle(12) springboard(8) widgets(0) background(3) system(83)
-# → Hint: include=["network"] to add SSL/TLS + background transfer logs
-# → ---
-# → [42 filtered lines]
-
-# Agent sees network(87) and wants SSL details — one call:
-read_logs(include: ["network"])
-
-# Narrow stream for production monitoring:
-start_log_capture(mode: "app")
-
-# Bypass mode logic with explicit predicate:
-start_log_capture(subsystem: "com.apple.SwiftUI")
+xcforge build                                    # Build (auto-detects project, scheme, sim)
+xcforge build --scheme MyApp --simulator "iPhone 16 Pro"
+xcforge test --scheme MyApp --json               # Run tests, JSON output
+xcforge test failures --xcresult /path/to.xcresult
+xcforge test coverage --min-coverage 80
+xcforge sim list                                 # List simulators
+xcforge sim boot "iPhone 16 Pro"
+xcforge ui find --aid "loginButton"              # Find by accessibility ID
+xcforge ui tap --element el-0                    # Tap element
+xcforge screenshot                               # Screenshot to stdout
+xcforge log start                                # Start log capture
+xcforge log read --include network               # Read with topic filter
+xcforge spm resolve                              # Resolve packages
+xcforge device list                              # Connected physical devices
+xcforge diagnose start --scheme MyApp            # Start diagnosis session
 ```
 
-**4 filter layers:**
-1. **Stream-side noise exclusion** — 15 known noise processes + subsystem/category exclusions removed before buffering. Server-side filtering in `logd` — 79% I/O reduction.
-2. **3 capture modes** — `smart` (default, broad stream for topic filtering), `app` (tight, auto-detected bundle ID + process name), `verbose` (unfiltered).
-3. **Read-time topic filtering** — `read_logs` categorizes every buffered line into 8 topics (app, crashes, network, lifecycle, springboard, widgets, background, system). Default shows only app + crashes. Agent adds topics as needed — stateless per call.
-4. **Buffer deduplication** — 60 identical heartbeat lines become 2: the line itself + `... repeated 59x`.
+## Alternatives
 
-**8 topics with LLM-optimized menu:**
-| Topic | Matches | Use case |
-|---|---|---|
-| `app` (always on) | subsystem == bundleId OR process == appName | Your app: os_log, print(), NSLog() |
-| `crashes` (always on) | fault-level logs | Crashes from any process |
-| `network` | trustd, nsurlsessiond | SSL/TLS certs, background transfers |
-| `lifecycle` | runningboardd, com.apple.runningboard.* | Jetsam, memory pressure, app kills |
-| `springboard` | SpringBoard | Push notifications, app state |
-| `widgets` | chronod | WidgetKit timeline, refresh budget |
-| `background` | com.apple.xpc.activity.* | BGTaskScheduler, background fetch |
-| `system` | everything else | WARNING: high volume |
+There are several iOS-focused MCP servers worth knowing about:
 
-### Console (3 tools)
+- **[XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP)** — Xcode build + simulator management. Mature, well-supported. Covers build/run workflows and project introspection.
+- **[iosef](https://github.com/riwsky/iosef)** — Agent-optimized simulator CLI. Clean design, coordinate-aligned screenshots, accessibility tree inspection. Swift native.
+- **[Appium MCP](https://github.com/appium/appium-mcp)** — Cross-platform mobile automation (iOS + Android). AI-powered element finding. Requires Node.js + Java + Appium server.
 
-| Tool | Description |
-|---|---|
-| `launch_app_console` | Launch app with stdout/stderr capture |
-| `read_app_console` | Read console output |
-| `stop_app_console` | Stop console capture |
-
-### Git (5 tools)
-
-| Tool | Description |
-|---|---|
-| `git_status` / `git_diff` / `git_log` | Read operations |
-| `git_commit` / `git_branch` | Write operations |
-
-### Visual Regression (2 tools)
-
-| Tool | Description |
-|---|---|
-| `save_visual_baseline` | Save a screenshot as a named baseline |
-| `compare_visual` | Compare current screen against baseline — pixel diff + match score |
-
-### Multi-Device (1 tool)
-
-| Tool | Description |
-|---|---|
-| `multi_device_check` | Run visual checks across multiple simulators (Dark Mode, Landscape, iPad) — returns layout scores |
-
-### Session (1 tool)
-
-| Tool | Description |
-|---|---|
-| `set_defaults` | Set default project, scheme, simulator — avoids repeating params |
-
-## xcresult Parsing — The Killer Feature
-
-### The Problem
-
-Every Xcode MCP server returns raw `xcodebuild` output. For a test run, that's 500+ lines of noise. AI agents can't reliably extract which tests failed and why.
-
-### The Solution
-
-xcforge uses `xcresulttool` to parse the `.xcresult` bundle — the same structured data Xcode's Test Navigator uses.
-
-```
-# One call, structured result
-test_sim(project: "MyApp.xcodeproj", scheme: "MyApp")
-
-→ Tests FAILED in 15.2s
-  12 total, 10 passed, 2 FAILED
-  FAIL: Login shows error message
-    LoginTests.swift:47: XCTAssertTrue failed
-  FAIL: Profile image loads
-    ProfileTests.swift:112: Expected non-nil value
-
-  Failure screenshots (2):
-    /tmp/ss-attachments/LoginTests_failure.png
-    /tmp/ss-attachments/ProfileTests_failure.png
-
-  Device: iPhone 16 Pro (18.2)
-  xcresult: /tmp/ss-test-1774607917.xcresult
-```
-
-The agent gets:
-- **Pass/fail counts** — immediate overview
-- **Failure messages with file:line** — actionable
-- **Failure screenshots** — visual context (Claude is multimodal)
-- **xcresult path** — reusable for `test_failures` or `test_coverage`
-
-### Deep Failure Analysis
-
-```
-test_failures(xcresult_path: "/tmp/ss-test-*.xcresult", include_console: true)
-
-→ FAIL: Login shows error message [LoginTests/testErrorMessage()]
-    LoginTests.swift:47: XCTAssertTrue failed
-    Screenshot: /tmp/ss-attachments/LoginTests_failure.png
-    Console:
-      [LoginService] Network timeout after 5.0s
-      [LoginService] Retrying with fallback URL...
-      ✘ Test "Login shows error message" failed after 6.2s
-```
-
-### Code Coverage
-
-```
-test_coverage(project: "MyApp.xcodeproj", scheme: "MyApp", min_coverage: 80)
-
-→ Overall coverage: 72.3%
-
-  Target: MyApp.app (74.1%)
-      0.0% AnalyticsService.swift
-     45.2% LoginViewModel.swift
-     67.8% ProfileManager.swift
-
-  Target: MyAppTests.xctest (62.0%)
-     ...
-```
-
-## Benchmarks
-
-Measured on M3 MacBook Pro, iOS 18.2 Simulator:
-
-| Action | Konkurrenz (best of) | xcforge |
-|---|---|---|
-| Screenshot | 13.2s | **0.3s** (44x) |
-| Find element | ~500ms | **~100ms** (5x) |
-| Click element | ~500ms | **~400ms** |
-| View hierarchy | ~15s | **~20ms** (750x) |
-| Handle alert | ~500ms | **~200ms** |
-| Handle 3 alerts (batch) | ~1500ms (3 calls) | **~800ms (1 call)** |
-| Drag & drop (element-to-element) | ~3 calls required | **1 call (~2.3s)** |
-| Scroll to element | Manual swipe loop | **Automatic (1 call)** |
-| Simulator list | ~2s | **0.2s** |
-| Cold start | ~400ms–1s | **~50ms** |
-| Binary size | ~50–200MB | **8.5MB** |
-
-## Comparison with other MCP servers
-
-See [feature comparison table above](#why-xcforge) for a detailed breakdown vs [XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP) and [Appium-MCP](https://github.com/anthropics/appium-mcp). Both are excellent projects that pioneered iOS MCP tooling. xcforge builds on their ideas and combines both feature sets with deeper integration into a single native binary. The only trade-off: xcforge is iOS-only (no Android, watchOS, tvOS, or visionOS).
-
-## Architecture
-
-```
-xcforge (8.5MB Swift binary)
-├── MCP SDK (modelcontextprotocol/swift-sdk)
-├── StdioTransport (JSON-RPC)
-└── Tools/
-    ├── BuildTools       → xcodebuild (parallel pipeline, 3-tier app info)
-    ├── TestTools        → xcodebuild test + xcresulttool + xccov
-    ├── SimTools         → simctl + WDA orientation
-    ├── ScreenshotTools  → CoreSimulator IOSurface → ScreenCaptureKit → simctl
-    ├── UITools          → WebDriverAgent (direct HTTP, 3-tier alert search)
-    ├── LogTools         → log stream + 4-layer filter (noise, mode, topic, dedup) + regex matching
-    ├── ConsoleTools     → stdout/stderr capture
-    ├── VisualTools      → pixel diff + layout scoring
-    ├── MultiDeviceTools → parallel sim checks
-    ├── GitTools         → git
-    └── SessionState     → auto-detect + cached defaults
-```
-
-No Node.js. No Python. No Appium server. No Selenium. One binary.
+xcforge occupies a different niche: it combines build, test, UI automation, log analysis, visual regression, device support, SPM, accessibility auditing, and multi-step diagnosis in a single binary. The trade-off is iOS-only — no Android, watchOS, or visionOS.
 
 ## Requirements
 
 - macOS 13+
-- Xcode 15+ (for `xcresulttool` and `simctl`)
-- Swift 6.0+ (for building from source)
-- WebDriverAgent installed on simulator (for UI automation tools)
+- Xcode 15+
+- Swift 6.0+ (source builds only)
+- WebDriverAgent on simulator (UI automation only)
+
+## Support
+
+If xcforge saves you time, consider supporting development:
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/justinthevoid)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?style=flat&logo=ko-fi&logoColor=white)](https://ko-fi.com/joltik)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-ea4aaa?style=flat&logo=github-sponsors&logoColor=white)](https://github.com/sponsors/justinthevoid)
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 
-Issues and pull requests welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).

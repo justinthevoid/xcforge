@@ -122,7 +122,7 @@ xcforge test --json                              # Machine-readable JSON output
 Extract failed tests with error messages, console output, and screenshots. Same logic as the `test_failures` MCP tool. Provide `--xcresult-path` to analyze an existing result, or omit to run tests first.
 
 ```bash
-xcforge test failures --xcresult-path /tmp/ss-test-1234.xcresult
+xcforge test failures --xcresult-path /tmp/xcf-test-1234.xcresult
 xcforge test failures --include-console          # Include print/NSLog output per failed test
 xcforge test failures --json
 ```
@@ -146,7 +146,7 @@ Show code coverage report. Without `--file`: per-file overview. With `--file`: p
 
 ```bash
 xcforge test coverage                            # Overview — per-target/file coverage %
-xcforge test coverage --xcresult-path /tmp/ss-test-1234.xcresult
+xcforge test coverage --xcresult-path /tmp/xcf-test-1234.xcresult
 xcforge test coverage --min-coverage 80          # Only show files below 80%
 xcforge test coverage --file LoginViewModel.swift  # Per-function drill-down
 xcforge test coverage --json

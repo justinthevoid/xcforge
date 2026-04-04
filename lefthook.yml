@@ -1,0 +1,5 @@
+pre-push:
+  commands:
+    swift-format-check:
+      glob: "*.swift"
+      run: swift-format lint --strict --recursive Sources/ Tests/
