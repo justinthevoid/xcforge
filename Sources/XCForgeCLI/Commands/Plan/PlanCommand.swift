@@ -179,7 +179,17 @@ struct PlanDecide: AsyncParsableCommand {
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     guard let suspended = await PlanSessionStore.shared.consume(sessionId) else {
-      print("Session '\(sessionId)' not found or expired (5-minute TTL). Re-run the plan.")
+      let msg = "Session '\(sessionId)' not found or expired (5-minute TTL). Re-run the plan."
+      if useJSON {
+        let envelope = CLIErrorEnvelope(error: msg, code: "session_not_found")
+        if let data = try? JSONEncoder().encode(envelope),
+          let jsonString = String(data: data, encoding: .utf8)
+        {
+          fputs(jsonString + "\n", stderr)
+        }
+      } else {
+        print(msg)
+      }
       throw ExitCode.failure
     }
 

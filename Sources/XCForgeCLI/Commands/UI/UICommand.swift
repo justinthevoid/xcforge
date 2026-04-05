@@ -588,9 +588,15 @@ struct UIDrag: AsyncParsableCommand {
     let hasSource = sourceElement != nil || (fromX != nil && fromY != nil)
     let hasTarget = targetElement != nil || (toX != nil && toY != nil)
     guard hasSource, hasTarget else {
-      print(
+      let msg =
         "Need source (--source-element OR --from-x + --from-y) and target (--target-element OR --to-x + --to-y)"
-      )
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(succeeded: false, message: msg, elementId: nil, elementCount: nil)))
+      } else {
+        print(msg)
+      }
       throw ExitCode.validationFailure
     }
 
