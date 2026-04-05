@@ -703,13 +703,14 @@ extension DebuggerProvider {
         if components.count > 1, let ln = Int(components[1]) { fileLine = ln }
       }
 
-      frames.append(FrameInfo(
-        frameIndex: frameIndex,
-        address: address,
-        symbol: symbol,
-        file: file,
-        line: fileLine
-      ))
+      frames.append(
+        FrameInfo(
+          frameIndex: frameIndex,
+          address: address,
+          symbol: symbol,
+          file: file,
+          line: fileLine
+        ))
     }
 
     return frames

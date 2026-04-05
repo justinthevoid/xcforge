@@ -312,6 +312,6 @@ struct ParseContinueOutputMultiLineTests {
     let result = DebuggerProvider.parseContinueOutput(output)
     #expect(result.stopReason == "breakpoint")
     #expect(result.threadIndex == 0)  // thread #1 → zero-based index 0
-    #expect(result.frameIndex == 0)   // * frame #0
+    #expect(result.frameIndex == 0)  // * frame #0
   }
 }

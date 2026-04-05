@@ -256,7 +256,8 @@ struct DebugBreakpointSet: AsyncParsableCommand {
         guard let breakpointId = DebuggerProvider.parseBreakpointOutput(output) else {
           throw ValidationError("No breakpoint created — check file path or function name")
         }
-        let resolved = output.lowercased().contains("resolved")
+        let resolved =
+          output.lowercased().contains("resolved")
           || !output.lowercased().contains("unresolved")
         return DebuggerProvider.BreakpointResult(breakpointId: breakpointId, resolved: resolved)
       }
