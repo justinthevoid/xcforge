@@ -9,7 +9,7 @@ struct XCForgeCLI: AsyncParsableCommand {
     subcommands: [
       Build.self, Test.self, BuildTest.self, Sim.self, Device.self, Diagnose.self, Defaults.self,
       Console.self, Git.self, Logs.self, Screenshot.self, UI.self, Accessibility.self, Plan.self,
-      SPM.self,
+      SPM.self, Debug.self,
     ]
   )
 }
