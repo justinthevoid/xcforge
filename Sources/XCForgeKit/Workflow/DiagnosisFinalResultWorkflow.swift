@@ -444,13 +444,7 @@ extension DiagnosisFinalResult {
   }
 
   private static func isInfrastructureSignal(_ message: String) -> Bool {
-    let lower = message.lowercased()
-    return lower.contains("operation never finished bootstrapping")
-      || lower.contains("unable to open database")
-      || lower.contains("locked database")
-      || lower.contains("database is locked")
-      || lower.contains("corrupted")
-      || lower.contains("couldn't load project")
+    BuildTools.isInfrastructureMessage(message)
   }
 
   private static func deriveForFailed(_ result: DiagnosisFinalResult) -> WorkflowFollowOnAction {

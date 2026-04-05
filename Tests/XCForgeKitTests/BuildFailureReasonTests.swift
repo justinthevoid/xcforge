@@ -62,6 +62,38 @@ struct BuildFailureReasonTests {
     #expect(BuildTools.classifyFailureReason(stderr: stderr) == "infrastructure")
   }
 
+  // MARK: - isInfrastructureMessage
+
+  @Test func infraMessage_bootstrapping() {
+    #expect(BuildTools.isInfrastructureMessage("operation never finished bootstrapping"))
+  }
+
+  @Test func infraMessage_lockedDatabase() {
+    #expect(BuildTools.isInfrastructureMessage("unable to open database file"))
+    #expect(BuildTools.isInfrastructureMessage("locked database"))
+    #expect(BuildTools.isInfrastructureMessage("database is locked"))
+  }
+
+  @Test func infraMessage_corruptedDatabase() {
+    #expect(BuildTools.isInfrastructureMessage("database is corrupted"))
+    #expect(BuildTools.isInfrastructureMessage("corrupted database file"))
+  }
+
+  @Test func infraMessage_corruptedAloneIsNotInfra() {
+    #expect(!BuildTools.isInfrastructureMessage("asset catalog corrupted"))
+    #expect(!BuildTools.isInfrastructureMessage("corrupted"))
+  }
+
+  @Test func infraMessage_couldntLoadProject() {
+    #expect(BuildTools.isInfrastructureMessage("couldn't load project"))
+  }
+
+  @Test func infraMessage_nonInfra() {
+    #expect(!BuildTools.isInfrastructureMessage("undefined symbols for architecture arm64"))
+    #expect(!BuildTools.isInfrastructureMessage("no signing certificate found"))
+    #expect(!BuildTools.isInfrastructureMessage(""))
+  }
+
   // MARK: - extractStructuredErrors
 
   @Test func compilerErrorsExtracted() {

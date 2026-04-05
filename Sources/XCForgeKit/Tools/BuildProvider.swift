@@ -26,14 +26,21 @@ public enum BuildTools {
     public let structuredErrors: [String]?
   }
 
+  /// Returns true if `text` contains a known infrastructure failure pattern.
+  static func isInfrastructureMessage(_ text: String) -> Bool {
+    let lower = text.lowercased()
+    return lower.contains("unable to open database")
+      || lower.contains("locked database")
+      || lower.contains("database is locked")
+      || (lower.contains("corrupted") && lower.contains("database"))
+      || lower.contains("couldn't load project")
+      || lower.contains("operation never finished bootstrapping")
+  }
+
   /// Classify the reason a build failed from xcodebuild stderr.
   static func classifyFailureReason(stderr: String) -> String {
     let lower = stderr.lowercased()
-    if lower.contains("unable to open database") || lower.contains("locked database")
-      || lower.contains("database is locked") || lower.contains("corrupted")
-      || lower.contains("couldn't load project")
-      || lower.contains("operation never finished bootstrapping")
-    {
+    if isInfrastructureMessage(stderr) {
       return "infrastructure"
     }
     if lower.contains("no signing certificate") || lower.contains("provisioning profile")
