@@ -224,13 +224,12 @@ struct DeduplicationTests {
     let capture = LogCapture()
 
     // Simulate 5 identical log lines with different timestamps
-    for i in 1...5 {
+    for _ in 1...5 {
       try? await capture.start(arguments: ["echo", "test"])
       await capture.stop()  // stop to reset
     }
 
     // Use a fresh capture and manually test dedup via the actor
-    let fresh = LogCapture()
     // We can't easily test appendLine directly since it's private,
     // but we can verify dedup through the public read interface
     // by checking the smartModePredicate output

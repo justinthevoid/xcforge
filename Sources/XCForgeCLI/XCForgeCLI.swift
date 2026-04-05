@@ -86,6 +86,15 @@ extension Int32 {
   fileprivate var asBool: Bool { self != 0 }
 }
 
+/// Execute a throwing closure, formatting any error as a JSON envelope when json is true.
+func runAsyncJSON(json: Bool, body: () throws -> Void) throws {
+  do {
+    try body()
+  } catch {
+    try rethrowOrJSONError(error, json: json)
+  }
+}
+
 /// Rethrow an error, formatting as JSON if the flag is set.
 func rethrowOrJSONError(_ error: Error, json: Bool) throws {
   if let exitCode = error as? ExitCode { throw exitCode }
