@@ -443,9 +443,30 @@ extension DiagnosisFinalResult {
     }
   }
 
+  private static func isInfrastructureSignal(_ message: String) -> Bool {
+    let lower = message.lowercased()
+    return lower.contains("operation never finished bootstrapping")
+      || lower.contains("unable to open database")
+      || lower.contains("locked database")
+      || lower.contains("database is locked")
+      || lower.contains("corrupted")
+      || lower.contains("couldn't load project")
+  }
+
   private static func deriveForFailed(_ result: DiagnosisFinalResult) -> WorkflowFollowOnAction {
     if let attempt = result.currentAttempt {
       if let buildSummary = attempt.diagnosisSummary {
+        if let signal = buildSummary.observedEvidence.primarySignal,
+          isInfrastructureSignal(signal.message)
+        {
+          return WorkflowFollowOnAction(
+            action: "Run `xcforge build clean` to reset build state and retry.",
+            rationale: sanitize(
+              "Infrastructure failure detected: \(signal.message). Clean build artifacts to recover."
+            ),
+            confidence: .evidenceSupported
+          )
+        }
         let detail =
           buildSummary.observedEvidence.primarySignal.map {
             " Primary signal: \($0.message)"

@@ -32,6 +32,7 @@ public enum BuildTools {
     if lower.contains("unable to open database") || lower.contains("locked database")
       || lower.contains("database is locked") || lower.contains("corrupted")
       || lower.contains("couldn't load project")
+      || lower.contains("operation never finished bootstrapping")
     {
       return "infrastructure"
     }
@@ -64,6 +65,7 @@ public enum BuildTools {
           || lower.contains("database is locked")
           || lower.contains("corrupted")
           || lower.contains("couldn't load project")
+          || lower.contains("operation never finished bootstrapping")
           || (lower.contains("error:") && !lower.contains("sourcekit"))
       }.prefix(20).map { $0 }
     }
