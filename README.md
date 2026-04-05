@@ -189,6 +189,14 @@ File: `~/.config/zed/settings.json` (or `.zed/settings.json` per-project)
 
 ---
 
+## Claude Code Skill
+
+xcforge includes a Claude Code skill that loads the full tool reference into context when you're working on iOS tasks. The skill is located in `.claude/skills/xcforge/` in this repository — copy or symlink it to `~/.claude/skills/xcforge/` to make it available globally.
+
+Once installed, Claude will automatically load the right reference files when you use xcforge tools — exact parameters, return values, and usage patterns for each category (build, test, simulator, UI automation, logs, LLDB, diagnosis, and more).
+
+---
+
 ## Two Modes, Same Tools
 
 ```bash
@@ -333,16 +341,6 @@ There are several iOS-focused MCP servers worth knowing about:
 - Xcode 15+
 - Swift 6.0+ (source builds only)
 - WebDriverAgent on simulator (UI automation only)
-
----
-
-## GitHub Banner
-
-If you're forking or contributing and want to create a banner image:
-
-- **Recommended size:** 1280 x 640 px (2:1 aspect ratio)
-- **Format:** PNG or SVG
-- **Tips:** Keep key content centered — GitHub constrains rendered markdown width to ~888px. Design for both light and dark mode.
 
 ---
 
