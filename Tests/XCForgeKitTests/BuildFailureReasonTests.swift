@@ -121,6 +121,18 @@ struct BuildFailureReasonTests {
     #expect(!errors.contains { $0.lowercased().contains("sourcekit") })
   }
 
+  @Test func infrastructureBareCryptedExcluded() {
+    let stderr = """
+      asset catalog corrupted
+      locked database file
+      """
+    let errors = BuildTools.extractStructuredErrors(stderr: stderr, failureReason: "infrastructure")
+    // Bare "corrupted" without "database" must not appear
+    #expect(!errors.contains { $0.contains("asset catalog corrupted") })
+    // Database-locked line must still appear
+    #expect(errors.contains { $0.contains("locked database") })
+  }
+
   @Test func fallbackToStderrTail() {
     let stderr = "some output with no error: markers"
     let errors = BuildTools.extractStructuredErrors(stderr: stderr, failureReason: "unknown")

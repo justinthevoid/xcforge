@@ -67,12 +67,7 @@ public enum BuildTools {
       let lines = stderr.split(separator: "\n").map(String.init)
       return lines.filter { line in
         let lower = line.lowercased()
-        return lower.contains("unable to open database")
-          || lower.contains("locked database")
-          || lower.contains("database is locked")
-          || lower.contains("corrupted")
-          || lower.contains("couldn't load project")
-          || lower.contains("operation never finished bootstrapping")
+        return isInfrastructureMessage(line)
           || (lower.contains("error:") && !lower.contains("sourcekit"))
       }.prefix(20).map { $0 }
     }
