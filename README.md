@@ -12,7 +12,7 @@
 
 An MCP server and CLI for iOS development — build, test, automate, and diagnose from any AI agent or terminal.
 
-**95 MCP tools. 16 CLI command groups. Single native binary (~8 MB stripped, ~18 MB with debug symbols). Zero external runtime dependencies.**
+**103 MCP tools. 17 CLI command groups. Single native binary (~8 MB stripped, ~18 MB with debug symbols). Zero external runtime dependencies.**
 
 ---
 
@@ -216,6 +216,7 @@ Every tool available over MCP has a matching CLI command. Every CLI command supp
 | **SPM** | 5 | Resolve, update, show deps, reset, clean |
 | **Accessibility** | 5 | Audit labels, traits, VoiceOver order, contrast |
 | **Git** | 5 | Status, diff, log, commit, branch |
+| **LLDB Debugger** | 8 | Attach, breakpoints, inspect variables, backtrace, step/continue, arbitrary commands |
 | **Diagnosis** | 10 | Multi-step workflows: build, run, inspect, capture evidence, compare, verify |
 | **Plan Execution** | 2 | Scripted multi-step automation with assertions |
 | **Session** | 3 | Persistent defaults, `.xcforge.yaml` repo config, session profiles |
@@ -254,6 +255,18 @@ xcforge communicates directly with WebDriverAgent over HTTP and supplements it w
 
 The response includes a topic menu with counts, so the agent can pull in specific topics on demand without re-querying.
 
+### Interactive LLDB Debugger
+
+8 tools for attaching LLDB to running simulator processes, setting breakpoints, inspecting variables, viewing stack traces, and stepping through code. Sessions persist for 30 minutes, so you can attach once and run multiple debugging operations. CLI commands are one-shot (attach → operation → detach). Includes:
+
+- Session management: `lldb_attach` (by bundle ID or PID), `lldb_detach`
+- Breakpoints: set by file+line or function name, remove by ID
+- Inspection: evaluate expressions at the current frame, view stack traces
+- Execution control: continue, step over, step into, step out (with 10-second timeout)
+- Raw passthrough: run arbitrary LLDB commands
+
+Use alongside logs and screenshots for systematic root-cause analysis.
+
 ### Diagnosis Workflows
 
 10 tools that chain together into structured diagnostic pipelines — start a session, build, launch, capture runtime signals, collect evidence (screenshots, logs, accessibility state), compare against previous runs, and verify fixes. Designed for agents to systematically debug issues across multiple iterations.
@@ -281,6 +294,11 @@ xcforge log start                                # Start log capture
 xcforge log read --include network               # Read with topic filter
 xcforge spm resolve                              # Resolve packages
 xcforge device list                              # Connected physical devices
+xcforge debug attach --bundle-id com.example.App    # Attach debugger
+xcforge debug breakpoint set --bundle-id com.example.App --file ViewController.swift --line 42
+xcforge debug inspect --bundle-id com.example.App --expression "self.count"
+xcforge debug backtrace --bundle-id com.example.App # Show stack trace
+xcforge debug continue --bundle-id com.example.App --mode step-over
 xcforge diagnose start --scheme MyApp            # Start diagnosis session
 ```
 

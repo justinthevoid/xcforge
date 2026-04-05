@@ -1,11 +1,11 @@
 ---
 name: xcforge
-description: Complete reference for xcforge — 95 MCP tools + 99 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, and full CLI parity across 16 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, or any xcforge tool.
+description: Complete reference for xcforge — 103 MCP tools + 107 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, and full CLI parity across 17 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, or any xcforge tool.
 ---
 
 # xcforge — iOS Development MCP Server & CLI
 
-xcforge is a native Swift MCP server and CLI for iOS development. 95 MCP tools, 99 CLI commands across 16 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, and server-side plan execution for multi-step UI automation. Every MCP tool has a CLI equivalent.
+xcforge is a native Swift MCP server and CLI for iOS development. 103 MCP tools, 107 CLI commands across 17 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, and server-side plan execution for multi-step UI automation. Every MCP tool has a CLI equivalent.
 
 **Key advantages over alternatives:**
 - Screenshots in 0.3s (44x faster) via CoreSimulator IOSurface API
@@ -38,7 +38,8 @@ xcforge is a native Swift MCP server and CLI for iOS development. 95 MCP tools, 
 | **[Diagnosis Workflows](references/diagnosis-workflows.md)** | Running structured diagnosis: start, build, test, runtime, status, evidence, inspect, verify, compare, result |
 | **[Plan Execution](references/plan-execution.md)** | Multi-step UI automation plans: run_plan, run_plan_decide, step types, variable binding, verification, suspend/resume |
 | **[Auto-Detection & Defaults](references/auto-detection.md)** | Understanding parameter resolution, setting defaults, session profiles |
-| **[CLI Commands](references/cli-commands.md)** | Using xcforge from terminal: `build`, `build-test`, `test`, `sim`, `device`, `spm`, `log`, `console`, `screenshot`, `ui`, `git`, `accessibility`, `defaults`, `diagnose`, `plan` |
+| **[LLDB Debugger](references/lldb-debugger.md)** | Attach LLDB to running simulator processes — breakpoints, variable inspection, stack traces, step execution, arbitrary commands; 8 MCP tools + `xcforge debug` CLI |
+| **[CLI Commands](references/cli-commands.md)** | Using xcforge from terminal: `build`, `build-test`, `test`, `sim`, `device`, `spm`, `log`, `console`, `screenshot`, `ui`, `git`, `accessibility`, `defaults`, `diagnose`, `plan`, `debug` |
 
 ## Auto-Detection — How Parameters Resolve
 
@@ -198,6 +199,27 @@ xcforge spm test --filter "MyTests"           → run filtered tests
 xcforge spm run mytool -- --verbose            → run with args
 xcforge spm list                              → dependency tree
 xcforge spm clean                             → clean artifacts
+```
+
+### LLDB Debugging (MCP — session-based)
+```
+lldb_attach(bundleId: "com.example.App")      → { sessionId, pid, status: "stopped" }
+lldb_set_breakpoint(sessionId: "...", file: "Foo.swift", line: 42)
+lldb_continue(sessionId: "...", mode: "continue")   → runs until breakpoint; 10s timeout
+lldb_backtrace(sessionId: "...", threadIndex: 0)    → structured frames
+lldb_inspect_variable(sessionId: "...", expression: "self.count")
+lldb_run_command(sessionId: "...", command: "thread list")
+lldb_detach(sessionId: "...")
+```
+
+### LLDB Debugging (CLI — one-shot)
+```bash
+xcforge debug attach --bundle-id com.example.App   → prints sessionId
+xcforge debug backtrace --bundle-id com.example.App
+xcforge debug inspect --bundle-id com.example.App --expression "self.count"
+xcforge debug breakpoint set --bundle-id com.example.App --file Foo.swift --line 42
+xcforge debug continue --bundle-id com.example.App --mode step-over
+xcforge debug run --bundle-id com.example.App --command "thread list"
 ```
 
 ### Clipboard Access
