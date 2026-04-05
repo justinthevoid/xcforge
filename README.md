@@ -191,7 +191,11 @@ File: `~/.config/zed/settings.json` (or `.zed/settings.json` per-project)
 
 ## Claude Code Skill
 
-xcforge includes a Claude Code skill that loads the full tool reference into context when you're working on iOS tasks. The skill is located in `.claude/skills/xcforge/` in this repository — copy or symlink it to `~/.claude/skills/xcforge/` to make it available globally.
+xcforge includes a Claude Code skill that loads the full tool reference into context when you're working on iOS tasks. Install it globally with:
+
+```bash
+npx skills justinthevoid/xcforge
+```
 
 Once installed, Claude will automatically load the right reference files when you use xcforge tools — exact parameters, return values, and usage patterns for each category (build, test, simulator, UI automation, logs, LLDB, diagnosis, and more).
 
