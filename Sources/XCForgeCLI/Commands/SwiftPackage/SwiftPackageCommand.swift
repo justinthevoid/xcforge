@@ -27,11 +27,12 @@ struct SPMBuild: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SwiftPackageTools.executeBuild(
       path: path, configuration: configuration, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -62,11 +63,12 @@ struct SPMTest: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SwiftPackageTools.executeTest(
       path: path, filter: filter, parallel: parallel, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -97,11 +99,12 @@ struct SPMRun: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SwiftPackageTools.executeRun(
       path: path, executable: executable, arguments: arguments, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -126,10 +129,11 @@ struct SPMList: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SwiftPackageTools.executeList(path: path, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -154,10 +158,11 @@ struct SPMClean: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SwiftPackageTools.executeClean(path: path, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)

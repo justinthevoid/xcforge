@@ -95,6 +95,7 @@ struct AccessibilityDynamicType: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let sim = try await env.session.resolveSimulator(simulator)
 
@@ -198,7 +199,7 @@ struct AccessibilityDynamicType: AsyncParsableCommand {
       errors: errorEntries
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(AccessibilityRenderer.renderDynamicType(result))
@@ -240,6 +241,7 @@ struct AccessibilityLocalization: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let sim = try await env.session.resolveSimulator(simulator)
 
@@ -354,7 +356,7 @@ struct AccessibilityLocalization: AsyncParsableCommand {
       errors: errorEntries
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(AccessibilityRenderer.renderLocalization(result))

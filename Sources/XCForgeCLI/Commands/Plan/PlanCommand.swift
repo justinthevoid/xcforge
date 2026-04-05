@@ -35,6 +35,7 @@ struct PlanRun: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     var errorStrategy = self.errorStrategy
     var timeout = self.timeout
 
@@ -107,7 +108,7 @@ struct PlanRun: AsyncParsableCommand {
 
     if planSteps.isEmpty {
       let report = PlanReport(steps: [])
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(report))
       } else {
         print(PlanRenderer.render(report))
@@ -134,7 +135,7 @@ struct PlanRun: AsyncParsableCommand {
 
     switch result {
     case .completed(let report):
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(report))
       } else {
         print(PlanRenderer.render(report))
@@ -148,7 +149,7 @@ struct PlanRun: AsyncParsableCommand {
         sessionId: sessionId,
         suspendQuestion: suspended.question
       )
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(report))
       } else {
         print(PlanRenderer.render(report))
@@ -175,6 +176,7 @@ struct PlanDecide: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     guard let suspended = await PlanSessionStore.shared.consume(sessionId) else {
       print("Session '\(sessionId)' not found or expired (5-minute TTL). Re-run the plan.")
@@ -183,7 +185,7 @@ struct PlanDecide: AsyncParsableCommand {
 
     if decision == "abort" {
       let report = PlanReport(steps: suspended.completedResults)
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(report))
       } else {
         print(PlanRenderer.render(report))
@@ -214,7 +216,7 @@ struct PlanDecide: AsyncParsableCommand {
 
     switch result {
     case .completed(let report):
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(report))
       } else {
         print(PlanRenderer.render(report))
@@ -228,7 +230,7 @@ struct PlanDecide: AsyncParsableCommand {
         sessionId: newSessionId,
         suspendQuestion: newSuspended.question
       )
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(report))
       } else {
         print(PlanRenderer.render(report))

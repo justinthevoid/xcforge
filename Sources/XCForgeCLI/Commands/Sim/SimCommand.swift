@@ -31,10 +31,11 @@ struct SimList: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeListSims(filter: filter, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -59,10 +60,11 @@ struct SimBoot: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeBootSim(simulator: simulator, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -87,10 +89,11 @@ struct SimShutdown: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeShutdownSim(simulator: simulator, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -119,10 +122,11 @@ struct SimInstall: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeInstallApp(simulator: simulator, appPath: appPath, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -150,10 +154,11 @@ struct SimLaunch: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeLaunchApp(simulator: simulator, bundleId: bundleId, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -181,11 +186,12 @@ struct SimTerminate: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeTerminateApp(
       simulator: simulator, bundleId: bundleId, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -213,10 +219,11 @@ struct SimClone: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeCloneSim(simulator: simulator, name: name, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -241,10 +248,11 @@ struct SimErase: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeEraseSim(simulator: simulator, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -269,10 +277,11 @@ struct SimDelete: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeDeleteSim(simulator: simulator, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -298,10 +307,11 @@ struct SimOrientation: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeSetOrientation(orientation: orientation, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -331,10 +341,11 @@ struct SimRecordStart: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeRecordVideoStart(simulator: simulator, path: path, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -356,9 +367,10 @@ struct SimRecordStop: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let result = await SimTools.executeRecordVideoStop()
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -391,11 +403,12 @@ struct SimLocation: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeSetSimLocation(
       simulator: simulator, latitude: latitude, longitude: longitude, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -420,10 +433,11 @@ struct SimLocationReset: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeResetSimLocation(simulator: simulator, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -453,11 +467,12 @@ struct SimAppearance: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeSetSimAppearance(
       simulator: simulator, appearance: appearance, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -502,6 +517,7 @@ struct SimStatusBar: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeSimStatusBar(
       simulator: simulator, time: time, batteryLevel: batteryLevel,
@@ -509,7 +525,7 @@ struct SimStatusBar: AsyncParsableCommand {
       wifiBars: wifiBars, operatorName: operatorName, env: env
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))
@@ -534,10 +550,11 @@ struct SimStatusBarClear: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await SimTools.executeSimStatusBarClear(simulator: simulator, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(SimRenderer.render(result))

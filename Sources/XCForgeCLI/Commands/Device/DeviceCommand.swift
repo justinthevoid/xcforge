@@ -28,10 +28,11 @@ struct DeviceList: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await DeviceTools.executeListDevices(filter: filter, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -56,10 +57,11 @@ struct DeviceInfo: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await DeviceTools.executeDeviceInfo(device: device, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -87,10 +89,11 @@ struct DeviceInstall: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await DeviceTools.executeDeviceInstall(device: device, appPath: appPath, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -118,11 +121,12 @@ struct DeviceUninstall: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await DeviceTools.executeDeviceUninstall(
       device: device, bundleId: bundleId, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -160,6 +164,7 @@ struct DeviceLaunch: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await DeviceTools.executeDeviceLaunch(
       device: device,
@@ -171,7 +176,7 @@ struct DeviceLaunch: AsyncParsableCommand {
       env: env
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -199,11 +204,12 @@ struct DeviceTerminate: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await DeviceTools.executeDeviceTerminate(
       device: device, identifier: identifier, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)
@@ -234,11 +240,12 @@ struct DeviceApps: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let result = await DeviceTools.executeDeviceApps(
       device: device, includeSystem: includeSystem, bundleId: bundleId, env: env)
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(result.message)

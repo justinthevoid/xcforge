@@ -39,6 +39,7 @@ struct ConsoleLaunch: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     guard let resolvedBundleId = await env.session.resolveBundleId(bundleId) else {
       let result = ConsoleResult(
@@ -46,7 +47,7 @@ struct ConsoleLaunch: AsyncParsableCommand {
         message: "Missing bundle_id — provide --bundle-id or run build first",
         stdout: nil, stderr: nil, isRunning: nil, bundleId: nil
       )
-      if json {
+      if useJSON {
         print(try ConsoleRenderer.renderJSON(result))
       } else {
         print(ConsoleRenderer.renderError(result.message))
@@ -65,7 +66,7 @@ struct ConsoleLaunch: AsyncParsableCommand {
         message: "\(error)",
         stdout: nil, stderr: nil, isRunning: nil, bundleId: nil
       )
-      if json {
+      if useJSON {
         print(try ConsoleRenderer.renderJSON(result))
       } else {
         print(ConsoleRenderer.renderError(result.message))
@@ -85,7 +86,7 @@ struct ConsoleLaunch: AsyncParsableCommand {
         isRunning: true,
         bundleId: resolvedBundleId
       )
-      if json {
+      if useJSON {
         print(try ConsoleRenderer.renderJSON(result))
       } else {
         print(ConsoleRenderer.renderLaunch(result))
@@ -96,7 +97,7 @@ struct ConsoleLaunch: AsyncParsableCommand {
         message: "Launch failed: \(error)",
         stdout: nil, stderr: nil, isRunning: false, bundleId: resolvedBundleId
       )
-      if json {
+      if useJSON {
         print(try ConsoleRenderer.renderJSON(result))
       } else {
         print(ConsoleRenderer.renderError(result.message))
@@ -125,6 +126,7 @@ struct ConsoleRead: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let output = await AppConsole.shared.read(last: last, clear: clear)
 
     let filteredStdout: [String]?
@@ -151,7 +153,7 @@ struct ConsoleRead: AsyncParsableCommand {
       bundleId: output.bundleId
     )
 
-    if json {
+    if useJSON {
       print(try ConsoleRenderer.renderJSON(result))
     } else {
       print(ConsoleRenderer.renderRead(result, stream: stream, cleared: clear))
@@ -169,6 +171,7 @@ struct ConsoleStop: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     await AppConsole.shared.stop()
 
     let result = ConsoleResult(
@@ -178,7 +181,7 @@ struct ConsoleStop: AsyncParsableCommand {
       isRunning: false, bundleId: nil
     )
 
-    if json {
+    if useJSON {
       print(try ConsoleRenderer.renderJSON(result))
     } else {
       print(ConsoleRenderer.renderStop(result))

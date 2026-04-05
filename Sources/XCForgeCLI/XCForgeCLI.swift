@@ -94,7 +94,7 @@ func rethrowOrJSONError(_ error: Error, json: Bool) throws {
   if let data = try? JSONEncoder().encode(envelope),
     let jsonString = String(data: data, encoding: .utf8)
   {
-    print(jsonString)
+    fputs(jsonString + "\n", stderr)
   }
   throw ExitCode.failure
 }

@@ -37,6 +37,7 @@ struct BuildTest: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let configuration = self.configuration ?? "Debug"
 
     let result = try await TestTools.executeBuildAndTest(
@@ -49,7 +50,7 @@ struct BuildTest: AsyncParsableCommand {
       coverage: coverage
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(BuildTestRenderer.render(result))

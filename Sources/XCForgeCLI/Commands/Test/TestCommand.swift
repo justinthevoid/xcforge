@@ -42,6 +42,7 @@ struct TestRun: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let configuration = self.configuration ?? "Debug"
 
     let execution = try await TestTools.executeTest(
@@ -54,7 +55,7 @@ struct TestRun: AsyncParsableCommand {
       coverage: coverage
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(execution))
     } else {
       print(TestRenderer.renderTest(execution))
@@ -91,6 +92,7 @@ struct TestFailures: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let result = try await TestTools.extractFailures(
       xcresultPath: xcresultPath,
       project: project,
@@ -99,7 +101,7 @@ struct TestFailures: AsyncParsableCommand {
       includeConsole: includeConsole
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(TestRenderer.renderFailures(result))
@@ -141,6 +143,7 @@ struct TestCoverage: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let minCoverage = self.minCoverage ?? 100.0
 
     if let file {
@@ -160,7 +163,7 @@ struct TestCoverage: AsyncParsableCommand {
         xcresultPath: resolvedXcresult
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(detail))
       } else {
         print(TestRenderer.renderFileCoverage(detail))
@@ -175,7 +178,7 @@ struct TestCoverage: AsyncParsableCommand {
         minCoverage: minCoverage
       )
 
-      if json {
+      if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(TestRenderer.renderCoverage(result))
@@ -203,13 +206,14 @@ struct TestList: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let result = try await TestTools.executeListTests(
       project: project,
       scheme: scheme,
       simulator: simulator
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(TestRenderer.renderListTests(result))

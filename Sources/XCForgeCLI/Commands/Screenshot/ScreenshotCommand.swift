@@ -53,6 +53,7 @@ struct ScreenshotCapture: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let output = self.output ?? "/tmp/xcforge-screenshot.\(format)"
 
     let env = Environment.live
@@ -75,7 +76,7 @@ struct ScreenshotCapture: AsyncParsableCommand {
       sizeKB: sizeKB
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(ScreenshotRenderer.renderCapture(result))
@@ -104,6 +105,7 @@ struct ScreenshotBaseline: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let sim = try await env.session.resolveSimulator(simulator)
 
@@ -137,7 +139,7 @@ struct ScreenshotBaseline: AsyncParsableCommand {
       sizeKB: sizeKB
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(ScreenshotRenderer.renderBaseline(result))
@@ -169,6 +171,7 @@ struct ScreenshotCompare: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let sim = try await env.session.resolveSimulator(simulator)
 
@@ -221,7 +224,7 @@ struct ScreenshotCompare: AsyncParsableCommand {
       diffPath: savedDiffPath
     )
 
-    if json {
+    if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
     } else {
       print(ScreenshotRenderer.renderCompare(result, name: name))

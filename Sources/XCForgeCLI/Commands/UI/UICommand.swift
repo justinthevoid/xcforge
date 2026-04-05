@@ -37,6 +37,7 @@ struct UIStatus: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let healthy = await env.wdaClient.isHealthy()
     let backendName = await env.wdaClient.backend.displayName
@@ -48,7 +49,7 @@ struct UIStatus: AsyncParsableCommand {
         let message =
           "WDA Status: \(status.ready ? "READY" : "NOT READY")\nBackend: \(backendName)\nBundle: \(status.bundleId)\nSessions tracked: \(sessionCount)"
 
-        if json {
+        if useJSON {
           let result = UIResult(
             succeeded: true, message: message, elementId: nil, elementCount: nil)
           print(try WorkflowJSONRenderer.renderJSON(result))
@@ -57,7 +58,7 @@ struct UIStatus: AsyncParsableCommand {
         }
       } catch {
         let message = "WDA reachable but status parse failed: \(error)"
-        if json {
+        if useJSON {
           let result = UIResult(
             succeeded: true, message: message, elementId: nil, elementCount: nil)
           print(try WorkflowJSONRenderer.renderJSON(result))
@@ -68,7 +69,7 @@ struct UIStatus: AsyncParsableCommand {
     } else {
       let message =
         "WDA not responding (health check timeout 2s). Backend: \(backendName). Try restarting WDA or the simulator."
-      if json {
+      if useJSON {
         let result = UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
@@ -97,6 +98,7 @@ struct UISession: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     if let url = wdaUrl {
       let previousURL = await env.wdaClient.getBaseURL()
@@ -105,7 +107,7 @@ struct UISession: AsyncParsableCommand {
       do {
         let sid = try await env.wdaClient.createSession(bundleId: bundleId)
         let message = "Session created: \(sid) (custom WDA: \(url))"
-        if json {
+        if useJSON {
           print(
             try WorkflowJSONRenderer.renderJSON(
               UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -116,7 +118,7 @@ struct UISession: AsyncParsableCommand {
         await env.wdaClient.setBaseURL(previousURL)
         let message =
           "Connection to \(url) failed: \(error). Default URL (\(previousURL)) restored."
-        if json {
+        if useJSON {
           print(
             try WorkflowJSONRenderer.renderJSON(
               UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -130,7 +132,7 @@ struct UISession: AsyncParsableCommand {
         try await env.wdaClient.ensureWDARunning()
         let sid = try await env.wdaClient.createSession(bundleId: bundleId)
         let message = "Session created: \(sid)"
-        if json {
+        if useJSON {
           print(
             try WorkflowJSONRenderer.renderJSON(
               UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -139,7 +141,7 @@ struct UISession: AsyncParsableCommand {
         }
       } catch {
         let message = "Session creation failed: \(error)"
-        if json {
+        if useJSON {
           print(
             try WorkflowJSONRenderer.renderJSON(
               UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -179,6 +181,7 @@ struct UIFind: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let start = CFAbsoluteTimeGetCurrent()
@@ -190,7 +193,7 @@ struct UIFind: AsyncParsableCommand {
       if swipes > 0 {
         message += " — scrolled \(swipes) time(s) \(direction)"
       }
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
@@ -199,7 +202,7 @@ struct UIFind: AsyncParsableCommand {
       }
     } catch {
       let message = "Element not found: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -229,6 +232,7 @@ struct UIFindAll: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let start = CFAbsoluteTimeGetCurrent()
@@ -237,7 +241,7 @@ struct UIFindAll: AsyncParsableCommand {
       let message =
         "Found \(elements.count) elements (\(elapsed)ms):\n"
         + elements.enumerated().map { "  [\($0.offset)] \($0.element)" }.joined(separator: "\n")
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(
@@ -247,7 +251,7 @@ struct UIFindAll: AsyncParsableCommand {
       }
     } catch {
       let message = "Find elements failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -274,13 +278,14 @@ struct UIClick: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let start = CFAbsoluteTimeGetCurrent()
       try await env.wdaClient.click(elementId: elementId)
       let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
       let message = "Clicked element \(elementId) (\(elapsed)ms)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
@@ -289,7 +294,7 @@ struct UIClick: AsyncParsableCommand {
       }
     } catch {
       let message = "Click failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -319,13 +324,14 @@ struct UITap: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let start = CFAbsoluteTimeGetCurrent()
       try await env.wdaClient.tap(x: x, y: y)
       let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
       let message = "Tapped at (\(Int(x)), \(Int(y))) (\(elapsed)ms)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -334,7 +340,7 @@ struct UITap: AsyncParsableCommand {
       }
     } catch {
       let message = "Tap failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -364,11 +370,12 @@ struct UIDoubleTap: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       try await env.wdaClient.doubleTap(x: x, y: y)
       let message = "Double-tapped at (\(Int(x)), \(Int(y)))"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -377,7 +384,7 @@ struct UIDoubleTap: AsyncParsableCommand {
       }
     } catch {
       let message = "Double-tap failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -410,11 +417,12 @@ struct UILongPress: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       try await env.wdaClient.longPress(x: x, y: y, durationMs: durationMs)
       let message = "Long-pressed at (\(Int(x)), \(Int(y))) for \(durationMs)ms"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -423,7 +431,7 @@ struct UILongPress: AsyncParsableCommand {
       }
     } catch {
       let message = "Long-press failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -462,12 +470,13 @@ struct UISwipe: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       try await env.wdaClient.swipe(
         startX: startX, startY: startY, endX: endX, endY: endY, durationMs: durationMs)
       let message = "Swiped from (\(Int(startX)),\(Int(startY))) to (\(Int(endX)),\(Int(endY)))"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -476,7 +485,7 @@ struct UISwipe: AsyncParsableCommand {
       }
     } catch {
       let message = "Swipe failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -512,12 +521,13 @@ struct UIPinch: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       try await env.wdaClient.pinch(
         centerX: centerX, centerY: centerY, scale: scale, durationMs: durationMs)
       let message = "Pinch at (\(Int(centerX)),\(Int(centerY))) scale=\(scale)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -526,7 +536,7 @@ struct UIPinch: AsyncParsableCommand {
       }
     } catch {
       let message = "Pinch failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -574,6 +584,7 @@ struct UIDrag: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let hasSource = sourceElement != nil || (fromX != nil && fromY != nil)
     let hasTarget = targetElement != nil || (toX != nil && toY != nil)
     guard hasSource, hasTarget else {
@@ -595,7 +606,7 @@ struct UIDrag: AsyncParsableCommand {
       let srcDesc = sourceElement ?? "(\(Int(fromX!)),\(Int(fromY!)))"
       let tgtDesc = targetElement ?? "(\(Int(toX!)),\(Int(toY!)))"
       let message = "Dragged \(srcDesc) → \(tgtDesc) (\(elapsed)ms)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -604,7 +615,7 @@ struct UIDrag: AsyncParsableCommand {
       }
     } catch {
       let message = "Drag failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -637,6 +648,7 @@ struct UIType: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       if let eid = elementId {
@@ -654,7 +666,7 @@ struct UIType: AsyncParsableCommand {
         try await env.wdaClient.setValue(elementId: eid, text: text)
       }
       let message = "Typed '\(text)'"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
@@ -663,7 +675,7 @@ struct UIType: AsyncParsableCommand {
       }
     } catch {
       let message = "Type failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -690,11 +702,12 @@ struct UIGetText: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let text = try await env.wdaClient.getText(elementId: elementId)
       let message = "Text: \(text)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
@@ -703,7 +716,7 @@ struct UIGetText: AsyncParsableCommand {
       }
     } catch {
       let message = "Get text failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -730,6 +743,7 @@ struct UISource: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let start = CFAbsoluteTimeGetCurrent()
@@ -738,7 +752,7 @@ struct UISource: AsyncParsableCommand {
       let truncated =
         source.count > 50000 ? String(source.prefix(50000)) + "\n... [truncated]" : source
       let message = "View hierarchy (\(elapsed)s, \(source.count) chars):\n\(truncated)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
@@ -747,7 +761,7 @@ struct UISource: AsyncParsableCommand {
       }
     } catch {
       let message = "Get source failed: \(error)"
-      if json {
+      if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
@@ -778,6 +792,7 @@ struct UIAlert: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     var message: String
     var succeeded = true
@@ -856,7 +871,7 @@ struct UIAlert: AsyncParsableCommand {
       succeeded = false
     }
 
-    if json {
+    if useJSON {
       print(
         try WorkflowJSONRenderer.renderJSON(
           UIResult(succeeded: succeeded, message: message, elementId: nil, elementCount: nil)))

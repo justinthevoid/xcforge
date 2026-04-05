@@ -33,12 +33,13 @@ struct GitStatus: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let result = try await Shell.git(["status", "--porcelain"], workingDirectory: path)
       let output = result.stdout.isEmpty ? "Working tree clean" : result.stdout
       let gitResult = GitResult(succeeded: true, output: output)
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -46,7 +47,7 @@ struct GitStatus: AsyncParsableCommand {
     } catch {
       let gitResult = GitResult(succeeded: false, output: "Error: \(error)")
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -78,6 +79,7 @@ struct GitDiff: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       var gitArgs = ["diff"]
       if staged { gitArgs.append("--cached") }
@@ -89,7 +91,7 @@ struct GitDiff: AsyncParsableCommand {
         rawOutput.count > 50000 ? String(rawOutput.prefix(50000)) + "\n... [truncated]" : rawOutput
       let gitResult = GitResult(succeeded: true, output: output)
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -97,7 +99,7 @@ struct GitDiff: AsyncParsableCommand {
     } catch {
       let gitResult = GitResult(succeeded: false, output: "Error: \(error)")
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -129,6 +131,7 @@ struct GitLog: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       var gitArgs = ["log", "-\(count)"]
       if oneline {
@@ -141,7 +144,7 @@ struct GitLog: AsyncParsableCommand {
       let output = result.stdout.isEmpty ? "No commits" : result.stdout
       let gitResult = GitResult(succeeded: true, output: output)
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -149,7 +152,7 @@ struct GitLog: AsyncParsableCommand {
     } catch {
       let gitResult = GitResult(succeeded: false, output: "Error: \(error)")
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -181,13 +184,14 @@ struct GitCommit: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       if addAll {
         let addResult = try await Shell.git(["add", "-A"], workingDirectory: path)
         if !addResult.succeeded {
           let gitResult = GitResult(succeeded: false, output: "git add failed: \(addResult.stderr)")
 
-          if json {
+          if useJSON {
             print(try GitRenderer.renderJSON(gitResult))
           } else {
             print(GitRenderer.render(gitResult))
@@ -201,7 +205,7 @@ struct GitCommit: AsyncParsableCommand {
       if result.succeeded {
         let gitResult = GitResult(succeeded: true, output: "Committed: \(result.stdout)")
 
-        if json {
+        if useJSON {
           print(try GitRenderer.renderJSON(gitResult))
         } else {
           print(GitRenderer.render(gitResult))
@@ -209,7 +213,7 @@ struct GitCommit: AsyncParsableCommand {
       } else {
         let gitResult = GitResult(succeeded: false, output: "Commit failed: \(result.stderr)")
 
-        if json {
+        if useJSON {
           print(try GitRenderer.renderJSON(gitResult))
         } else {
           print(GitRenderer.render(gitResult))
@@ -222,7 +226,7 @@ struct GitCommit: AsyncParsableCommand {
     } catch {
       let gitResult = GitResult(succeeded: false, output: "Error: \(error)")
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -254,6 +258,7 @@ struct GitBranch: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
     do {
       let gitResult: GitResult
 
@@ -267,7 +272,7 @@ struct GitBranch: AsyncParsableCommand {
         guard let n = name else {
           gitResult = GitResult(succeeded: false, output: "Missing branch name")
 
-          if json {
+          if useJSON {
             print(try GitRenderer.renderJSON(gitResult))
           } else {
             print(GitRenderer.render(gitResult))
@@ -285,7 +290,7 @@ struct GitBranch: AsyncParsableCommand {
         guard let n = name else {
           gitResult = GitResult(succeeded: false, output: "Missing branch name")
 
-          if json {
+          if useJSON {
             print(try GitRenderer.renderJSON(gitResult))
           } else {
             print(GitRenderer.render(gitResult))
@@ -304,7 +309,7 @@ struct GitBranch: AsyncParsableCommand {
           succeeded: false, output: "Unknown action: \(action). Use: list, create, switch")
       }
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
@@ -318,7 +323,7 @@ struct GitBranch: AsyncParsableCommand {
     } catch {
       let gitResult = GitResult(succeeded: false, output: "Error: \(error)")
 
-      if json {
+      if useJSON {
         print(try GitRenderer.renderJSON(gitResult))
       } else {
         print(GitRenderer.render(gitResult))
