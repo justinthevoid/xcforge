@@ -1,43 +1,43 @@
 {
-	"name": "website",
-	"type": "module",
-	"version": "0.0.1",
-	"packageManager": "bun@1.3.10",
-	"engines": {
-		"bun": ">=1.3.10",
-		"node": ">=22.12.0"
-	},
-	"scripts": {
-		"preinstall": "bun run scripts/doctor.mjs --phase=preinstall",
-		"doctor": "bun run scripts/doctor.mjs",
-		"bootstrap": "bun install && bun run validate",
-		"dev": "bun run doctor && astro dev",
-		"start": "bun run doctor && astro preview",
-		"build": "bun run scripts/validate-homepage-sections.mjs && astro build",
-		"preview": "astro preview",
-		"workers:check": "bun run scripts/doctor.mjs --phase=workers",
-		"workers:preview": "bun run workers:check && bun run build && bun run scripts/validate-workers-config.mjs --require-generated-config && wrangler dev --config dist/server/wrangler.json",
-		"workers:deploy": "bun run workers:check && bun run build && bun run scripts/validate-workers-config.mjs --require-generated-config && wrangler deploy --config dist/server/wrangler.json",
-		"typecheck": "bun run doctor && astro check",
-		"lint": "bun run doctor && biome check .",
-		"lint:fix": "biome check --write .",
-		"format": "biome format --write .",
-		"validate": "bun run typecheck && bun run lint",
-		"astro": "astro"
-	},
-	"dependencies": {
-		"@astrojs/check": "^0.9.8",
-		"@astrojs/cloudflare": "^13.1.7",
-		"@astrojs/starlight": "^0.38.3",
-		"@astrojs/svelte": "^8.0.4",
-		"astro": "^6.0.1",
-		"sharp": "^0.34.2",
-		"svelte": "^5.55.1",
-		"typescript": "^6.0.2"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.4.10",
-		"jsonc-parser": "^3.3.1",
-		"wrangler": "^4.80.0"
-	}
+  "name": "website",
+  "type": "module",
+  "version": "0.0.1",
+  "packageManager": "bun@1.3.10",
+  "engines": {
+    "bun": ">=1.3.10",
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "preinstall": "bun run scripts/doctor.mjs --phase=preinstall",
+    "doctor": "bun run scripts/doctor.mjs",
+    "bootstrap": "bun install && bun run validate",
+    "dev": "bun run doctor && astro dev",
+    "start": "bun run doctor && astro preview",
+    "build": "bun run scripts/validate-homepage-sections.mjs && astro build",
+    "preview": "astro preview",
+    "workers:check": "bun run scripts/doctor.mjs --phase=workers",
+    "workers:preview": "bun run workers:check && bun run build && bun run scripts/validate-workers-config.mjs --require-generated-config && wrangler dev --config dist/server/wrangler.json",
+    "workers:deploy": "bun run workers:check && bun run build && bun run scripts/validate-workers-config.mjs --require-generated-config && wrangler deploy --config dist/server/wrangler.json",
+    "typecheck": "bun run doctor && astro check",
+    "lint": "bun run doctor && biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "validate": "bun run typecheck && bun run lint",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@astrojs/cloudflare": "^13.1.7",
+    "@astrojs/starlight": "^0.38.3",
+    "@astrojs/svelte": "^8.0.4",
+    "astro": "^6.0.1",
+    "sharp": "^0.34.2",
+    "svelte": "^5.55.1",
+    "typescript": "^6.0.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
+    "jsonc-parser": "^3.3.1",
+    "wrangler": "^4.80.0"
+  }
 }

@@ -1,8 +1,8 @@
 ---
-import type { DocsHandoffSectionCopy } from '../../data/homepage';
+import type { DocsHandoffSectionCopy } from "../../data/homepage";
 
 type Props = {
-	section: DocsHandoffSectionCopy;
+  section: DocsHandoffSectionCopy;
 };
 
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
@@ -26,8 +26,8 @@ const { section } = Astro.props;
             <a
               class="handoff-link"
               href={link.href}
-              target={link.external ? '_blank' : undefined}
-              rel={link.external ? 'noreferrer noopener' : undefined}
+              target={link.external ? "_blank" : undefined}
+              rel={link.external ? "noreferrer noopener" : undefined}
             >
               {link.label}
             </a>
