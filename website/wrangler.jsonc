@@ -1,24 +1,26 @@
 {
-	"name": "xcforge-website",
-	"compatibility_date": "2026-04-07",
-	"compatibility_flags": ["nodejs_compat"],
-	"assets": {
-		"binding": "ASSETS",
-		"directory": "./dist/client"
-	},
-	"vars": {
-		"XCFORGE_ANALYTICS_DATASET": "website-prod",
-		"XCFORGE_ANALYTICS_ENDPOINT": "https://example.invalid/analytics",
-		"XCFORGE_INSTALL_INTENT_TARGET": "homebrew"
-	},
-	"env": {
-		"preview": {
-			"name": "xcforge-website-preview",
-			"vars": {
-				"XCFORGE_ANALYTICS_DATASET": "website-preview",
-				"XCFORGE_ANALYTICS_ENDPOINT": "https://example.invalid/analytics-preview",
-				"XCFORGE_INSTALL_INTENT_TARGET": "homebrew"
-			}
-		}
-	}
+  "name": "xcforge-website",
+  "compatibility_date": "2026-04-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client"
+  },
+  "vars": {
+    "XCFORGE_ANALYTICS_DATASET": "website-prod",
+    "XCFORGE_ANALYTICS_ENDPOINT": "https://example.invalid/analytics",
+    "XCFORGE_INSTALL_INTENT_TARGET": "homebrew"
+  },
+  "env": {
+    "preview": {
+      "name": "xcforge-website-preview",
+      "vars": {
+        "XCFORGE_ANALYTICS_DATASET": "website-preview",
+        "XCFORGE_ANALYTICS_ENDPOINT": "https://example.invalid/analytics-preview",
+        "XCFORGE_INSTALL_INTENT_TARGET": "homebrew"
+      }
+    }
+  }
 }

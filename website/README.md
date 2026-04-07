@@ -25,18 +25,18 @@ bun run dev
 
 ## Commands
 
-| Command                 | Purpose                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `bun run doctor`        | Validate runtime and dependency baseline with actionable diagnostics               |
-| `bun run dev`           | Start local server                                                                 |
-| `bun run typecheck`     | Run `astro check`                                                                  |
-| `bun run lint`          | Run Biome checks                                                                   |
-| `bun run lint:fix`      | Apply safe Biome lint fixes                                                        |
-| `bun run format`        | Apply Biome formatting                                                             |
-| `bun run validate`      | Run full baseline checks                                                           |
-| `bun run workers:check` | Validate Workers preflight contract (adapter + wrangler + binding parity checks)  |
+| Command                   | Purpose                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `bun run doctor`          | Validate runtime and dependency baseline with actionable diagnostics                                    |
+| `bun run dev`             | Start local server                                                                                      |
+| `bun run typecheck`       | Run `astro check`                                                                                       |
+| `bun run lint`            | Run Biome checks                                                                                        |
+| `bun run lint:fix`        | Apply safe Biome lint fixes                                                                             |
+| `bun run format`          | Apply Biome formatting                                                                                  |
+| `bun run validate`        | Run full baseline checks                                                                                |
+| `bun run workers:check`   | Validate Workers preflight contract (adapter + wrangler + binding parity checks)                        |
 | `bun run workers:preview` | Run Workers preflight and build, then start Wrangler preview from generated `dist/server/wrangler.json` |
-| `bun run workers:deploy` | Run Workers preflight and build, then deploy with Wrangler from generated `dist/server/wrangler.json` |
+| `bun run workers:deploy`  | Run Workers preflight and build, then deploy with Wrangler from generated `dist/server/wrangler.json`   |
 
 ## Cloudflare Workers Baseline
 
