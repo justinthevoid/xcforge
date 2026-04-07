@@ -1,9 +1,9 @@
 ---
-import type { HeroCopy } from "../../data/homepage";
+import type { HeroCopy } from '../../data/homepage';
 
 type Props = {
-  hero: HeroCopy;
-  useFallback: boolean;
+	hero: HeroCopy;
+	useFallback: boolean;
 };
 
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references hero and useFallback.
@@ -23,10 +23,14 @@ const { hero, useFallback } = Astro.props;
       aria-label="Install and depth actions"
     >
       <a
-        class="cta-primary"
+        class="cta-primary install-intent-trigger"
         href={hero.installHref}
         target={hero.installExternal ? "_blank" : undefined}
         rel={hero.installExternal ? "noreferrer noopener" : undefined}
+        data-install-intent-trigger="true"
+        data-install-intent-source="hero"
+        data-install-command={hero.installCommand}
+        data-install-target="homebrew"
       >
         Install via Homebrew
       </a>

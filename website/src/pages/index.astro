@@ -1,4 +1,6 @@
 ---
+/* biome-ignore lint/correctness/noUnusedImports: Astro template references FinalCTA. */
+import FinalCTA from '../components/website/FinalCTA.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references GlobalNav. */
 import GlobalNav from '../components/website/GlobalNav.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references HeroProof. */
@@ -32,6 +34,13 @@ const useProofFallback =
     <GlobalNav navItems={navigationState.items} />
     <main id="main-content">
       <HeroProof hero={homepageContent.hero} useFallback={useProofFallback} />
+      <FinalCTA finalCta={homepageContent.finalCta} />
     </main>
+
+    <script>
+      import { initializeInstallIntentHandoff } from "../lib/install-intent";
+
+      initializeInstallIntentHandoff();
+    </script>
   </body>
 </html>

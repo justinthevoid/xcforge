@@ -210,7 +210,10 @@ main {
 .cta-primary:focus-visible,
 .cta-secondary:focus-visible,
 .install-command code:focus-visible,
-.nav-link:focus-visible {
+.nav-link:focus-visible,
+.copy-command:focus-visible,
+.install-handoff-link:focus-visible,
+.install-handoff-command-row code:focus-visible {
 	outline: 2px solid var(--xcf-focus-ring);
 	outline-offset: 2px;
 }
@@ -283,6 +286,142 @@ main {
 	color: #8ec7f8;
 }
 
+.final-cta {
+	margin-top: 44px;
+}
+
+.final-cta-shell {
+	border: 1px solid rgba(42, 53, 68, 0.9);
+	border-radius: 18px;
+	padding: 30px;
+	background: linear-gradient(145deg, rgba(14, 22, 32, 0.95), rgba(9, 13, 20, 0.95));
+	box-shadow: var(--xcf-shadow);
+}
+
+.final-cta-kicker {
+	margin: 0;
+	font-size: 0.82rem;
+	font-weight: 620;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: #9fd0fa;
+}
+
+#final-cta-title {
+	margin: 12px 0 0;
+	font-family: var(--xcf-font-display);
+	font-size: clamp(1.5rem, 3vw, 2rem);
+	line-height: 1.2;
+}
+
+.final-cta-summary {
+	margin: 12px 0 0;
+	max-width: 60ch;
+	line-height: 1.6;
+	color: var(--xcf-color-text-muted);
+}
+
+.final-cta-actions {
+	margin-top: 20px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+body[data-primary-cta-region="hero"] #final-cta .cta-primary,
+body[data-primary-cta-region="final"] #install-section .cta-primary {
+	color: #f5d5bf;
+	background: rgba(248, 112, 32, 0.16);
+	border: 1px solid rgba(248, 112, 32, 0.38);
+	box-shadow: none;
+}
+
+body[data-primary-cta-region="hero"] #final-cta .cta-primary:hover,
+body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
+	transform: none;
+	box-shadow: none;
+}
+
+.install-handoff {
+	margin-top: 18px;
+	border: 1px solid rgba(42, 53, 68, 0.95);
+	border-radius: 14px;
+	padding: 16px;
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.install-handoff[data-state="failure"] {
+	border-color: rgba(248, 112, 32, 0.55);
+	background: rgba(248, 112, 32, 0.09);
+}
+
+.install-handoff[data-state="restored"] {
+	border-color: rgba(16, 144, 240, 0.55);
+	background: rgba(16, 144, 240, 0.1);
+}
+
+.install-handoff h3 {
+	margin: 0;
+	font-size: 1rem;
+	font-family: var(--xcf-font-display);
+}
+
+.install-handoff-message {
+	margin: 10px 0 0;
+	line-height: 1.55;
+	color: var(--xcf-color-text-muted);
+}
+
+.install-handoff-command-row {
+	margin-top: 12px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.install-handoff-command-row code {
+	flex: 1;
+	min-width: 240px;
+	border: 1px solid rgba(42, 53, 68, 0.95);
+	border-radius: 10px;
+	padding: 10px;
+	font-family: var(--xcf-font-mono);
+	background: rgba(0, 0, 0, 0.28);
+	color: var(--xcf-color-text);
+}
+
+.copy-command {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 42px;
+	border: 1px solid rgba(42, 53, 68, 0.95);
+	border-radius: 10px;
+	padding: 0 12px;
+	font-size: 0.9rem;
+	font-weight: 570;
+	font-family: var(--xcf-font-body);
+	color: var(--xcf-color-text);
+	background: rgba(255, 255, 255, 0.03);
+	cursor: pointer;
+}
+
+.copy-command:hover {
+	border-color: rgba(16, 144, 240, 0.5);
+}
+
+.install-handoff-link {
+	margin-top: 10px;
+	display: inline-flex;
+	font-size: 0.92rem;
+	font-weight: 560;
+	color: #8ec7f8;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
 @media (max-width: 1023px) {
 	.hero-proof {
 		grid-template-columns: 1fr;
@@ -313,7 +452,16 @@ main {
 		padding: 24px;
 	}
 
+	.final-cta-shell {
+		padding: 24px;
+	}
+
 	.hero-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.final-cta-actions {
 		align-items: stretch;
 		flex-direction: column;
 	}
@@ -327,6 +475,18 @@ main {
 	.install-command {
 		align-items: flex-start;
 		flex-direction: column;
+	}
+
+	.install-handoff-command-row {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.install-handoff-command-row code,
+	.copy-command,
+	.install-handoff-link {
+		width: 100%;
+		justify-content: center;
 	}
 
 	.install-command code {
