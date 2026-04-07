@@ -11,6 +11,8 @@ const MIN_NODE_VERSION = '22.12.0';
 const phaseArg = process.argv.find((arg) => arg.startsWith('--phase='));
 const phase = phaseArg ? phaseArg.split('=')[1] : 'default';
 const isPreinstall = phase === 'preinstall';
+const isWorkersPhase = phase === 'workers';
+const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const failures = [];
 const warnings = [];
@@ -64,7 +66,6 @@ if (!nodeVersion) {
 }
 
 if (!isPreinstall) {
-	const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 	const requiredDependencyPaths = [
 		'node_modules/astro/package.json',
 		'node_modules/@astrojs/starlight/package.json',
@@ -72,14 +73,40 @@ if (!isPreinstall) {
 		'node_modules/@biomejs/biome/package.json',
 	];
 
+	if (isWorkersPhase) {
+		requiredDependencyPaths.push(
+			'node_modules/@astrojs/cloudflare/package.json',
+			'node_modules/wrangler/package.json',
+		);
+	}
+
 	const missingPaths = requiredDependencyPaths.filter(
 		(relativePath) => !existsSync(join(projectRoot, relativePath)),
 	);
 
 	if (missingPaths.length > 0) {
 		failures.push(
-			'Dependencies are missing or bootstrap is incomplete. Reinstall dependencies with Bun before running checks.',
+			`Dependencies are missing or bootstrap is incomplete. Missing: ${missingPaths.join(
+				', ',
+			)}. Reinstall dependencies with Bun before running checks.`,
 		);
+	}
+}
+
+if (isWorkersPhase && failures.length === 0) {
+	const workersCheck = spawnSync(
+		'bun',
+		['run', 'scripts/validate-workers-config.mjs', '--silent-success'],
+		{
+			cwd: projectRoot,
+			stdio: 'inherit',
+		},
+	);
+
+	if (workersCheck.error) {
+		failures.push(`Workers preflight command could not execute: ${workersCheck.error.message}.`);
+	} else if (workersCheck.status !== 0) {
+		process.exit(workersCheck.status ?? 1);
 	}
 }
 
@@ -108,5 +135,9 @@ if (warnings.length > 0) {
 	}
 }
 
-const checkScope = isPreinstall ? 'runtime' : 'runtime + dependency';
+const checkScope = isPreinstall
+	? 'runtime'
+	: isWorkersPhase
+		? 'runtime + dependency + workers contract'
+		: 'runtime + dependency';
 console.log(`[doctor] ${checkScope} checks passed.`);

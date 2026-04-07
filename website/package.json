@@ -15,6 +15,9 @@
 		"start": "bun run doctor && astro preview",
 		"build": "astro build",
 		"preview": "astro preview",
+		"workers:check": "bun run scripts/doctor.mjs --phase=workers",
+		"workers:preview": "bun run workers:check && bun run build && bun run scripts/validate-workers-config.mjs --require-generated-config && wrangler dev --config dist/server/wrangler.json",
+		"workers:deploy": "bun run workers:check && bun run build && bun run scripts/validate-workers-config.mjs --require-generated-config && wrangler deploy --config dist/server/wrangler.json",
 		"typecheck": "bun run doctor && astro check",
 		"lint": "bun run doctor && biome check .",
 		"lint:fix": "biome check --write .",
@@ -24,6 +27,7 @@
 	},
 	"dependencies": {
 		"@astrojs/check": "^0.9.8",
+		"@astrojs/cloudflare": "^13.1.7",
 		"@astrojs/starlight": "^0.38.3",
 		"@astrojs/svelte": "^8.0.4",
 		"astro": "^6.0.1",
@@ -32,6 +36,8 @@
 		"typescript": "^6.0.2"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.4.10"
+		"@biomejs/biome": "^2.4.10",
+		"jsonc-parser": "^3.3.1",
+		"wrangler": "^4.80.0"
 	}
 }

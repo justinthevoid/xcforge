@@ -4,6 +4,7 @@ node_modules/
 # generated files
 dist/
 .astro/
+.wrangler/
 
 # local environment
 .env

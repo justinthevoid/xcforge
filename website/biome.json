@@ -2,7 +2,7 @@
 	"$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
 	"files": {
 		"ignoreUnknown": true,
-		"includes": ["**", "!dist", "!.astro", "!node_modules"]
+		"includes": ["**", "!dist", "!.astro", "!.wrangler", "!node_modules"]
 	},
 	"formatter": {
 		"enabled": true,
