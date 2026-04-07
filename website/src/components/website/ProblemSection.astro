@@ -1,0 +1,24 @@
+---
+import type { ProblemSectionCopy } from '../../data/homepage';
+
+type Props = {
+	section: ProblemSectionCopy;
+};
+
+// biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
+const { section } = Astro.props;
+---
+
+<section id="problem" class="narrative-section narrative-problem" aria-labelledby="problem-title">
+  <div class="narrative-shell">
+    <h2 id="problem-title">{section.heading}</h2>
+    <p class="narrative-purpose">{section.purpose}</p>
+    <ul class="narrative-list" aria-label="Problem signals">
+      {
+        section.painSignals.map((signal) => (
+          <li>{signal}</li>
+        ))
+      }
+    </ul>
+  </div>
+</section>

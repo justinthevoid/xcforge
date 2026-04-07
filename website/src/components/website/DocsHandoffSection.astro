@@ -1,0 +1,39 @@
+---
+import type { DocsHandoffSectionCopy } from '../../data/homepage';
+
+type Props = {
+	section: DocsHandoffSectionCopy;
+};
+
+// biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
+const { section } = Astro.props;
+---
+
+<section
+  id="docs-handoff"
+  class="narrative-section narrative-docs-handoff"
+  aria-labelledby="docs-handoff-title"
+>
+  <div class="narrative-shell">
+    <h2 id="docs-handoff-title">{section.heading}</h2>
+    <p class="narrative-purpose">{section.purpose}</p>
+    <div class="handoff-grid" aria-label="Docs and workflow handoff links">
+      {
+        section.handoffLinks.map((link) => (
+          <article class="handoff-card">
+            <h3>{link.label}</h3>
+            <p>{link.summary}</p>
+            <a
+              class="handoff-link"
+              href={link.href}
+              target={link.external ? '_blank' : undefined}
+              rel={link.external ? 'noreferrer noopener' : undefined}
+            >
+              {link.label}
+            </a>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
