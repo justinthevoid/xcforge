@@ -1,20 +1,37 @@
+---
+/* biome-ignore lint/correctness/noUnusedImports: Astro template references GlobalNav. */
+import GlobalNav from '../components/website/GlobalNav.astro';
+/* biome-ignore lint/correctness/noUnusedImports: Astro template references HeroProof. */
+import HeroProof from '../components/website/HeroProof.astro';
+import {
+	homepageContent,
+	isProofMetadataAvailable,
+	resolveNavigationMetadata,
+} from '../data/homepage';
+import '../styles/homepage.css';
+
+const navigationState = resolveNavigationMetadata(homepageContent.navigation);
+// biome-ignore lint/correctness/noUnusedVariables: Astro template references useProofFallback.
+const useProofFallback =
+	!navigationState.isMetadataAvailable || !isProofMetadataAvailable(homepageContent.hero);
+---
+
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
-    <title>xcforge Website Baseline</title>
+    <title>xcforge | Install-first iOS agent execution</title>
+    <meta
+      name="description"
+      content="xcforge helps AI-assisted iOS developers move from generated code to verified local outcomes with one clear install path."
+    />
   </head>
   <body>
-    <main>
-      <h1>xcforge Website Baseline</h1>
-      <p>
-        Story 1.1 initializes Astro Starlight plus Svelte using Bun and Biome so
-        marketing and docs surfaces can boot from a stable baseline.
-      </p>
-      <p>
-        <a href="/docs">Open docs</a>
-      </p>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <GlobalNav navItems={navigationState.items} />
+    <main id="main-content">
+      <HeroProof hero={homepageContent.hero} useFallback={useProofFallback} />
     </main>
   </body>
 </html>

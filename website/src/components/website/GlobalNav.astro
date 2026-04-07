@@ -1,0 +1,34 @@
+---
+import type { NavItem } from '../../data/homepage';
+
+type Props = {
+	navItems: NavItem[];
+};
+
+// biome-ignore lint/correctness/noUnusedVariables: Astro template references navItems.
+const { navItems } = Astro.props;
+---
+
+<header class="site-header">
+  <nav class="global-nav" aria-label="Primary">
+    <a class="brand" href="/" aria-label="xcforge homepage"> xcforge </a>
+    <ul class="nav-list">
+      {
+        navItems.map((item) => (
+          <li>
+            <a
+              class={
+                item.id === "install" ? "nav-link nav-link-install" : "nav-link"
+              }
+              href={item.href}
+              target={item.external ? "_blank" : undefined}
+              rel={item.external ? "noreferrer noopener" : undefined}
+            >
+              {item.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+</header>

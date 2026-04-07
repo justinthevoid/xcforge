@@ -1,0 +1,69 @@
+---
+import type { HeroCopy } from "../../data/homepage";
+
+type Props = {
+  hero: HeroCopy;
+  useFallback: boolean;
+};
+
+// biome-ignore lint/correctness/noUnusedVariables: Astro template references hero and useFallback.
+const { hero, useFallback } = Astro.props;
+---
+
+<section id="product" class="hero-proof" aria-labelledby="hero-title">
+  <div class="hero-copy">
+    <p class="hero-kicker">For AI-assisted iOS developers</p>
+    <h1 id="hero-title">{hero.problemLine}</h1>
+    <p class="hero-role">{hero.productRole}</p>
+
+    <section
+      id="install-section"
+      class="hero-actions"
+      role="group"
+      aria-label="Install and depth actions"
+    >
+      <a
+        class="cta-primary"
+        href={hero.installHref}
+        target={hero.installExternal ? "_blank" : undefined}
+        rel={hero.installExternal ? "noreferrer noopener" : undefined}
+      >
+        Install via Homebrew
+      </a>
+      <a class="cta-secondary" href="/docs">Docs</a>
+      <a class="cta-secondary" href="/docs/getting-started/">Workflow Guide</a>
+    </section>
+
+    <p class="install-command">
+      <span>Run:</span>
+      <code>{hero.installCommand}</code>
+    </p>
+  </div>
+
+  <aside class="proof-panel" aria-live="polite">
+    <h2>Technical proof</h2>
+    {
+      useFallback ? (
+        <>
+          <p>{hero.fallbackProofText}</p>
+          <p>
+            Use <a href="/docs">Docs</a> and
+            <a
+              href="https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Changelog
+            </a>
+            for source-backed detail.
+          </p>
+        </>
+      ) : (
+        <>
+          <p class="proof-headline">{hero.proofHeadline}</p>
+          <p>{hero.proofSummary}</p>
+        </>
+      )
+    }
+  </aside>
+</section>
