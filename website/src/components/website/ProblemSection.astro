@@ -1,8 +1,8 @@
 ---
-import type { ProblemSectionCopy } from "../../data/homepage";
+import type { ProblemSectionCopy } from '../../data/homepage';
 
 type Props = {
-  section: ProblemSectionCopy;
+	section: ProblemSectionCopy;
 };
 
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
@@ -18,7 +18,7 @@ const { section } = Astro.props;
     <h2 id="problem-title">{section.heading}</h2>
     <p class="narrative-purpose">{section.purpose}</p>
     <ul class="narrative-list" aria-label="Problem signals">
-      {section.painSignals.map((signal) => <li>{signal}</li>)}
+      {section.painSignals.map((signal) => <li>{signal.text}</li>)}
     </ul>
   </div>
 </section>
