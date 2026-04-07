@@ -1,0 +1,47 @@
+---
+title: Getting Started
+description: Bootstrap and validate the Story 1.1 website baseline.
+slug: docs/getting-started
+---
+
+## Bootstrap
+
+```bash
+cd website
+bun install
+```
+
+## Validation Commands
+
+```bash
+cd website
+bun run typecheck
+bun run lint
+bun run validate
+```
+
+## Local Route Checks
+
+Run the dev server:
+
+```bash
+cd website
+bun run dev
+```
+
+Then verify these routes:
+
+- Marketing route: `/`
+- Docs route: `/docs`
+- Docs depth route: `/docs/getting-started`
+
+## If Setup Fails
+
+Run the environment checker:
+
+```bash
+cd website
+bun run doctor
+```
+
+For full remediation steps, see the Troubleshooting section in `README.md`.

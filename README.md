@@ -178,14 +178,14 @@ File: `~/.config/zed/settings.json` (or `.zed/settings.json` per-project)
 
 ### Config quick reference
 
-| Client | Config key | File location | Needs absolute path? |
-| --- | --- | --- | --- |
-| Claude Code | `mcpServers` | `.mcp.json` | No |
-| Claude Desktop | `mcpServers` | `~/Library/Application Support/Claude/claude_desktop_config.json` | Yes |
-| Cursor | `mcpServers` | `.cursor/mcp.json` | Yes |
-| VS Code | `servers` | `.vscode/mcp.json` | No |
-| Windsurf | `mcpServers` | `~/.codeium/windsurf/mcp_config.json` | Yes |
-| Zed | `context_servers` | `~/.config/zed/settings.json` | Yes |
+| Client         | Config key        | File location                                                     | Needs absolute path? |
+| -------------- | ----------------- | ----------------------------------------------------------------- | -------------------- |
+| Claude Code    | `mcpServers`      | `.mcp.json`                                                       | No                   |
+| Claude Desktop | `mcpServers`      | `~/Library/Application Support/Claude/claude_desktop_config.json` | Yes                  |
+| Cursor         | `mcpServers`      | `.cursor/mcp.json`                                                | Yes                  |
+| VS Code        | `servers`         | `.vscode/mcp.json`                                                | No                   |
+| Windsurf       | `mcpServers`      | `~/.codeium/windsurf/mcp_config.json`                             | Yes                  |
+| Zed            | `context_servers` | `~/.config/zed/settings.json`                                     | Yes                  |
 
 ---
 
@@ -214,24 +214,24 @@ Every tool available over MCP has a matching CLI command. Every CLI command supp
 
 ## Tools Overview
 
-| Category | Count | Highlights |
-| --- | --- | --- |
-| **Build** | 5 | `build_sim`, `build_run_sim` (build + boot + install + launch), `clean`, project/scheme discovery |
-| **Test** | 6 | `test_sim` with xcresult parsing, `test_failures` with screenshots, `test_coverage`, `list_tests` |
-| **Simulator** | 17 | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override |
-| **Physical Devices** | 7 | Via `devicectl` — list, install, launch, screenshot, pair |
-| **UI Automation** | 19 | WebDriverAgent + native AX bridge — find, tap, swipe, drag, type, alerts, hierarchy |
-| **Screenshots** | 2 | Framebuffer capture (0.3s), point-space coordinate alignment |
-| **Visual Regression** | 2 | Pixel-diff baselines, multi-device checks (Dark Mode, Landscape, iPad) |
-| **Logs** | 4 | 4-layer filtered capture, 8 topic categories, regex wait |
-| **Console** | 3 | stdout/stderr capture for launched apps |
-| **SPM** | 5 | Resolve, update, show deps, reset, clean |
-| **Accessibility** | 5 | Audit labels, traits, VoiceOver order, contrast |
-| **Git** | 5 | Status, diff, log, commit, branch |
-| **LLDB Debugger** | 8 | Attach, breakpoints, inspect variables, backtrace, step/continue, arbitrary commands |
-| **Diagnosis** | 10 | Multi-step workflows: build, run, inspect, capture evidence, compare, verify |
-| **Plan Execution** | 2 | Scripted multi-step automation with assertions |
-| **Session** | 3 | Persistent defaults, `.xcforge.yaml` repo config, session profiles |
+| Category              | Count | Highlights                                                                                        |
+| --------------------- | ----- | ------------------------------------------------------------------------------------------------- |
+| **Build**             | 5     | `build_sim`, `build_run_sim` (build + boot + install + launch), `clean`, project/scheme discovery |
+| **Test**              | 6     | `test_sim` with xcresult parsing, `test_failures` with screenshots, `test_coverage`, `list_tests` |
+| **Simulator**         | 17    | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override      |
+| **Physical Devices**  | 7     | Via `devicectl` — list, install, launch, screenshot, pair                                         |
+| **UI Automation**     | 19    | WebDriverAgent + native AX bridge — find, tap, swipe, drag, type, alerts, hierarchy               |
+| **Screenshots**       | 2     | Framebuffer capture (0.3s), point-space coordinate alignment                                      |
+| **Visual Regression** | 2     | Pixel-diff baselines, multi-device checks (Dark Mode, Landscape, iPad)                            |
+| **Logs**              | 4     | 4-layer filtered capture, 8 topic categories, regex wait                                          |
+| **Console**           | 3     | stdout/stderr capture for launched apps                                                           |
+| **SPM**               | 5     | Resolve, update, show deps, reset, clean                                                          |
+| **Accessibility**     | 5     | Audit labels, traits, VoiceOver order, contrast                                                   |
+| **Git**               | 5     | Status, diff, log, commit, branch                                                                 |
+| **LLDB Debugger**     | 8     | Attach, breakpoints, inspect variables, backtrace, step/continue, arbitrary commands              |
+| **Diagnosis**         | 10    | Multi-step workflows: build, run, inspect, capture evidence, compare, verify                      |
+| **Plan Execution**    | 2     | Scripted multi-step automation with assertions                                                    |
+| **Session**           | 3     | Persistent defaults, `.xcforge.yaml` repo config, session profiles                                |
 
 ---
 
@@ -320,14 +320,14 @@ xcforge diagnose start --scheme MyApp            # Start diagnosis session
 
 There are several iOS-focused MCP servers worth knowing about:
 
-| Server | Stars | Scope | Build | Test | UI Automation | Screenshots | Visual Regression | Accessibility | Physical Devices | SPM | Git | Logs |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **xcforge** | — | 95 tools | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| [XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP) | ~5k | ~15 tools | Yes | Yes | Partial | No | No | No | No | No | No | No |
-| [ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp) | ~1.8k | ~10 tools | No | No | Yes | Yes | No | No | No | No | No | No |
-| [xcode-mcp-server](https://github.com/r-huijts/xcode-mcp-server) | ~370 | ~8 tools | Partial | No | No | No | No | No | No | No | No | No |
-| [iosef](https://github.com/riwsky/iosef) | <10 | ~5 tools | No | No | Yes | No | No | No | No | No | No | No |
-| [Appium MCP](https://github.com/nicholasgcoles/appium-mcp-server) | <50 | ~10 tools | No | No | Yes | Yes | No | No | Partial | No | No | No |
+| Server                                                               | Stars | Scope     | Build   | Test | UI Automation | Screenshots | Visual Regression | Accessibility | Physical Devices | SPM | Git | Logs |
+| -------------------------------------------------------------------- | ----- | --------- | ------- | ---- | ------------- | ----------- | ----------------- | ------------- | ---------------- | --- | --- | ---- |
+| **xcforge**                                                          | —     | 95 tools  | Yes     | Yes  | Yes           | Yes         | Yes               | Yes           | Yes              | Yes | Yes | Yes  |
+| [XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP)          | ~5k   | ~15 tools | Yes     | Yes  | Partial       | No          | No                | No            | No               | No  | No  | No   |
+| [ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp) | ~1.8k | ~10 tools | No      | No   | Yes           | Yes         | No                | No            | No               | No  | No  | No   |
+| [xcode-mcp-server](https://github.com/r-huijts/xcode-mcp-server)     | ~370  | ~8 tools  | Partial | No   | No            | No          | No                | No            | No               | No  | No  | No   |
+| [iosef](https://github.com/riwsky/iosef)                             | <10   | ~5 tools  | No      | No   | Yes           | No          | No                | No            | No               | No  | No  | No   |
+| [Appium MCP](https://github.com/nicholasgcoles/appium-mcp-server)    | <50   | ~10 tools | No      | No   | Yes           | Yes         | No                | No            | Partial          | No  | No  | No   |
 
 - **[XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP)** — The most popular iOS MCP server. Backed by Sentry. Covers build, test, and simulator management well. If you only need build/run workflows, it's a solid choice.
 - **[ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp)** — Focused on simulator UI interaction — screenshots, taps, swipes, accessibility tree. Good if you only need simulator automation.
@@ -345,6 +345,35 @@ There are several iOS-focused MCP servers worth knowing about:
 - Xcode 15+
 - Swift 6.0+ (source builds only)
 - WebDriverAgent on simulator (UI automation only)
+
+---
+
+## Website Baseline (Story 1.1)
+
+The website workspace is isolated under `website/` and uses Astro Starlight plus Svelte with Bun-only package/script usage and Biome-only lint/format checks.
+
+```bash
+cd website
+bun install
+bun run typecheck
+bun run lint
+bun run validate
+```
+
+Local route assumptions after `bun run dev`:
+
+- Marketing route: `http://localhost:4321/`
+- Docs route: `http://localhost:4321/docs`
+- Docs depth route: `http://localhost:4321/docs/getting-started`
+
+If setup fails, run:
+
+```bash
+cd website
+bun run doctor
+```
+
+Remediation steps are documented in `website/README.md`.
 
 ---
 

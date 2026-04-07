@@ -18,6 +18,12 @@ xcuserdata/
 _bmad/
 _bmad-output/
 
+# === Website (Astro/Bun) ===
+website/node_modules/
+website/.astro/
+website/dist/
+website/.vite/
+
 # === Secrets & environment ===
 .env
 .netrc
