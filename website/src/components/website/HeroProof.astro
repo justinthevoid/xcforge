@@ -4,10 +4,10 @@ import {
 	resolveApprovedTrustClaimForRender,
 	resolveProofSnapshotForRender,
 	resolveProvenanceFallbackHrefForRender,
-} from '../../data/homepage';
-import ActionLink from '../primitives/ActionLink.astro';
-import SectionBlock from '../primitives/SectionBlock.astro';
-import ProofToggle from './ProofToggle.svelte';
+} from "../../data/homepage";
+import ActionLink from "../primitives/ActionLink.astro";
+import SectionBlock from "../primitives/SectionBlock.astro";
+import ProofToggle from "./ProofToggle.svelte";
 
 type Props = {
 	hero: HeroCopy;
@@ -49,7 +49,8 @@ function isExternalHref(href: string): boolean {
 			aria-label="Install primary action with supporting depth links"
 		>
 			<p id="hero-supporting-path-note" class="sr-only">
-				Docs and Workflow Guide help evaluate install readiness and remain supporting actions.
+				Docs and Workflow Guide help evaluate install readiness and remain
+				supporting actions.
 			</p>
 			<ActionLink
 				tier="primary"
@@ -86,7 +87,8 @@ function isExternalHref(href: string): boolean {
 
 	<aside class="proof-panel" aria-live="polite">
 		<h2>Technical proof</h2>
-		{useFallback ? (
+		{
+			useFallback ? (
 				<>
 					<p>{hero.fallbackProofText}</p>
 					<p>
@@ -171,6 +173,7 @@ function isExternalHref(href: string): boolean {
 						client:load
 					/>
 				</>
-			)}
+			)
+		}
 	</aside>
 </SectionBlock>

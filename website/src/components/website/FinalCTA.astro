@@ -1,7 +1,7 @@
 ---
-import type { FinalCtaCopy } from '../../data/homepage';
-import ActionLink from '../primitives/ActionLink.astro';
-import SectionBlock from '../primitives/SectionBlock.astro';
+import type { FinalCtaCopy } from "../../data/homepage";
+import ActionLink from "../primitives/ActionLink.astro";
+import SectionBlock from "../primitives/SectionBlock.astro";
 
 type Props = {
 	finalCta: FinalCtaCopy;
@@ -22,7 +22,8 @@ const { finalCta } = Astro.props;
 			aria-label="Final install primary action with supporting workflow link"
 		>
 			<p id="final-supporting-path-note" class="sr-only">
-				Workflow Guide is a supporting path for technical depth and does not replace install.
+				Workflow Guide is a supporting path for technical depth and does not
+				replace install.
 			</p>
 			<ActionLink
 				tier="primary"
@@ -63,7 +64,9 @@ const { finalCta } = Astro.props;
 				{finalCta.handoffReadyMessage}
 			</p>
 			<div class="install-handoff-command-row">
-				<code tabindex="0" data-install-handoff-command>{finalCta.installCommand}</code>
+				<code tabindex="0" data-install-handoff-command
+					>{finalCta.installCommand}</code
+				>
 				<button class="copy-command" type="button" data-copy-install-command>
 					{finalCta.handoffCopyButtonLabel}
 				</button>

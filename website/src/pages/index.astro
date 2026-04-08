@@ -1,38 +1,40 @@
 ---
-import DifferentiationProofSection from '../components/website/DifferentiationProofSection.astro';
-import DocsHandoffSection from '../components/website/DocsHandoffSection.astro';
-import FinalCTA from '../components/website/FinalCTA.astro';
-import GlobalNav from '../components/website/GlobalNav.astro';
-import HeroProof from '../components/website/HeroProof.astro';
-import ProblemSection from '../components/website/ProblemSection.astro';
-import SolutionSection from '../components/website/SolutionSection.astro';
-import WorkflowsJourneysSection from '../components/website/WorkflowsJourneysSection.astro';
+import DifferentiationProofSection from "../components/website/DifferentiationProofSection.astro";
+import DocsHandoffSection from "../components/website/DocsHandoffSection.astro";
+import FinalCTA from "../components/website/FinalCTA.astro";
+import GlobalNav from "../components/website/GlobalNav.astro";
+import HeroProof from "../components/website/HeroProof.astro";
+import ProblemSection from "../components/website/ProblemSection.astro";
+import SolutionSection from "../components/website/SolutionSection.astro";
+import WorkflowsJourneysSection from "../components/website/WorkflowsJourneysSection.astro";
 import {
 	homepageContent,
 	isProofMetadataAvailable,
 	resolveHomepageNarrativeSectionsForRender,
 	resolveNavigationMetadata,
-} from '../data/homepage';
-import '../styles/tokens.css';
-import '../styles/primitives.css';
-import '../styles/homepage.css';
+} from "../data/homepage";
+import "../styles/tokens.css";
+import "../styles/primitives.css";
+import "../styles/homepage.css";
 
 const navigationState = resolveNavigationMetadata(homepageContent.navigation);
 const useProofFallback =
-	!navigationState.isMetadataAvailable || !isProofMetadataAvailable(homepageContent.hero);
-const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageContent);
+	!navigationState.isMetadataAvailable ||
+	!isProofMetadataAvailable(homepageContent.hero);
+const narrativeSections =
+	resolveHomepageNarrativeSectionsForRender(homepageContent);
 ---
 
 <!doctype html>
 <html lang="en">
 	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width">
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
 		<title>xcforge | Install-first iOS agent execution</title>
 		<meta
 			name="description"
 			content="xcforge helps AI-assisted iOS developers move from generated code to verified local outcomes with one clear install path."
-		>
+		/>
 	</head>
 	<body>
 		<a class="skip-link" href="#main-content">Skip to main content</a>
@@ -42,17 +44,19 @@ const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageCont
 			<ProblemSection section={narrativeSections.problem} />
 			<SolutionSection section={narrativeSections.solution} />
 			<WorkflowsJourneysSection section={narrativeSections.workflows} />
-			<DifferentiationProofSection section={narrativeSections.differentiation} />
+			<DifferentiationProofSection
+				section={narrativeSections.differentiation}
+			/>
 			<DocsHandoffSection section={narrativeSections.docsHandoff} />
 			<FinalCTA finalCta={homepageContent.finalCta} />
 		</main>
 
 		<script>
-		import { initializeDocsHandoff } from '../lib/docs-handoff';
-		import { initializeInstallIntentHandoff } from '../lib/install-intent';
+			import { initializeDocsHandoff } from "../lib/docs-handoff";
+			import { initializeInstallIntentHandoff } from "../lib/install-intent";
 
-		initializeDocsHandoff();
-		initializeInstallIntentHandoff();
+			initializeDocsHandoff();
+			initializeInstallIntentHandoff();
 		</script>
 	</body>
 </html>
