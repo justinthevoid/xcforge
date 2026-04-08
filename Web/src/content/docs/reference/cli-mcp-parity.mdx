@@ -1,0 +1,70 @@
+---
+title: CLI and MCP Parity
+description: How xcforge CLI and MCP surfaces align, plus known caveats.
+slug: docs/reference/cli-mcp-parity
+---
+
+xcforge is designed around one operational surface that can be used in two modes:
+
+- CLI mode via `xcforge <subcommand>`
+- MCP mode via stdio server transport
+
+## Parity Principle
+
+Most build/test/simulator/diagnosis actions have both:
+
+- A CLI command for terminal use
+- A corresponding MCP tool for agent-host use
+
+## Common Mappings
+
+| Intent | CLI | MCP |
+| --- | --- | --- |
+| Build app | `xcforge build` | `build_sim` |
+| Build and launch | `xcforge build` + `xcforge sim launch` | `build_run_sim` |
+| Build then test | `xcforge build-test` | `build_and_test` |
+| Test failures | `xcforge test failures` | `test_failures` |
+| Coverage report | `xcforge test coverage` | `test_coverage` |
+| Start diagnosis | `xcforge diagnose start` | `diagnose_start` |
+| Consolidated diagnosis view | `xcforge diagnose inspect` | `diagnose_inspect` |
+| Execute UI plan | `xcforge plan run` | `run_plan` |
+
+## Known Caveats
+
+### 1) Capability count drift during release transitions
+
+Repository sources currently include multiple count snapshots (for example, MCP tool totals and CLI group totals). This can happen when README, registry metadata, reference docs, and released binaries are updated at different times.
+
+Guidance:
+
+1. Use repository files as source of truth.
+2. Use installed binary help output for the exact local CLI surface.
+3. Use conservative wording when counts differ.
+
+### 2) MCP-only profile management
+
+Session profile operations (`profile_save`, `profile_switch`, `profile_list`, `profile_delete`) are MCP-only. CLI supports `defaults` set/show/clear but not named profile switching.
+
+### 3) Output format differences
+
+MCP calls are structured by default. CLI output is human-readable unless `--json` is passed.
+
+### 4) LLDB flow shape differences
+
+MCP LLDB workflows are session-based. CLI debug commands are commonly run as one-shot operations.
+
+### 5) Mode selection behavior
+
+`xcforge` with no arguments enters MCP server mode. Any subcommand enters CLI mode.
+
+## When To Prefer Each Mode
+
+- Prefer CLI for local terminal-driven loops and ad hoc troubleshooting.
+- Prefer MCP when workflows are agent-orchestrated and need tool-call composition.
+
+## Related Docs
+
+- [Docs Overview](/docs)
+- [CLI Command Groups](/docs/guides/cli-command-groups/)
+- [MCP Server Overview](/docs/reference/mcp-server-overview/)
+- [MCP Client Configuration](/docs/reference/mcp-client-configuration/)

@@ -1,0 +1,61 @@
+---
+title: CLI Command Groups
+description: Navigating xcforge CLI command groups and where each group fits in the iOS workflow.
+slug: docs/guides/cli-command-groups
+---
+
+This guide maps the top-level xcforge CLI command surface to practical use cases.
+
+## Command Group Model
+
+Repository sources currently use two counting styles:
+
+- Some capability statements describe 17 CLI command groups.
+- The current top-level CLI entrypoint lists 16 direct subcommands.
+
+For day-to-day usage, rely on the concrete subcommands shown by `xcforge --help` in your installed version.
+
+## Top-Level Command Groups
+
+| Group | Primary use |
+| --- | --- |
+| `build` | Build, clean, discover projects, and list schemes |
+| `test` | Run tests, inspect failures, inspect coverage, list test identifiers |
+| `build-test` | Build then test in one command for TDD loops |
+| `sim` | Simulator lifecycle, app launch/install, video, location, appearance, status bar |
+| `device` | Physical device management via `devicectl` |
+| `spm` | Swift Package Manager build, test, run, list, clean |
+| `ui` | WebDriverAgent-powered UI automation and interaction |
+| `screenshot` | Capture screenshots and run visual baseline comparisons |
+| `log` | Start/read/wait on filtered simulator logs |
+| `console` | Capture stdout/stderr console output from launched apps |
+| `diagnose` | Structured diagnosis runs and proof-oriented results |
+| `plan` | Multi-step UI automation plans and resume decisions |
+| `debug` | LLDB attach, breakpoints, inspect, continue/step, raw commands |
+| `accessibility` | Dynamic Type and localization layout checks |
+| `git` | Repository status, diff, log, commit, and branch workflows |
+| `defaults` | Persist and clear default project/scheme/simulator values |
+
+## Fast Selection Guide
+
+Use this heuristic when choosing a command group:
+
+- Need compile/test confidence quickly: start with `build-test`.
+- Need runtime behavior or crash context: pair `diagnose`, `log`, and `debug`.
+- Need simulator interaction or UI checks: use `sim`, `ui`, and `screenshot`.
+- Need repository-level automation in one flow: include `plan` and `defaults`.
+
+## Example Starter Loop
+
+```bash
+xcforge defaults set --project MyApp.xcodeproj --scheme MyApp --simulator "iPhone 16 Pro"
+xcforge build-test --json
+xcforge test failures --include-console --json
+xcforge diagnose start --json
+```
+
+## Related References
+
+- [Workflow Patterns](/docs/guides/workflow-patterns/)
+- [MCP Server Overview](/docs/reference/mcp-server-overview/)
+- [CLI and MCP Parity](/docs/reference/cli-mcp-parity/)

@@ -1,0 +1,141 @@
+---
+title: MCP Client Configuration
+description: Configure xcforge in supported MCP clients using repository-backed examples.
+slug: docs/reference/mcp-client-configuration
+---
+
+This reference centralizes client configuration examples from the repository README.
+
+## Claude Code
+
+Quick command:
+
+```bash
+claude mcp add xcforge -- xcforge
+```
+
+Manual config in `.mcp.json` (project) or `~/.claude/.mcp.json` (global):
+
+```json
+{
+  "mcpServers": {
+    "xcforge": {
+      "command": "xcforge",
+      "args": [],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+## Claude Desktop
+
+File: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "xcforge": {
+      "command": "/opt/homebrew/bin/xcforge",
+      "args": []
+    }
+  }
+}
+```
+
+Use absolute paths because Claude Desktop does not inherit shell PATH reliably.
+
+Use `/opt/homebrew/bin/xcforge` on Apple Silicon Homebrew and `/usr/local/bin/xcforge` on Intel Homebrew.
+
+## Cursor
+
+File: `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global)
+
+```json
+{
+  "mcpServers": {
+    "xcforge": {
+      "command": "/opt/homebrew/bin/xcforge",
+      "args": []
+    }
+  }
+}
+```
+
+## VS Code (GitHub Copilot)
+
+File: `.vscode/mcp.json`
+
+```json
+{
+  "servers": {
+    "xcforge": {
+      "command": "xcforge",
+      "args": [],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+VS Code uses `servers` (not `mcpServers`).
+
+## Windsurf
+
+File: `~/.codeium/windsurf/mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "xcforge": {
+      "command": "/opt/homebrew/bin/xcforge",
+      "args": []
+    }
+  }
+}
+```
+
+## Zed
+
+File: `~/.config/zed/settings.json` (or `.zed/settings.json` per project)
+
+```json
+{
+  "context_servers": {
+    "xcforge": {
+      "command": {
+        "path": "/opt/homebrew/bin/xcforge",
+        "args": []
+      },
+      "settings": {}
+    }
+  }
+}
+```
+
+Zed uses `context_servers` and `command.path`.
+
+## Configuration Quick Table
+
+| Client | Key | Typical file | Absolute path recommended |
+| --- | --- | --- | --- |
+| Claude Code | `mcpServers` | `.mcp.json` | No |
+| Claude Desktop | `mcpServers` | `~/Library/Application Support/Claude/claude_desktop_config.json` | Yes |
+| Cursor | `mcpServers` | `.cursor/mcp.json` | Yes |
+| VS Code | `servers` | `.vscode/mcp.json` | Usually no |
+| Windsurf | `mcpServers` | `~/.codeium/windsurf/mcp_config.json` | Yes |
+| Zed | `context_servers` | `~/.config/zed/settings.json` | Yes |
+
+## Path Resolution Tip
+
+If you are unsure which absolute path to use, run:
+
+```bash
+which xcforge
+```
+
+Then paste that exact path into your MCP client config.
+
+## Next Step
+
+After configuring, restart your client and run a basic xcforge action through your host to confirm tool discovery and execution.

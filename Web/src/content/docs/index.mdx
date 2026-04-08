@@ -1,6 +1,6 @@
 ---
 title: xcforge Docs Overview
-description: Technical docs entrypoint for xcforge Web baseline.
+description: Entry point for xcforge CLI and MCP documentation.
 slug: docs
 ---
 
@@ -8,19 +8,43 @@ import HandoffContextNotice from '../../components/docs/HandoffContextNotice.ast
 
 <HandoffContextNotice />
 
-This docs surface is initialized in Story 1.1 using Astro Starlight and Bun-only workflows.
+xcforge is a native Swift CLI and MCP server for local iOS workflows.
+
+Use this docs section to move from first install to repeatable build, test, simulator, and diagnosis loops.
 
 ## Start Here
 
-- Continue with [Getting Started](/docs/getting-started/)
-- Return to the [install section](/#install-section)
-- Return to the [marketing baseline](/)
+- [Getting Started](/docs/getting-started/) for install, configuration, and first verification
+- [CLI Command Groups](/docs/guides/cli-command-groups/) for command-surface orientation
+- [Workflow Patterns](/docs/guides/workflow-patterns/) for practical build/test/diagnose loops
+- [MCP Server Overview](/docs/reference/mcp-server-overview/) for server identity and transport model
+- [MCP Client Configuration](/docs/reference/mcp-client-configuration/) for host-specific config files
+- [CLI and MCP Parity](/docs/reference/cli-mcp-parity/) for parity expectations and caveats
+- [Proof Provenance](/docs/proof-provenance/) for trust marker interpretation and source trail
 
-## Scope
+## Coverage
 
-This story intentionally includes only baseline setup for:
+- Build and test execution for Xcode projects
+- Simulator lifecycle and automation workflows
+- Physical device operations via `devicectl`
+- UI automation, screenshot, log, and evidence capture loops
+- Structured diagnosis workflows and plan execution
+- MCP and CLI usage patterns for the same operational surface
 
-- Astro + Starlight docs foundation
-- Svelte integration for future marketing interactivity
-- Bun-only package and script execution
-- Biome-only lint and format workflow
+## Source of Truth
+
+This documentation is curated from repository-owned sources:
+
+- [README.md](https://github.com/justinthevoid/xcforge/blob/main/README.md)
+- [server.json](https://github.com/justinthevoid/xcforge/blob/main/server.json)
+- [Skills/xcforge/SKILL.md](https://github.com/justinthevoid/xcforge/blob/main/Skills/xcforge/SKILL.md)
+- [Skills/xcforge/references](https://github.com/justinthevoid/xcforge/tree/main/Skills/xcforge/references)
+
+## Capability Counts and Version Drift
+
+Some repository sources intentionally expose different capability counts during release transitions. Use [CLI and MCP Parity](/docs/reference/cli-mcp-parity/) for current caveats and reconciliation guidance.
+
+## Continue
+
+- Ready to install now? [Return to install section](/#install-section)
+- Need the narrative context? [Back to homepage](/)

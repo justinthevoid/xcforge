@@ -1,0 +1,76 @@
+---
+title: Workflow Patterns
+description: Practical xcforge workflow patterns for build/test loops, diagnosis, and simulator/UI automation.
+slug: docs/guides/workflow-patterns
+---
+
+This page focuses on repeatable, executable xcforge patterns.
+
+## Pattern 1: Build and Test Loop
+
+Use this loop when a change needs fast local validation.
+
+```bash
+xcforge defaults set --project MyApp.xcodeproj --scheme MyApp --simulator "iPhone 16 Pro"
+xcforge build-test --json
+xcforge test failures --include-console --json
+xcforge test coverage --min-coverage 80 --json
+```
+
+Why this pattern works:
+
+- `build-test` short-circuits early on compile failures.
+- `test failures` returns structured failure context.
+- Coverage checks add confidence before handoff.
+
+## Pattern 2: Diagnosis Loop
+
+Use this loop when you need a proof-oriented diagnosis trail.
+
+```bash
+xcforge diagnose start --json
+xcforge diagnose build --run-id <run-id> --json
+xcforge diagnose test --run-id <run-id> --json
+xcforge diagnose runtime --run-id <run-id> --capture-screenshot --json
+xcforge diagnose inspect --run-id <run-id> --json
+xcforge diagnose result --run-id <run-id> --json
+```
+
+After applying a fix:
+
+```bash
+xcforge diagnose verify --run-id <run-id> --json
+xcforge diagnose compare --run-id <run-id> --json
+```
+
+## Pattern 3: Simulator and UI Automation Loop
+
+Use this for flows that require app interaction and visual confirmation.
+
+```bash
+xcforge sim boot "iPhone 16 Pro" --json
+xcforge build --json
+xcforge sim install --json
+xcforge sim launch --json
+xcforge ui alert --action accept_all --json
+xcforge ui find --using "accessibility id" --value "Login" --scroll --json
+xcforge screenshot capture --json
+```
+
+## Pattern 4: Evidence Capture Loop
+
+Use this when you need logs and screenshots for verification.
+
+```bash
+xcforge log start --mode smart --json
+# reproduce behavior
+xcforge log read --include app --include crashes --json
+xcforge screenshot baseline --name before-fix --json
+# apply fix and rerun flow
+xcforge screenshot compare --name before-fix --json
+xcforge log stop --json
+```
+
+## MCP Equivalents
+
+Every workflow above has MCP equivalents. For parity details and caveats, see [CLI and MCP Parity](/docs/reference/cli-mcp-parity/).

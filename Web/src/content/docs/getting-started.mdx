@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Bootstrap and validate the Story 1.1 Web baseline.
+description: Install, configure, and verify xcforge for CLI and MCP workflows.
 slug: docs/getting-started
 ---
 
@@ -8,49 +8,89 @@ import HandoffContextNotice from '../../components/docs/HandoffContextNotice.ast
 
 <HandoffContextNotice />
 
-## Bootstrap
+## 1) Install xcforge
 
 ```bash
-cd Web
-bun install
+brew tap justinthevoid/tap && brew install xcforge
 ```
 
-## Validation Commands
+Alternative source build:
 
 ```bash
-cd Web
-bun run typecheck
-bun run lint
-bun run validate
+git clone https://github.com/justinthevoid/xcforge.git
+cd xcforge && swift build -c release
+sudo install -m 0755 .build/release/XCForgeCLI /usr/local/bin/xcforge
 ```
 
-## Local Route Checks
-
-Run the dev server:
+If your Homebrew prefix is `/opt/homebrew`, install to that path instead:
 
 ```bash
-cd Web
-bun run dev
+sudo install -m 0755 .build/release/XCForgeCLI /opt/homebrew/bin/xcforge
 ```
 
-Then verify these routes:
+Use `which xcforge` after installation to confirm the path your MCP client should reference.
 
-- Marketing route: `/`
-- Docs route: `/docs`
-- Docs depth route: `/docs/getting-started`
-
-## If Setup Fails
-
-Run the environment checker:
+## 2) Verify your CLI is available
 
 ```bash
-cd Web
-bun run doctor
+xcforge --help
 ```
 
-For full remediation steps, see the Troubleshooting section in `README.md`.
+You should see top-level workflow subcommands such as `build`, `test`, `sim`, `diagnose`, and `ui`.
 
-## Return to Install
+## 3) Optional: set defaults for faster loops
 
-- Ready to install now? [Go to the install section](/#install-section)
-- Need narrative context first? [Return to homepage](/)
+```bash
+xcforge defaults set --project MyApp.xcodeproj --scheme MyApp --simulator "iPhone 16 Pro"
+xcforge defaults show
+```
+
+Defaults reduce repeated flags for build/test/simulator commands.
+
+## 4) Run a first verification loop
+
+```bash
+xcforge build-test --json
+xcforge test failures --include-console --json
+```
+
+If your run is UI-heavy, add simulator and evidence checks:
+
+```bash
+xcforge sim list --json
+xcforge log start --mode smart --json
+xcforge screenshot capture --json
+xcforge log read --include app --include crashes --json
+xcforge log stop --json
+```
+
+## 5) Configure MCP host integration
+
+Follow [MCP Client Configuration](/docs/reference/mcp-client-configuration/) for client-specific JSON formats and file locations.
+
+Quick start for Claude Code:
+
+```bash
+claude mcp add xcforge -- xcforge
+```
+
+## 6) Validate parity expectations
+
+Before automating deeper workflows, review:
+
+- [CLI Command Groups](/docs/guides/cli-command-groups/)
+- [Workflow Patterns](/docs/guides/workflow-patterns/)
+- [CLI and MCP Parity](/docs/reference/cli-mcp-parity/)
+
+## 7) Troubleshooting baseline
+
+If your first loop fails:
+
+1. Confirm Xcode and simulator readiness.
+2. Re-run `xcforge build --diagnose --json` for structured build errors.
+3. Use `xcforge diagnose start` then `xcforge diagnose inspect` for correlated evidence.
+
+## Return to Install Handoff
+
+- Ready to install now? [Go to install section](/#install-section)
+- Need high-level context first? [Return to homepage](/)

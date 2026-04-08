@@ -1,40 +1,65 @@
 ---
 title: Proof Provenance and Freshness
-description: How to interpret trust-marker source links, stale evidence states, and provenance warnings on the xcforge homepage.
+description: Interpret trust marker freshness states and source reconciliation for xcforge CLI and MCP claims.
 slug: docs/proof-provenance
 ---
 
-Homepage trust markers expose source and freshness metadata so claims can be inspected before you install.
+Homepage trust markers expose source and freshness metadata so claims can be inspected before installation or deeper evaluation.
 
 ## Trust Marker States
 
-- Fresh evidence: all listed sources are within their freshness windows.
-- Stale evidence: one or more listed sources are older than their allowed freshness window.
+- Fresh evidence: all linked sources are inside their freshness windows.
+- Stale evidence: one or more linked sources are older than allowed freshness windows.
 - Provenance warning: source metadata is missing, malformed, or partially unavailable.
 
 These states are intentionally explicit. Stale or warning states should not be interpreted as current proof.
+
+## Primary Sources Used by Docs and Trust Claims
+
+- [README.md](https://github.com/justinthevoid/xcforge/blob/main/README.md)
+- [server.json](https://github.com/justinthevoid/xcforge/blob/main/server.json)
+- [Skills/xcforge/SKILL.md](https://github.com/justinthevoid/xcforge/blob/main/Skills/xcforge/SKILL.md)
+- [Skills references directory](https://github.com/justinthevoid/xcforge/tree/main/Skills/xcforge/references)
 
 ## What Metadata Is Shown
 
 For each proof artifact, the site can show:
 
-- Source label and destination link (docs, changelog, or proof reference)
+- Source label and destination link (docs, changelog, or reference page)
 - Captured date
 - Freshness summary derived from max age policy
+
+## Reconciling Count Drift
+
+During release transitions, counts can vary across source files (for example, MCP tool totals or CLI group totals). This is expected when metadata, references, and binaries move at different cadences.
+
+Use this order for reconciliation:
+
+1. Treat repository files as authoritative over memory or screenshots.
+2. Compare README claims against `server.json` package metadata.
+3. Confirm command surface using [CLI Command Groups](/docs/guides/cli-command-groups/) and [CLI and MCP Parity](/docs/reference/cli-mcp-parity/).
+4. Prefer conservative wording in any downstream claim when sources disagree.
 
 ## If You See a Warning State
 
 Use this sequence:
 
 1. Open the linked source references and confirm current behavior.
-2. Check [Getting Started](/docs/getting-started/) for current workflow validation steps.
-3. Review release context in [CHANGELOG.md](https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md).
-4. Treat warning-state proof as incomplete until source metadata is refreshed.
+2. Check [Getting Started](/docs/getting-started/) for current verification flow.
+3. Check [MCP Server Overview](/docs/reference/mcp-server-overview/) for server metadata context.
+4. Review release context in [CHANGELOG.md](https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md).
+5. Treat warning-state proof as incomplete until source metadata is refreshed.
 
 ## If You See a Stale State
 
 A stale state means the claim may still be accurate, but the source age is outside the configured freshness window.
 
 - Use linked references for current verification.
-- Prioritize the latest docs and changelog evidence.
+- Prioritize latest docs, references, and changelog evidence.
 - Avoid treating stale markers as final proof without revalidation.
+
+## Related Pages
+
+- [Docs Overview](/docs)
+- [Workflow Patterns](/docs/guides/workflow-patterns/)
+- [CLI and MCP Parity](/docs/reference/cli-mcp-parity/)

@@ -21,11 +21,29 @@ export default defineConfig({
 			],
 			sidebar: [
 				{
-					label: 'Docs',
+					label: 'Overview',
 					items: [
 						{ label: 'Overview', slug: 'docs' },
 						{ label: 'Getting Started', slug: 'docs/getting-started' },
 						{ label: 'Proof Provenance', slug: 'docs/proof-provenance' },
+					],
+				},
+				{
+					label: 'CLI Guides',
+					items: [
+						{ label: 'CLI Command Groups', slug: 'docs/guides/cli-command-groups' },
+						{ label: 'Workflow Patterns', slug: 'docs/guides/workflow-patterns' },
+					],
+				},
+				{
+					label: 'MCP Reference',
+					items: [
+						{ label: 'MCP Server Overview', slug: 'docs/reference/mcp-server-overview' },
+						{
+							label: 'MCP Client Configuration',
+							slug: 'docs/reference/mcp-client-configuration',
+						},
+						{ label: 'CLI and MCP Parity', slug: 'docs/reference/cli-mcp-parity' },
 					],
 				},
 			],

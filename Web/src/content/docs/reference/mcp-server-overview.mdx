@@ -1,0 +1,49 @@
+---
+title: MCP Server Overview
+description: xcforge MCP server identity, transport model, and capability surface.
+slug: docs/reference/mcp-server-overview
+---
+
+xcforge runs in MCP server mode when executed with no CLI subcommand.
+
+```bash
+xcforge
+```
+
+In that mode, it serves tools over stdio JSON-RPC for MCP-compatible hosts.
+
+## Registry Identity
+
+From `server.json` in this repository:
+
+- Registry name: `io.github.justinthevoid/xcforge`
+- Title: `xcforge - iOS MCP Server & CLI`
+- Transport: `stdio`
+- Package artifact: GitHub release `.mcpb`
+
+## Mode Model
+
+xcforge exposes two operation modes:
+
+- No arguments: MCP server mode (for host clients)
+- With arguments: CLI command mode (for terminal workflows)
+
+This split allows the same local iOS workflow surface to be used by both agents and humans.
+
+## Capability Surface
+
+Repository documentation currently describes capabilities across build/test, simulator, device, UI automation, screenshot/visual checks, logs, diagnosis, plan execution, and LLDB debugging.
+
+For structured category coverage, see:
+
+- [CLI Command Groups](/docs/guides/cli-command-groups/)
+- [Workflow Patterns](/docs/guides/workflow-patterns/)
+- [CLI and MCP Parity](/docs/reference/cli-mcp-parity/)
+
+## Host Integration Notes
+
+- Transport is stdio, so hosts launch `xcforge` as a local process.
+- There is no required external runtime service.
+- Some hosts require absolute binary paths because PATH is not inherited.
+
+See [MCP Client Configuration](/docs/reference/mcp-client-configuration/) for client-specific examples.
