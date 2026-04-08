@@ -493,11 +493,11 @@ function collectHrefEntries(node, sourcePath = 'homepageContent') {
 
 function validateHomepageStaticHrefLiterals(marketingRoutes, docsRoutes) {
 	const homepageFiles = [
-		join(projectRoot, 'src', 'components', 'website', 'HeroProof.astro'),
-		join(projectRoot, 'src', 'components', 'website', 'GlobalNav.astro'),
-		join(projectRoot, 'src', 'components', 'website', 'DocsHandoffSection.astro'),
-		join(projectRoot, 'src', 'components', 'website', 'FinalCTA.astro'),
-		join(projectRoot, 'src', 'components', 'website', 'DifferentiationProofSection.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'GlobalNav.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'DifferentiationProofSection.astro'),
 		join(projectRoot, 'src', 'pages', 'index.astro'),
 	];
 

@@ -111,16 +111,16 @@ export type NarrativeJourneyId =
 
 export type NarrativeJourneyArtifact =
 	| {
-			status: 'available';
-			label: string;
-			href: string;
-			summary: string;
-			external?: boolean;
-	  }
+		status: 'available';
+		label: string;
+		href: string;
+		summary: string;
+		external?: boolean;
+	}
 	| {
-			status: 'unavailable';
-			unavailableMessage: string;
-	  };
+		status: 'unavailable';
+		unavailableMessage: string;
+	};
 
 export type NarrativeJourney = {
 	id: NarrativeJourneyId;
@@ -1244,7 +1244,7 @@ function validateNarrativeSectionPayload(
 		case 'problem': {
 			if (section.painSignals.length === 0) {
 				messages.push(
-					'Section "problem" must include at least one pain signal in website/src/data/homepage.ts.',
+					'Section "problem" must include at least one pain signal in Web/src/data/homepage.ts.',
 				);
 			}
 
@@ -1282,7 +1282,7 @@ function validateNarrativeSectionPayload(
 		case 'solution': {
 			if (section.capabilities.length === 0) {
 				messages.push(
-					'Section "solution" must include at least one capability in website/src/data/homepage.ts.',
+					'Section "solution" must include at least one capability in Web/src/data/homepage.ts.',
 				);
 			}
 
@@ -1333,7 +1333,7 @@ function validateNarrativeSectionPayload(
 		case 'workflows': {
 			if (section.journeys.length === 0) {
 				messages.push(
-					`Section "workflows" must include at least one journey in website/src/data/homepage.ts. Mark this section non-publishable. ${workflowsRemediation}`,
+					`Section "workflows" must include at least one journey in Web/src/data/homepage.ts. Mark this section non-publishable. ${workflowsRemediation}`,
 				);
 			}
 
@@ -1417,7 +1417,7 @@ function validateNarrativeSectionPayload(
 		case 'differentiation': {
 			if (section.points.length === 0) {
 				messages.push(
-					'Section "differentiation" must include at least one point in website/src/data/homepage.ts.',
+					'Section "differentiation" must include at least one point in Web/src/data/homepage.ts.',
 				);
 			}
 
@@ -1491,7 +1491,7 @@ function validateNarrativeSectionPayload(
 		case 'docs-handoff': {
 			if (section.handoffLinks.length === 0) {
 				messages.push(
-					'Section "docs-handoff" must include at least one handoff link in website/src/data/homepage.ts.',
+					'Section "docs-handoff" must include at least one handoff link in Web/src/data/homepage.ts.',
 				);
 			}
 
@@ -1593,13 +1593,13 @@ export function validateHomepageNarrativeSections(
 
 		if (section.heading.trim().length === 0) {
 			messages.push(
-				`Section "${section.id}" is missing a heading. Add a non-empty heading in website/src/data/homepage.ts.`,
+				`Section "${section.id}" is missing a heading. Add a non-empty heading in Web/src/data/homepage.ts.`,
 			);
 		}
 
 		if (section.purpose.trim().length === 0) {
 			messages.push(
-				`Section "${section.id}" is missing a purpose statement. Add a non-empty purpose in website/src/data/homepage.ts.`,
+				`Section "${section.id}" is missing a purpose statement. Add a non-empty purpose in Web/src/data/homepage.ts.`,
 			);
 		}
 	}
@@ -1708,7 +1708,7 @@ function requireNarrativeSection<TId extends HomepageNarrativeBodySection['id']>
 	const section = sections.find((candidate) => candidate.id === sectionId);
 	if (!section) {
 		throw new Error(
-			`[homepage narrative] Missing required narrative data for section "${sectionId}" in website/src/data/homepage.ts.`,
+			`[homepage narrative] Missing required narrative data for section "${sectionId}" in Web/src/data/homepage.ts.`,
 		);
 	}
 

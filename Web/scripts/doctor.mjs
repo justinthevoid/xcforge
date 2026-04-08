@@ -119,7 +119,7 @@ if (failures.length > 0) {
 	console.error('\n[doctor] Recommended remediation steps:');
 	console.error('- Install or upgrade Bun: brew install bun && brew upgrade bun');
 	console.error(`- Install Node.js ${MIN_NODE_VERSION}+: brew install node@22`);
-	console.error('- Reinstall website dependencies: rm -rf node_modules && bun install');
+	console.error('- Reinstall Web workspace dependencies: rm -rf node_modules && bun install');
 	console.error('- If lockfile regeneration is required: rm -f bun.lock && bun install');
 	console.error('- Re-run diagnostics: bun run doctor && bun run validate');
 	console.error('- If install still fails: bun install --verbose');

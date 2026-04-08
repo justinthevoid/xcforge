@@ -348,12 +348,12 @@ There are several iOS-focused MCP servers worth knowing about:
 
 ---
 
-## Website Baseline (Story 1.1)
+## Web Baseline (Story 1.1)
 
-The website workspace is isolated under `website/` and uses Astro Starlight plus Svelte with Bun-only package/script usage and Biome-only lint/format checks.
+The Web workspace is isolated under `Web/` and uses Astro Starlight plus Svelte with Bun-only package/script usage and Biome-only lint/format checks.
 
 ```bash
-cd website
+cd Web
 bun install
 bun run typecheck
 bun run lint
@@ -369,11 +369,11 @@ Local route assumptions after `bun run dev`:
 If setup fails, run:
 
 ```bash
-cd website
+cd Web
 bun run doctor
 ```
 
-Remediation steps are documented in `website/README.md`.
+Remediation steps are documented in `Web/README.md`.
 
 ---
 

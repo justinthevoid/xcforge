@@ -306,14 +306,14 @@ if (errors.length > 0) {
 
 	console.error('\n[workers:check] Remediation steps:');
 	console.error(
-		'- Add or repair website/wrangler.jsonc with default and env.preview binding parity.',
+		'- Add or repair Web/wrangler.jsonc with default and env.preview binding parity.',
 	);
 	console.error(
-		'- Ensure website/astro.config.mjs imports @astrojs/cloudflare and sets adapter: cloudflare().',
+		'- Ensure Web/astro.config.mjs imports @astrojs/cloudflare and sets adapter: cloudflare().',
 	);
-	console.error(`- Ensure website/astro.config.mjs sets output: '${EXPECTED_OUTPUT_MODE}'.`);
+	console.error(`- Ensure Web/astro.config.mjs sets output: '${EXPECTED_OUTPUT_MODE}'.`);
 	if (requireGeneratedConfig) {
-		console.error('- Ensure website build output exists: bun run build');
+		console.error('- Ensure Web build output exists: bun run build');
 	}
 	console.error('- Re-run checks: bun run workers:check');
 

@@ -12,9 +12,9 @@ const paths = {
 	homepageCss: join(projectRoot, 'src', 'styles', 'homepage.css'),
 	tokensCss: join(projectRoot, 'src', 'styles', 'tokens.css'),
 	primitivesCss: join(projectRoot, 'src', 'styles', 'primitives.css'),
-	hero: join(projectRoot, 'src', 'components', 'website', 'HeroProof.astro'),
-	finalCta: join(projectRoot, 'src', 'components', 'website', 'FinalCTA.astro'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'website', 'DocsHandoffSection.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
+	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
 };
 
 function rel(filePath) {

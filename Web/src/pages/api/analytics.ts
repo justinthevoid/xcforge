@@ -69,7 +69,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	const runtimeEnv = resolveRuntimeEnv(locals);
 	const endpoint = runtimeEnv.XCFORGE_ANALYTICS_ENDPOINT?.trim();
-	const dataset = runtimeEnv.XCFORGE_ANALYTICS_DATASET?.trim() || 'website-default';
+	const dataset = runtimeEnv.XCFORGE_ANALYTICS_DATASET?.trim() || 'web-default';
 
 	if (!endpoint || endpoint.includes('example.invalid') || !isValidAnalyticsEndpoint(endpoint)) {
 		return asJsonResponse(503, {

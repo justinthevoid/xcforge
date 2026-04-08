@@ -3,7 +3,13 @@
 	"root": true,
 	"files": {
 		"ignoreUnknown": true,
-		"includes": ["**", "!!**/.astro", "!!**/dist", "!!**/.wrangler", "!!**/node_modules"]
+		"includes": [
+			"**",
+			"!!**/.astro",
+			"!!**/dist",
+			"!!**/.wrangler",
+			"!!**/node_modules"
+		]
 	},
 	"vcs": {
 		"enabled": true,

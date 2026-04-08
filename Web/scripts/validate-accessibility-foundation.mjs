@@ -8,10 +8,10 @@ const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const componentPaths = {
 	route: join(projectRoot, 'src', 'pages', 'index.astro'),
-	hero: join(projectRoot, 'src', 'components', 'website', 'HeroProof.astro'),
-	proofToggle: join(projectRoot, 'src', 'components', 'website', 'ProofToggle.svelte'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'website', 'DocsHandoffSection.astro'),
-	finalCta: join(projectRoot, 'src', 'components', 'website', 'FinalCTA.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	proofToggle: join(projectRoot, 'src', 'components', 'web', 'ProofToggle.svelte'),
+	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
+	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
 	primitives: join(projectRoot, 'src', 'styles', 'primitives.css'),
 };
 

@@ -10,10 +10,10 @@ const paths = {
 	analyticsLib: join(projectRoot, 'src', 'lib', 'analytics.ts'),
 	installIntent: join(projectRoot, 'src', 'lib', 'install-intent.ts'),
 	indexRoute: join(projectRoot, 'src', 'pages', 'index.astro'),
-	globalNav: join(projectRoot, 'src', 'components', 'website', 'GlobalNav.astro'),
-	heroProof: join(projectRoot, 'src', 'components', 'website', 'HeroProof.astro'),
-	finalCta: join(projectRoot, 'src', 'components', 'website', 'FinalCTA.astro'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'website', 'DocsHandoffSection.astro'),
+	globalNav: join(projectRoot, 'src', 'components', 'web', 'GlobalNav.astro'),
+	heroProof: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
+	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
 	apiAnalytics: join(projectRoot, 'src', 'pages', 'api', 'analytics.ts'),
 	packageJson: join(projectRoot, 'package.json'),
 };
@@ -64,6 +64,12 @@ function readRequiredFile(filePath, scope) {
 
 function expectIncludes(source, token, scope, filePath, message, remediation) {
 	if (!source.includes(token)) {
+		fail(scope, filePath, message, remediation);
+	}
+}
+
+function expectMatches(source, pattern, scope, filePath, message, remediation) {
+	if (!pattern.test(source)) {
 		fail(scope, filePath, message, remediation);
 	}
 }
@@ -223,7 +229,13 @@ function validateTaggedInstrumentation(
 				'homepage.docs.clicked',
 				'homepage.workflow-guide.clicked',
 				'homepage.github.outbound.clicked',
-				"data-analytics-source-surface={analyticsConfig ? 'global-nav' : undefined}",
+			],
+			patterns: [
+				{
+					pattern:
+						/data-analytics-source-surface=\{[\s\S]*analyticsConfig[\s\S]*["']global-nav["'][\s\S]*undefined[\s\S]*\}/m,
+					label: "data-analytics-source-surface={analyticsConfig ? 'global-nav' : undefined}",
+				},
 			],
 		},
 		{
@@ -249,10 +261,18 @@ function validateTaggedInstrumentation(
 			filePath: paths.docsHandoff,
 			source: docsHandoffSource,
 			tokens: [
-				'data-analytics-event-name={analyticsEventName}',
 				'data-analytics-intent-signal="depth-navigation"',
-				'data-analytics-destination={analyticsDestination}',
 				'data-analytics-source-surface="docs-handoff"',
+			],
+			patterns: [
+				{
+					pattern: /data-analytics-event-name=\{analyticsEventName\}/m,
+					label: 'data-analytics-event-name={analyticsEventName}',
+				},
+				{
+					pattern: /data-analytics-destination=\{analyticsDestination\}/m,
+					label: 'data-analytics-destination={analyticsDestination}',
+				},
 			],
 		},
 	];
@@ -265,6 +285,17 @@ function validateTaggedInstrumentation(
 				scope,
 				check.filePath,
 				`Missing analytics instrumentation token: ${token}`,
+				'Restore explicit analytics data attributes for conversion-critical links.',
+			);
+		}
+
+		for (const matcher of check.patterns ?? []) {
+			expectMatches(
+				check.source,
+				matcher.pattern,
+				scope,
+				check.filePath,
+				`Missing analytics instrumentation token: ${matcher.label}`,
 				'Restore explicit analytics data attributes for conversion-critical links.',
 			);
 		}

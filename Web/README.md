@@ -1,6 +1,6 @@
-# xcforge Website Baseline
+# xcforge Web Baseline
 
-Stories 1.1 and 1.2 initialize the website workspace with:
+Stories 1.1 and 1.2 initialize the Web workspace with:
 
 - Astro Starlight docs
 - Svelte integration for future interactive modules
@@ -16,7 +16,7 @@ Stories 1.1 and 1.2 initialize the website workspace with:
 ## Quick Start
 
 ```bash
-cd website
+cd Web
 bun install
 bun run validate
 bun run workers:check
@@ -65,7 +65,7 @@ If hierarchy rules regress, validation fails with a release-blocking error and w
 
 ## Cloudflare Workers Baseline
 
-Workers is the only supported deployment target for this website. The runtime contract is defined in `wrangler.jsonc` and validated by `scripts/validate-workers-config.mjs`.
+Workers is the only supported deployment target for this Web workspace. The runtime contract is defined in `wrangler.jsonc` and validated by `scripts/validate-workers-config.mjs`.
 Preview and deploy commands additionally validate generated `dist/server/wrangler.json` after build.
 
 Required binding names (must exist in both default `vars` and `env.preview.vars`):

@@ -8,10 +8,10 @@ import { homepageContent, resolveNavigationMetadata } from '../src/data/homepage
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const componentPaths = {
-	nav: join(projectRoot, 'src', 'components', 'website', 'GlobalNav.astro'),
-	hero: join(projectRoot, 'src', 'components', 'website', 'HeroProof.astro'),
-	finalCta: join(projectRoot, 'src', 'components', 'website', 'FinalCTA.astro'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'website', 'DocsHandoffSection.astro'),
+	nav: join(projectRoot, 'src', 'components', 'web', 'GlobalNav.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
+	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
 	homepageCss: join(projectRoot, 'src', 'styles', 'homepage.css'),
 	installIntent: join(projectRoot, 'src', 'lib', 'install-intent.ts'),
 };
