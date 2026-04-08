@@ -913,6 +913,18 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 		padding: 30px;
 	}
 
+	.proof-panel {
+		padding: 24px;
+	}
+
+	.narrative-shell {
+		padding: 24px;
+	}
+
+	.proof-snapshot-grid {
+		grid-template-columns: 1fr;
+	}
+
 	.differentiation-grid,
 	.handoff-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
