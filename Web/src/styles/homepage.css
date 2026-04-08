@@ -112,10 +112,9 @@ main {
 }
 
 .hero-proof {
-	display: grid;
-	grid-template-columns: 1.18fr 1fr;
+	display: flex;
+	flex-direction: column;
 	gap: 24px;
-	align-items: stretch;
 }
 
 .hero-copy,
@@ -128,6 +127,59 @@ main {
 
 .hero-copy {
 	padding: 36px;
+}
+
+.hero-logo-video {
+	display: block;
+	max-height: 100px;
+	width: auto;
+	margin: 0 0 24px;
+}
+
+.install-steps {
+	margin: 20px 0 0;
+	padding: 0;
+	list-style: none;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	counter-reset: step;
+}
+
+.install-steps li {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	color: var(--xcf-color-text-muted);
+	font-size: 0.95rem;
+}
+
+.install-steps li::before {
+	counter-increment: step;
+	content: counter(step);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 20px;
+	height: 20px;
+	border-radius: 999px;
+	background: rgba(16, 144, 240, 0.2);
+	font-size: 0.72rem;
+	font-weight: 700;
+	color: #9fd0fa;
+	flex-shrink: 0;
+}
+
+.install-steps code {
+	display: inline-flex;
+	align-items: center;
+	border-radius: 10px;
+	border: 1px solid rgba(42, 53, 68, 0.95);
+	padding: 7px 10px;
+	background: rgba(0, 0, 0, 0.26);
+	font-family: var(--xcf-font-mono);
+	font-size: 0.9rem;
+	color: var(--xcf-color-text);
 }
 
 .hero-kicker {
@@ -179,26 +231,6 @@ main {
 	order: 1;
 }
 
-.install-command {
-	margin: 20px 0 0;
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	color: var(--xcf-color-text-muted);
-	font-size: 0.95rem;
-}
-
-.install-command code {
-	display: inline-flex;
-	align-items: center;
-	border-radius: 10px;
-	border: 1px solid rgba(42, 53, 68, 0.95);
-	padding: 8px 10px;
-	background: rgba(0, 0, 0, 0.26);
-	font-family: var(--xcf-font-mono);
-	font-size: 0.93rem;
-	color: var(--xcf-color-text);
-}
 
 .proof-panel {
 	padding: 28px;
@@ -905,10 +937,6 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 }
 
 @media (max-width: 1023px) {
-	.hero-proof {
-		grid-template-columns: 1fr;
-	}
-
 	.hero-copy {
 		padding: 30px;
 	}
@@ -977,9 +1005,8 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 		justify-content: center;
 	}
 
-	.install-command {
-		align-items: flex-start;
-		flex-direction: column;
+	.install-steps code {
+		width: 100%;
 	}
 
 	.proof-toggle-controls {
@@ -1014,10 +1041,8 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 		justify-content: center;
 	}
 
-	.install-command code {
-		width: 100%;
-	}
 }
+
 
 @media (prefers-reduced-motion: reduce) {
 	.nav-link,

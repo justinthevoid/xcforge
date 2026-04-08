@@ -38,9 +38,25 @@ function isExternalHref(href: string): boolean {
 
 <SectionBlock id="product" className="hero-proof" labelledBy="hero-title">
 	<div class="hero-copy">
+		<video
+			class="hero-logo-video"
+			autoplay
+			muted
+			loop
+			playsinline
+			aria-hidden="true"
+		>
+			<source src="/xcforge-logo.mp4" type="video/mp4" />
+		</video>
+
 		<p class="hero-kicker">For AI-assisted iOS developers</p>
 		<h1 id="hero-title">{hero.problemLine}</h1>
 		<p class="hero-role">{hero.productRole}</p>
+
+		<ol class="install-steps" aria-label="Install commands">
+			<li><code>{hero.tapCommand}</code></li>
+			<li><code>{hero.installStepCommand}</code></li>
+		</ol>
 
 		<section
 			id="install-section"
@@ -89,11 +105,6 @@ function isExternalHref(href: string): boolean {
 				data-analytics-source-surface="hero"
 			/>
 		</section>
-
-		<p class="install-command">
-			<span>Run:</span>
-			<code>{hero.installCommand}</code>
-		</p>
 	</div>
 
 	<aside class="proof-panel" aria-live="polite">
@@ -186,3 +197,10 @@ function isExternalHref(href: string): boolean {
 			)}
 	</aside>
 </SectionBlock>
+
+<script>
+	const vid = document.querySelector<HTMLVideoElement>('.hero-logo-video');
+	if (vid && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+		vid.pause();
+	}
+</script>

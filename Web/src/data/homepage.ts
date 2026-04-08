@@ -17,6 +17,8 @@ export type NavItem = {
 export type HeroCopy = {
 	problemLine: string;
 	productRole: string;
+	tapCommand: string;
+	installStepCommand: string;
 	installCommand: string;
 	installHref: string;
 	installExternal?: boolean;
@@ -261,7 +263,9 @@ const safeNavigationFallback: NavItem[] = [
 	{ id: 'install', label: 'Install', href: '#install-section' },
 ];
 
-const installCommand = 'brew install xcforge';
+const tapCommand = 'brew tap justinthevoid/tap';
+const installStepCommand = 'brew install xcforge';
+const installCommand = `${tapCommand} && ${installStepCommand}`;
 const installGuideHref = 'https://github.com/justinthevoid/xcforge#install';
 const proofProvenanceDocsHref = '/docs/proof-provenance/';
 
@@ -375,6 +379,8 @@ export const homepageContent: HomepageContent = {
 			'AI code suggestions are fast. Local iOS verification loops are where momentum stalls.',
 		productRole:
 			'xcforge gives agents hands-on control of build, test, simulators, logs, screenshots, and debug loops so outcomes are verifiable.',
+		tapCommand,
+		installStepCommand,
 		installCommand,
 		installHref: installGuideHref,
 		installExternal: true,

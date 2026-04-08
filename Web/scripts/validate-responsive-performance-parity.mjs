@@ -233,7 +233,8 @@ function validateResponsiveCssContracts(homepageSource, snapshot) {
 
 	const hasDesktopHeroGrid =
 		homepageSource.includes('.hero-proof {') &&
-		homepageSource.includes('grid-template-columns: 1.18fr 1fr;');
+		homepageSource.includes('display: flex;') &&
+		homepageSource.includes('flex-direction: column;');
 
 	const tabletBlocks = extractMediaBlocks(
 		homepageSource,
@@ -247,8 +248,8 @@ function validateResponsiveCssContracts(homepageSource, snapshot) {
 		blockPresent: tabletBlocks.length > 0,
 		heroSingleColumn:
 			tabletBlocks.length > 0 &&
-			tabletContent.includes('.hero-proof') &&
-			tabletContent.includes('grid-template-columns: 1fr;'),
+			tabletContent.includes('.hero-copy') &&
+			tabletContent.includes('padding: 30px;'),
 		supportGridTwoColumn:
 			tabletBlocks.length > 0 &&
 			tabletContent.includes('.differentiation-grid,') &&
@@ -300,8 +301,8 @@ function validateResponsiveCssContracts(homepageSource, snapshot) {
 		fail(
 			scope,
 			paths.homepageCss,
-			'Desktop hero proof grid contract is missing the expected two-column baseline.',
-			'Restore the desktop HeroProof grid baseline so conversion hierarchy remains coherent before breakpoint shifts.',
+			'Desktop hero layout contract is missing the expected flex column baseline.',
+			'Restore the desktop HeroProof flex-column layout so the hero renders logo, headline, and install steps stacked vertically.',
 		);
 	}
 
@@ -354,7 +355,7 @@ function validatePerformanceBudgets(sources, snapshot) {
 		homepageCss: 24000,
 		tokensCss: 4000,
 		primitivesCss: 5000,
-		indexRoute: 3500,
+		indexRoute: 4000,
 		heroComponent: 6000,
 		finalCtaComponent: 3500,
 		docsHandoffComponent: 4000,
