@@ -1,0 +1,36 @@
+# xcforge
+
+> xcforge is a native Swift CLI and MCP server for local iOS workflow execution, diagnosis, and evidence capture.
+
+This file is a compact index for LLM and agent discovery.
+
+- [Preferred full context](/llms-full.txt)
+
+## Primary docs
+
+- [Docs overview](/docs/): Entry point for xcforge documentation.
+- [Getting started](/docs/getting-started/): Install, configure, and run first verification loops.
+- [CLI command groups](/docs/guides/cli-command-groups/): Command-surface orientation by workflow area.
+- [Workflow patterns](/docs/guides/workflow-patterns/): Repeatable build, test, diagnose, and simulator loops.
+- [MCP server overview](/docs/reference/mcp-server-overview/): MCP identity, transport model, and capability scope.
+- [MCP client configuration](/docs/reference/mcp-client-configuration/): Host-specific MCP config guidance.
+- [CLI and MCP parity](/docs/reference/cli-mcp-parity/): Alignment and caveats between interfaces.
+- [Proof provenance](/docs/proof-provenance/): Trust marker freshness and source reconciliation.
+
+## Absolute source fallbacks
+
+- [Docs overview source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/index.mdx)
+- [Getting started source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/getting-started.mdx)
+- [CLI command groups source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/guides/cli-command-groups.mdx)
+- [Workflow patterns source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/guides/workflow-patterns.mdx)
+- [MCP server overview source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/reference/mcp-server-overview.mdx)
+- [MCP client configuration source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/reference/mcp-client-configuration.mdx)
+- [CLI and MCP parity source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/reference/cli-mcp-parity.mdx)
+- [Proof provenance source](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Web/src/content/docs/proof-provenance.mdx)
+
+## Canonical sources
+
+- [Repository root](https://github.com/justinthevoid/xcforge)
+- [Root README](https://raw.githubusercontent.com/justinthevoid/xcforge/main/README.md)
+- [MCP server definition](https://raw.githubusercontent.com/justinthevoid/xcforge/main/server.json)
+- [xcforge skill reference](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Skills/xcforge/SKILL.md)

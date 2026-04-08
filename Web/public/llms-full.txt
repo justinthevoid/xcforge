@@ -1,0 +1,73 @@
+# xcforge full LLM context
+
+> xcforge is a native Swift CLI and MCP server for local iOS workflows. It helps AI-assisted developers move from generated code to verified outcomes across build, test, simulator, UI automation, logs, screenshots, and diagnosis loops.
+
+## How to use this document
+
+- Use this file for broad product and docs understanding.
+- Use /docs pages for focused implementation details.
+- Treat repository files as canonical when docs and code differ.
+
+## Product summary
+
+- Primary surface: command-line tool for local iOS execution workflows.
+- Parallel surface: MCP server exposing a corresponding capability set.
+- Core value: verifiable local outcomes with inspectable evidence and conservative trust signals.
+
+## Quick start
+
+Install with Homebrew:
+
+- brew tap justinthevoid/tap && brew install xcforge
+
+First verification loop:
+
+- xcforge --help
+- xcforge build-test --json
+- xcforge test failures --include-console --json
+
+Optional simulator and evidence checks:
+
+- xcforge sim list --json
+- xcforge log start --mode smart --json
+- xcforge screenshot capture --json
+- xcforge log read --include app --include crashes --json
+- xcforge log stop --json
+
+## Documentation map
+
+- [Docs overview](/docs/): Entry point for CLI and MCP documentation.
+- [Getting started](/docs/getting-started/): Install, configure, and verify baseline workflows.
+- [CLI command groups](/docs/guides/cli-command-groups/): Map command groups to build/test/simulator/diagnosis goals.
+- [Workflow patterns](/docs/guides/workflow-patterns/): Practical execution loops and handoff-safe patterns.
+- [MCP server overview](/docs/reference/mcp-server-overview/): Server identity, transport model, and capability framing.
+- [MCP client configuration](/docs/reference/mcp-client-configuration/): Supported host configuration examples and setup guidance.
+- [CLI and MCP parity](/docs/reference/cli-mcp-parity/): Interface alignment expectations and caveats.
+- [Proof provenance and freshness](/docs/proof-provenance/): Trust marker interpretation and source reconciliation guidance.
+
+## Common evaluation questions
+
+What problem does xcforge solve?
+- It provides one local execution contract for iOS agent workflows so generated changes can be validated through repeatable evidence-producing commands.
+
+Who is it for?
+- Technical evaluators and AI-assisted iOS developers who need credible, local, inspectable execution rather than ungrounded claims.
+
+How should agents decide between CLI and MCP?
+- Prefer whichever interface is already integrated in the environment. For behavior differences or edge cases, consult CLI and MCP parity docs.
+
+How should trust-sensitive claims be handled?
+- Follow proof provenance guidance and avoid asserting capabilities without observable execution evidence.
+
+## Canonical repository references
+
+- [Repository root](https://github.com/justinthevoid/xcforge)
+- [Root README](https://raw.githubusercontent.com/justinthevoid/xcforge/main/README.md)
+- [MCP server definition](https://raw.githubusercontent.com/justinthevoid/xcforge/main/server.json)
+- [xcforge skill index](https://raw.githubusercontent.com/justinthevoid/xcforge/main/Skills/xcforge/SKILL.md)
+- [xcforge skill references](https://github.com/justinthevoid/xcforge/tree/main/Skills/xcforge/references)
+
+## Discovery pointers
+
+- [Compact index](/llms.txt)
+- [Full context](/llms-full.txt)
