@@ -21,8 +21,34 @@ export type HeroCopy = {
 	installHref: string;
 	installExternal?: boolean;
 	proofHeadline: string;
-	proofSummary: string;
+	proofClaims: ApprovedTrustClaim[];
+	proofSnapshots: ProofSnapshot[];
+	defaultProofSnapshotId: ProofSnapshotId;
 	fallbackProofText: string;
+};
+
+export const approvedTrustClaimCatalog = {
+	'mcp-tools': '103 MCP tools',
+	'cli-command-groups': '17 CLI command groups',
+	'native-swift-binary': 'Native Swift binary',
+	'no-external-runtime-dependencies': 'No external runtime dependencies',
+} as const;
+
+export type ApprovedTrustClaimId = keyof typeof approvedTrustClaimCatalog;
+
+export type ApprovedTrustClaim = {
+	id: ApprovedTrustClaimId;
+	text: (typeof approvedTrustClaimCatalog)[ApprovedTrustClaimId];
+	policyClass: 'allowed-now';
+};
+
+export type ProofSnapshotId = 'manual-baseline' | 'xcforge-proof';
+
+export type ProofSnapshot = {
+	id: ProofSnapshotId;
+	label: string;
+	summary: string;
+	announcement: string;
 };
 
 export type HomepageNarrativeSectionId =
@@ -57,16 +83,16 @@ export type NarrativeJourneyId =
 
 export type NarrativeJourneyArtifact =
 	| {
-		status: 'available';
-		label: string;
-		href: string;
-		summary: string;
-		external?: boolean;
-	}
+			status: 'available';
+			label: string;
+			href: string;
+			summary: string;
+			external?: boolean;
+	  }
 	| {
-		status: 'unavailable';
-		unavailableMessage: string;
-	};
+			status: 'unavailable';
+			unavailableMessage: string;
+	  };
 
 export type NarrativeJourney = {
 	id: NarrativeJourneyId;
@@ -89,6 +115,8 @@ export type DifferentiationPoint = {
 export type DifferentiationProofSectionCopy = HomepageNarrativeSectionBase & {
 	id: 'differentiation';
 	points: DifferentiationPoint[];
+	proofClaims: ApprovedTrustClaim[];
+	proofOutcomeSummary: string;
 };
 
 export type DocsHandoffLink = {
@@ -204,6 +232,48 @@ const safeNavigationFallback: NavItem[] = [
 const installCommand = 'brew install xcforge';
 const installGuideHref = 'https://github.com/justinthevoid/xcforge#install';
 
+const approvedTrustClaims: ApprovedTrustClaim[] = [
+	{
+		id: 'mcp-tools',
+		text: approvedTrustClaimCatalog['mcp-tools'],
+		policyClass: 'allowed-now',
+	},
+	{
+		id: 'cli-command-groups',
+		text: approvedTrustClaimCatalog['cli-command-groups'],
+		policyClass: 'allowed-now',
+	},
+	{
+		id: 'native-swift-binary',
+		text: approvedTrustClaimCatalog['native-swift-binary'],
+		policyClass: 'allowed-now',
+	},
+	{
+		id: 'no-external-runtime-dependencies',
+		text: approvedTrustClaimCatalog['no-external-runtime-dependencies'],
+		policyClass: 'allowed-now',
+	},
+];
+
+const heroProofSnapshots: ProofSnapshot[] = [
+	{
+		id: 'manual-baseline',
+		label: 'Manual baseline',
+		summary:
+			'Manual tool stitching can leave diagnostics and verification evidence fragmented across separate steps.',
+		announcement:
+			'Manual baseline selected. This state describes current workflow friction, not a benchmark claim.',
+	},
+	{
+		id: 'xcforge-proof',
+		label: 'xcforge proof',
+		summary:
+			'xcforge keeps local execution surfaces in one contract so build, simulator, debugger, and evidence paths stay inspectable.',
+		announcement:
+			'xcforge proof selected. This state summarizes observed capability scope with conservative language.',
+	},
+];
+
 export const homepageContent: HomepageContent = {
 	navigation: safeNavigationFallback,
 	hero: {
@@ -215,8 +285,9 @@ export const homepageContent: HomepageContent = {
 		installHref: installGuideHref,
 		installExternal: true,
 		proofHeadline: 'Proof you can inspect in one scan',
-		proofSummary:
-			'103 MCP tools, 17 CLI command groups, native Swift binary, and no external runtime dependencies.',
+		proofClaims: approvedTrustClaims,
+		proofSnapshots: heroProofSnapshots,
+		defaultProofSnapshotId: 'xcforge-proof',
 		fallbackProofText:
 			'Proof metadata is temporarily unavailable. Install via Homebrew now, then verify workflows in docs and changelog.',
 	},
@@ -401,6 +472,9 @@ export const homepageContent: HomepageContent = {
 			heading: 'Differentiation comes from local-first depth and trust discipline.',
 			purpose:
 				'xcforge is built for technical evaluators who need credible execution evidence, not generic automation claims.',
+			proofClaims: approvedTrustClaims,
+			proofOutcomeSummary:
+				'These proof claims describe currently verifiable capability scope. They are not broad speed or benchmark assertions.',
 			points: [
 				{
 					title: 'Local-first by default',
@@ -511,7 +585,8 @@ export function isProofMetadataAvailable(hero: HeroCopy | undefined): boolean {
 		hero.productRole.trim().length > 0 &&
 		hero.installHref.trim().length > 0 &&
 		hero.proofHeadline.trim().length > 0 &&
-		hero.proofSummary.trim().length > 0
+		hasExactApprovedTrustClaims(hero.proofClaims) &&
+		hasValidHeroProofSnapshots(hero)
 	);
 }
 
@@ -539,6 +614,228 @@ export function createHomepageNarrativeSectionContract(
 
 function hasNonEmptyText(value: unknown): value is string {
 	return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isApprovedTrustClaimId(value: unknown): value is ApprovedTrustClaimId {
+	if (typeof value !== 'string') {
+		return false;
+	}
+
+	return Object.hasOwn(approvedTrustClaimCatalog, value);
+}
+
+function isProofSnapshotId(value: unknown): value is ProofSnapshotId {
+	return value === 'manual-baseline' || value === 'xcforge-proof';
+}
+
+function hasExactApprovedTrustClaims(claims: ApprovedTrustClaim[] | undefined): boolean {
+	if (!claims || claims.length !== Object.keys(approvedTrustClaimCatalog).length) {
+		return false;
+	}
+
+	const seenClaimIds = new Set<ApprovedTrustClaimId>();
+
+	for (const claim of claims) {
+		if (!claim || typeof claim !== 'object' || !isApprovedTrustClaimId(claim.id)) {
+			return false;
+		}
+
+		if (seenClaimIds.has(claim.id)) {
+			return false;
+		}
+
+		seenClaimIds.add(claim.id);
+
+		if (claim.policyClass !== 'allowed-now') {
+			return false;
+		}
+
+		if (claim.text !== approvedTrustClaimCatalog[claim.id]) {
+			return false;
+		}
+	}
+
+	return seenClaimIds.size === Object.keys(approvedTrustClaimCatalog).length;
+}
+
+function hasValidHeroProofSnapshots(hero: HeroCopy): boolean {
+	if (!hero.proofSnapshots || hero.proofSnapshots.length !== 2) {
+		return false;
+	}
+
+	const seenSnapshotIds = new Set<ProofSnapshotId>();
+
+	for (const snapshot of hero.proofSnapshots) {
+		if (!snapshot || typeof snapshot !== 'object' || !isProofSnapshotId(snapshot.id)) {
+			return false;
+		}
+
+		if (seenSnapshotIds.has(snapshot.id)) {
+			return false;
+		}
+
+		seenSnapshotIds.add(snapshot.id);
+
+		if (
+			!hasNonEmptyText(snapshot.label) ||
+			!hasNonEmptyText(snapshot.summary) ||
+			!hasNonEmptyText(snapshot.announcement)
+		) {
+			return false;
+		}
+	}
+
+	if (!seenSnapshotIds.has('manual-baseline') || !seenSnapshotIds.has('xcforge-proof')) {
+		return false;
+	}
+
+	return (
+		isProofSnapshotId(hero.defaultProofSnapshotId) &&
+		seenSnapshotIds.has(hero.defaultProofSnapshotId)
+	);
+}
+
+function validateApprovedTrustClaims(
+	claims: ApprovedTrustClaim[] | undefined,
+	locationLabel: string,
+	messages: string[],
+): void {
+	if (!claims || claims.length === 0) {
+		messages.push(
+			`${locationLabel} is missing approved trust claims. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+		return;
+	}
+
+	const seenClaimIds = new Set<ApprovedTrustClaimId>();
+	const duplicateClaimIds = new Set<ApprovedTrustClaimId>();
+
+	claims.forEach((rawClaim, index) => {
+		if (!rawClaim || typeof rawClaim !== 'object') {
+			messages.push(
+				`${locationLabel} has malformed trust-claim data at index ${index}. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+			);
+			return;
+		}
+
+		const claim = rawClaim as Partial<ApprovedTrustClaim>;
+		if (!isApprovedTrustClaimId(claim.id)) {
+			messages.push(
+				`${locationLabel} contains unsupported trust claim id "${String(claim.id)}". Only approved trust claims are publishable. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+			);
+			return;
+		}
+
+		if (seenClaimIds.has(claim.id)) {
+			duplicateClaimIds.add(claim.id);
+		} else {
+			seenClaimIds.add(claim.id);
+		}
+
+		if (claim.policyClass !== 'allowed-now') {
+			messages.push(
+				`${locationLabel} claim "${claim.id}" is classed as "${String(claim.policyClass)}". Only "allowed-now" trust claims are publishable in Story 3.2 proof surfaces. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+			);
+		}
+
+		const expectedText = approvedTrustClaimCatalog[claim.id];
+		if (!hasNonEmptyText(claim.text) || claim.text !== expectedText) {
+			messages.push(
+				`${locationLabel} claim "${claim.id}" must render exactly "${expectedText}". Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+			);
+		}
+	});
+
+	if (duplicateClaimIds.size > 0) {
+		messages.push(
+			`${locationLabel} has duplicate approved trust claims: ${[...duplicateClaimIds].join(', ')}. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+	}
+
+	const missingClaimIds = (Object.keys(approvedTrustClaimCatalog) as ApprovedTrustClaimId[]).filter(
+		(claimId) => !seenClaimIds.has(claimId),
+	);
+
+	if (
+		missingClaimIds.length > 0 ||
+		claims.length !== Object.keys(approvedTrustClaimCatalog).length
+	) {
+		messages.push(
+			`${locationLabel} must include exactly these approved trust claims: ${Object.values(approvedTrustClaimCatalog).join(', ')}. Missing ids: ${missingClaimIds.length > 0 ? missingClaimIds.join(', ') : 'none'}. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+	}
+}
+
+function validateHeroProofSnapshots(hero: HeroCopy, messages: string[]): void {
+	if (!hero.proofSnapshots || hero.proofSnapshots.length === 0) {
+		messages.push(
+			`Section "hero" is missing proof snapshots. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+		return;
+	}
+
+	const seenSnapshotIds = new Set<ProofSnapshotId>();
+	const duplicateSnapshotIds = new Set<ProofSnapshotId>();
+
+	hero.proofSnapshots.forEach((snapshot, index) => {
+		if (!snapshot || typeof snapshot !== 'object') {
+			messages.push(
+				`Section "hero" has malformed proof snapshot data at index ${index}. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+			);
+			return;
+		}
+
+		if (!isProofSnapshotId(snapshot.id)) {
+			messages.push(
+				`Section "hero" has unsupported proof snapshot id "${String(snapshot.id)}". Expected "manual-baseline" or "xcforge-proof". Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+			);
+			return;
+		}
+
+		if (seenSnapshotIds.has(snapshot.id)) {
+			duplicateSnapshotIds.add(snapshot.id);
+		} else {
+			seenSnapshotIds.add(snapshot.id);
+		}
+
+		if (
+			!hasNonEmptyText(snapshot.label) ||
+			!hasNonEmptyText(snapshot.summary) ||
+			!hasNonEmptyText(snapshot.announcement)
+		) {
+			messages.push(
+				`Section "hero" proof snapshot "${snapshot.id}" is missing label, summary, or announcement text. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+			);
+		}
+	});
+
+	if (!seenSnapshotIds.has('manual-baseline') || !seenSnapshotIds.has('xcforge-proof')) {
+		messages.push(
+			`Section "hero" must include both proof snapshots (manual-baseline and xcforge-proof). Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+	}
+
+	if (duplicateSnapshotIds.size > 0) {
+		messages.push(
+			`Section "hero" has duplicate proof snapshots: ${[...duplicateSnapshotIds].join(', ')}. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+	}
+
+	if (hero.proofSnapshots.length !== 2) {
+		messages.push(
+			`Section "hero" must contain exactly two proof snapshots (manual-baseline and xcforge-proof). Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+	}
+
+	if (!isProofSnapshotId(hero.defaultProofSnapshotId)) {
+		messages.push(
+			`Section "hero" has unsupported default proof snapshot id "${String(hero.defaultProofSnapshotId)}". Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+	} else if (!seenSnapshotIds.has(hero.defaultProofSnapshotId)) {
+		messages.push(
+			`Section "hero" default proof snapshot "${hero.defaultProofSnapshotId}" is not present in proofSnapshots. Mark this proof surface non-publishable. ${claimPolicyRemediation}`,
+		);
+	}
 }
 
 const claimSupportRemediation =
@@ -802,6 +1099,18 @@ function validateNarrativeSectionPayload(
 				);
 			}
 
+			validateApprovedTrustClaims(
+				section.proofClaims,
+				'Section "differentiation" proof claims',
+				messages,
+			);
+
+			if (!hasNonEmptyText(section.proofOutcomeSummary)) {
+				messages.push(
+					`Section "differentiation" is missing proofOutcomeSummary text. Mark this section non-publishable. ${differentiationRemediation}`,
+				);
+			}
+
 			section.points.forEach((point, index) => {
 				if (!hasNonEmptyText(point.title) || !hasNonEmptyText(point.detail)) {
 					messages.push(
@@ -866,6 +1175,8 @@ export function validateHomepageNarrativeSections(
 	const sectionContract = createHomepageNarrativeSectionContract(content);
 	const messages: string[] = [];
 	const now = new Date();
+	validateApprovedTrustClaims(content.hero.proofClaims, 'Section "hero" proof strip', messages);
+	validateHeroProofSnapshots(content.hero, messages);
 	const seenSectionIds = new Set<HomepageNarrativeSectionId>();
 	const duplicateSectionIds = new Set<HomepageNarrativeSectionId>();
 
