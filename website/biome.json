@@ -1,15 +1,20 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.4.8/schema.json",
-	"root": false,
+	"root": true,
 	"files": {
 		"ignoreUnknown": true,
 		"includes": [
 			"**",
-			"!dist",
-			"!.astro",
-			"!.wrangler",
-			"!node_modules"
+			"!!**/.astro",
+			"!!**/dist",
+			"!!**/.wrangler",
+			"!!**/node_modules"
 		]
+	},
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
 	},
 	"formatter": {
 		"enabled": true,
