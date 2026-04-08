@@ -146,11 +146,7 @@ onMount(() => {
 			Proof snapshot unavailable. Static approved trust claims remain visible.
 		</p>
 	{:else}
-		<div
-			class="proof-toggle-controls"
-			role="group"
-			aria-labelledby="proof-toggle-heading"
-		>
+		<div class="proof-toggle-controls" role="group" aria-labelledby="proof-toggle-heading">
 			{#each snapshots as snapshot}
 				<button
 					type="button"

@@ -166,7 +166,7 @@ function parseTokenHexMap(tokensSource, scope, filePath) {
 
 function extractReducedMotionBlocks(source) {
 	const blocks = [];
-	const mediaRegex = /@media\s+[^\{]+\{/g;
+	const mediaRegex = /@media\s+[^{]+\{/g;
 
 	for (const match of source.matchAll(mediaRegex)) {
 		const header = match[0];
@@ -282,7 +282,7 @@ function validateAssistiveTechContracts({ heroSource, proofSource, docsSource, f
 
 	expectIncludes(
 		proofSource,
-		'`${snapshot.label} (selected)`',
+		`\${snapshot.label} (selected)`,
 		storyScope,
 		paths.proofToggle,
 		'Proof selected-state text marker is missing.',
