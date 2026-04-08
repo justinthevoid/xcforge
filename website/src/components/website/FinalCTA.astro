@@ -1,7 +1,7 @@
 ---
-import type { FinalCtaCopy } from "../../data/homepage";
-import ActionLink from "../primitives/ActionLink.astro";
-import SectionBlock from "../primitives/SectionBlock.astro";
+import type { FinalCtaCopy } from '../../data/homepage';
+import ActionLink from '../primitives/ActionLink.astro';
+import SectionBlock from '../primitives/SectionBlock.astro';
 
 type Props = {
 	finalCta: FinalCtaCopy;
@@ -22,8 +22,7 @@ const { finalCta } = Astro.props;
 			aria-label="Final install primary action with supporting workflow link"
 		>
 			<p id="final-supporting-path-note" class="sr-only">
-				Workflow Guide is a supporting path for technical depth and does not
-				replace install.
+				Workflow Guide is a supporting path for technical depth and does not replace install.
 			</p>
 			<ActionLink
 				tier="primary"
@@ -35,6 +34,10 @@ const { finalCta } = Astro.props;
 				installIntentSource="final-cta"
 				installCommand={finalCta.installCommand}
 				installTarget="homebrew"
+				data-analytics-event-name="homepage.install.cta.clicked"
+				data-analytics-intent-signal="install"
+				data-analytics-destination="install"
+				data-analytics-source-surface="final-cta"
 			/>
 			<ActionLink
 				tier="secondary"
@@ -42,6 +45,10 @@ const { finalCta } = Astro.props;
 				href={finalCta.workflowHref}
 				label={finalCta.workflowLabel}
 				describedBy="final-supporting-path-note"
+				data-analytics-event-name="homepage.workflow-guide.clicked"
+				data-analytics-intent-signal="depth-navigation"
+				data-analytics-destination="workflow-guide"
+				data-analytics-source-surface="final-cta"
 			/>
 		</section>
 

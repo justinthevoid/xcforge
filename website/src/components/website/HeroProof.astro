@@ -4,10 +4,10 @@ import {
 	resolveApprovedTrustClaimForRender,
 	resolveProofSnapshotForRender,
 	resolveProvenanceFallbackHrefForRender,
-} from "../../data/homepage";
-import ActionLink from "../primitives/ActionLink.astro";
-import SectionBlock from "../primitives/SectionBlock.astro";
-import ProofToggle from "./ProofToggle.svelte";
+} from '../../data/homepage';
+import ActionLink from '../primitives/ActionLink.astro';
+import SectionBlock from '../primitives/SectionBlock.astro';
+import ProofToggle from './ProofToggle.svelte';
 
 type Props = {
 	hero: HeroCopy;
@@ -49,8 +49,7 @@ function isExternalHref(href: string): boolean {
 			aria-label="Install primary action with supporting depth links"
 		>
 			<p id="hero-supporting-path-note" class="sr-only">
-				Docs and Workflow Guide help evaluate install readiness and remain
-				supporting actions.
+				Docs and Workflow Guide help evaluate install readiness and remain supporting actions.
 			</p>
 			<ActionLink
 				tier="primary"
@@ -62,6 +61,10 @@ function isExternalHref(href: string): boolean {
 				installIntentSource="hero"
 				installCommand={hero.installCommand}
 				installTarget="homebrew"
+				data-analytics-event-name="homepage.install.cta.clicked"
+				data-analytics-intent-signal="install"
+				data-analytics-destination="install"
+				data-analytics-source-surface="hero"
 			/>
 			<ActionLink
 				tier="secondary"
@@ -69,6 +72,10 @@ function isExternalHref(href: string): boolean {
 				href="/docs"
 				label="Docs"
 				describedBy="hero-supporting-path-note"
+				data-analytics-event-name="homepage.docs.clicked"
+				data-analytics-intent-signal="depth-navigation"
+				data-analytics-destination="docs"
+				data-analytics-source-surface="hero"
 			/>
 			<ActionLink
 				tier="secondary"
@@ -76,6 +83,10 @@ function isExternalHref(href: string): boolean {
 				href="/docs/getting-started/"
 				label="Workflow Guide"
 				describedBy="hero-supporting-path-note"
+				data-analytics-event-name="homepage.workflow-guide.clicked"
+				data-analytics-intent-signal="depth-navigation"
+				data-analytics-destination="workflow-guide"
+				data-analytics-source-surface="hero"
 			/>
 		</section>
 
@@ -87,8 +98,7 @@ function isExternalHref(href: string): boolean {
 
 	<aside class="proof-panel" aria-live="polite">
 		<h2>Technical proof</h2>
-		{
-			useFallback ? (
+		{useFallback ? (
 				<>
 					<p>{hero.fallbackProofText}</p>
 					<p>
@@ -173,7 +183,6 @@ function isExternalHref(href: string): boolean {
 						client:load
 					/>
 				</>
-			)
-		}
+			)}
 	</aside>
 </SectionBlock>

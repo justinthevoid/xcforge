@@ -13,6 +13,39 @@ const supportingSecondaryNavIds = new Set<NavItemId>([
 	'changelog',
 	'github',
 ]);
+
+type NavAnalyticsConfig = {
+	eventName:
+		| 'homepage.install.cta.clicked'
+		| 'homepage.docs.clicked'
+		| 'homepage.workflow-guide.clicked'
+		| 'homepage.github.outbound.clicked';
+	intentSignal: 'install' | 'depth-navigation';
+	destination: 'install' | 'docs' | 'workflow-guide' | 'github';
+};
+
+const navAnalyticsById: Partial<Record<NavItemId, NavAnalyticsConfig>> = {
+	install: {
+		eventName: 'homepage.install.cta.clicked',
+		intentSignal: 'install',
+		destination: 'install',
+	},
+	docs: {
+		eventName: 'homepage.docs.clicked',
+		intentSignal: 'depth-navigation',
+		destination: 'docs',
+	},
+	'workflow-guide': {
+		eventName: 'homepage.workflow-guide.clicked',
+		intentSignal: 'depth-navigation',
+		destination: 'workflow-guide',
+	},
+	github: {
+		eventName: 'homepage.github.outbound.clicked',
+		intentSignal: 'depth-navigation',
+		destination: 'github',
+	},
+};
 ---
 
 <header class="site-header">
@@ -26,6 +59,7 @@ const supportingSecondaryNavIds = new Set<NavItemId>([
 			{navItems.map((item) => {
           const isInstall = item.id === "install";
           const isSupportingSecondary = supportingSecondaryNavIds.has(item.id);
+          const analyticsConfig = navAnalyticsById[item.id];
 
           return (
             <li>
@@ -37,6 +71,12 @@ const supportingSecondaryNavIds = new Set<NavItemId>([
                 data-action-tier={isInstall ? "primary" : "secondary"}
                 data-supporting-path={
                   isSupportingSecondary ? "true" : undefined
+                }
+                data-analytics-event-name={analyticsConfig?.eventName}
+                data-analytics-intent-signal={analyticsConfig?.intentSignal}
+                data-analytics-destination={analyticsConfig?.destination}
+                data-analytics-source-surface={
+                  analyticsConfig ? "global-nav" : undefined
                 }
                 aria-describedby={
                   isSupportingSecondary ? "global-nav-support-note" : undefined

@@ -1,3 +1,5 @@
+import { enqueueInstallIntentCapturedEvent } from './analytics';
+
 export type InstallIntentSource = 'hero' | 'final-cta';
 export type InstallTarget = 'homebrew';
 export type DeviceClass = 'mobile' | 'tablet' | 'desktop';
@@ -13,15 +15,7 @@ export type InstallIntentPayload = {
 	capturedAt: string;
 };
 
-export type InstallIntentRelayEvent = {
-	schemaVersion: 1;
-	eventName: 'install.intent.captured';
-	queuedAt: string;
-	payload: InstallIntentPayload;
-};
-
 const INSTALL_INTENT_STORAGE_KEY = 'xcforge.installIntent.v1';
-const INSTALL_INTENT_RELAY_QUEUE_KEY = 'xcforge.installIntentRelayQueue.v1';
 const DEFAULT_INSTALL_COMMAND = 'brew install xcforge';
 const MOBILE_MAX_WIDTH = 767;
 const TABLET_MAX_WIDTH = 1023;
@@ -123,21 +117,6 @@ function isInstallIntentPayload(value: unknown): value is InstallIntentPayload {
 	);
 }
 
-function isInstallIntentRelayEvent(value: unknown): value is InstallIntentRelayEvent {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-
-	const candidate = value as Partial<InstallIntentRelayEvent>;
-	return (
-		candidate.schemaVersion === 1 &&
-		candidate.eventName === 'install.intent.captured' &&
-		typeof candidate.queuedAt === 'string' &&
-		candidate.queuedAt.length > 0 &&
-		isInstallIntentPayload(candidate.payload)
-	);
-}
-
 export function restoreInstallIntent(): InstallIntentPayload | null {
 	if (!isBrowserRuntime()) {
 		return null;
@@ -167,24 +146,7 @@ export function persistInstallIntent(payload: InstallIntentPayload): boolean {
 }
 
 export function enqueueInstallIntentRelay(payload: InstallIntentPayload): boolean {
-	if (!isBrowserRuntime()) {
-		return false;
-	}
-
-	const relayEvent: InstallIntentRelayEvent = {
-		schemaVersion: 1,
-		eventName: 'install.intent.captured',
-		queuedAt: new Date().toISOString(),
-		payload,
-	};
-
-	const current = safeReadStorage(INSTALL_INTENT_RELAY_QUEUE_KEY);
-	const safeQueue = Array.isArray(current)
-		? current.filter((event) => isInstallIntentRelayEvent(event))
-		: [];
-	safeQueue.push(relayEvent);
-	const recentQueue = safeQueue.slice(-20);
-	return safeWriteStorage(INSTALL_INTENT_RELAY_QUEUE_KEY, recentQueue);
+	return enqueueInstallIntentCapturedEvent(payload);
 }
 
 function buildInstallIntentPayload(trigger: HTMLAnchorElement): InstallIntentPayload {
@@ -373,8 +335,8 @@ function wireInstallTriggers(handoffRoot: HTMLElement): void {
 			event.preventDefault();
 			const payload = buildInstallIntentPayload(trigger);
 			const persisted = persistInstallIntent(payload);
-			const queued = enqueueInstallIntentRelay(payload);
-			const state = persisted && queued ? 'ready' : 'failure';
+			enqueueInstallIntentRelay(payload);
+			const state = persisted ? 'ready' : 'failure';
 			revealHandoff(handoffRoot, payload, state);
 			handoffRoot.scrollIntoView({
 				behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
