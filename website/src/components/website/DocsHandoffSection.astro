@@ -1,5 +1,7 @@
 ---
 import type { DocsHandoffLink, DocsHandoffSectionCopy } from '../../data/homepage';
+import ActionLink from '../primitives/ActionLink.astro';
+import SectionBlock from '../primitives/SectionBlock.astro';
 
 type Props = {
 	section: DocsHandoffSectionCopy;
@@ -12,10 +14,10 @@ function isInternalDocsLink(link: DocsHandoffLink): boolean {
 }
 ---
 
-<section
+<SectionBlock
 	id="docs-handoff"
-	class="narrative-section narrative-docs-handoff"
-	aria-labelledby="docs-handoff-title"
+	className="narrative-section narrative-docs-handoff"
+	labelledBy="docs-handoff-title"
 >
 	<div class="narrative-shell">
 		<h2 id="docs-handoff-title">{section.heading}</h2>
@@ -26,50 +28,43 @@ function isInternalDocsLink(link: DocsHandoffLink): boolean {
 		<p class="handoff-status" data-docs-handoff-status role="status" aria-atomic="true" hidden></p>
 		<div class="handoff-grid" aria-label="Docs and workflow handoff links">
 			{section.handoffLinks.map((link) => {
-          const internalDocsLink = isInternalDocsLink(link);
-          const fallbackHref =
-            internalDocsLink && link.fallbackHref?.trim().length
-              ? link.fallbackHref
-              : "/docs";
-          const unavailableMessage =
-            internalDocsLink && link.unavailableMessage?.trim().length
-              ? link.unavailableMessage
-              : `${link.label} is temporarily unavailable. You were redirected to Docs overview.`;
-          const destinationId =
-            internalDocsLink &&
-            (link.destinationId === "docs" ||
-              link.destinationId === "workflow-guide")
-              ? link.destinationId
-              : "docs";
+        const internalDocsLink = isInternalDocsLink(link);
+        const fallbackHref =
+          internalDocsLink && link.fallbackHref?.trim().length
+            ? link.fallbackHref
+            : '/docs';
+        const unavailableMessage =
+          internalDocsLink && link.unavailableMessage?.trim().length
+            ? link.unavailableMessage
+            : `${link.label} is temporarily unavailable. You were redirected to Docs overview.`;
+        const destinationId =
+          internalDocsLink &&
+          (link.destinationId === 'docs' || link.destinationId === 'workflow-guide')
+            ? link.destinationId
+            : 'docs';
 
-          return (
-            <article class="handoff-card">
-              <h3>{link.label}</h3>
-              <p>{link.summary}</p>
-              <a
-                class="handoff-link cta-supporting-path"
-                href={link.href}
-                target={link.external ? "_blank" : undefined}
-                rel={link.external ? "noreferrer noopener" : undefined}
-                data-action-tier="secondary"
-                data-supporting-path="true"
-                aria-describedby="docs-handoff-support-note"
-                data-docs-handoff-link={internalDocsLink ? "true" : undefined}
-                data-handoff-fallback-href={
-                  internalDocsLink ? fallbackHref : undefined
-                }
-                data-handoff-unavailable-message={
-                  internalDocsLink ? unavailableMessage : undefined
-                }
-                data-handoff-destination-id={
-                  internalDocsLink ? destinationId : undefined
-                }
-              >
-                {link.label}
-              </a>
-            </article>
-          );
-        })}
+        return (
+          <article class="handoff-card">
+            <h3>{link.label}</h3>
+            <p>{link.summary}</p>
+            <ActionLink
+              tier="secondary"
+              supportingPath={true}
+              className="handoff-link"
+              href={link.href}
+              label={link.label}
+              external={link.external}
+              describedBy="docs-handoff-support-note"
+              data-docs-handoff-link={internalDocsLink ? 'true' : undefined}
+              data-handoff-fallback-href={internalDocsLink ? fallbackHref : undefined}
+              data-handoff-unavailable-message={
+                internalDocsLink ? unavailableMessage : undefined
+              }
+              data-handoff-destination-id={internalDocsLink ? destinationId : undefined}
+            />
+          </article>
+        );
+      })}
 		</div>
 	</div>
-</section>
+</SectionBlock>

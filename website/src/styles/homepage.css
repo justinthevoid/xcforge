@@ -1,22 +1,3 @@
-:root {
-	--xcf-color-bg: #0b0f14;
-	--xcf-color-panel: #111a24;
-	--xcf-color-border: #2a3544;
-	--xcf-color-text: #f8f8f8;
-	--xcf-color-text-muted: #b8c3d1;
-	--xcf-color-info: #1090f0;
-	--xcf-color-conversion: #f87020;
-	--xcf-focus-ring: #f2b35d;
-	--xcf-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
-	--xcf-font-display: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
-	--xcf-font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
-	--xcf-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
-}
-
-* {
-	box-sizing: border-box;
-}
-
 body {
 	margin: 0;
 	min-height: 100vh;
@@ -30,18 +11,6 @@ body {
 
 a {
 	color: inherit;
-}
-
-.sr-only {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	padding: 0;
-	margin: -1px;
-	overflow: hidden;
-	clip: rect(0, 0, 0, 0);
-	white-space: nowrap;
-	border: 0;
 }
 
 .skip-link {
@@ -208,72 +177,6 @@ main {
 .hero-actions [data-action-tier="secondary"],
 .final-cta-actions [data-action-tier="secondary"] {
 	order: 1;
-}
-
-.cta-primary {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-height: 48px;
-	border-radius: 12px;
-	padding: 0 18px;
-	font-size: 1rem;
-	font-weight: 700;
-	text-decoration: none;
-	color: #111;
-	background: var(--xcf-color-conversion);
-	box-shadow: 0 12px 24px rgba(248, 112, 32, 0.35);
-	transition:
-		transform 160ms ease,
-		box-shadow 160ms ease;
-}
-
-.cta-primary:hover {
-	transform: translateY(-1px);
-	box-shadow: 0 16px 32px rgba(248, 112, 32, 0.38);
-}
-
-.cta-primary:focus-visible,
-.cta-secondary:focus-visible,
-.install-command code:focus-visible,
-.nav-link:focus-visible,
-.proof-toggle-button:focus-visible,
-.proof-marker-summary:focus-visible,
-.copy-command:focus-visible,
-.install-handoff-link:focus-visible,
-.handoff-link:focus-visible,
-.journey-artifact-link:focus-visible,
-.install-handoff-command-row code:focus-visible {
-	outline: 2px solid var(--xcf-focus-ring);
-	outline-offset: 2px;
-}
-
-.cta-secondary {
-	display: inline-flex;
-	align-items: center;
-	min-height: 42px;
-	border-radius: 10px;
-	padding: 0 12px;
-	font-size: 0.9rem;
-	font-weight: 540;
-	text-decoration: none;
-	color: var(--xcf-color-text-muted);
-	border: 1px solid rgba(42, 53, 68, 0.95);
-	background: rgba(255, 255, 255, 0.02);
-}
-
-.cta-secondary[data-action-tier="secondary"] {
-	opacity: 0.96;
-}
-
-.cta-supporting-path[data-supporting-path="true"] {
-	letter-spacing: 0.005em;
-}
-
-.cta-secondary:hover {
-	color: var(--xcf-color-text);
-	border-color: rgba(16, 144, 240, 0.45);
-	opacity: 1;
 }
 
 .install-command {
@@ -1053,8 +956,10 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 		flex-direction: column;
 	}
 
-	.cta-primary,
-	.cta-secondary {
+	.hero-actions .cta-primary[data-action-tier="primary"],
+	.hero-actions .cta-secondary[data-action-tier="secondary"],
+	.final-cta-actions .cta-primary[data-action-tier="primary"],
+	.final-cta-actions .cta-secondary[data-action-tier="secondary"] {
 		width: 100%;
 		justify-content: center;
 	}
@@ -1103,14 +1008,17 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 
 @media (prefers-reduced-motion: reduce) {
 	.nav-link,
-	.cta-primary,
-	.cta-secondary,
+	.hero-actions .cta-primary[data-action-tier="primary"],
+	.hero-actions .cta-secondary[data-action-tier="secondary"],
+	.final-cta-actions .cta-primary[data-action-tier="primary"],
+	.final-cta-actions .cta-secondary[data-action-tier="secondary"],
 	.proof-toggle-button,
 	.proof-snapshot-card {
 		transition: none;
 	}
 
-	.cta-primary:hover {
+	body[data-primary-cta-region="hero"] #install-section .cta-primary:hover,
+	body[data-primary-cta-region="final"] #final-cta .cta-primary:hover {
 		transform: none;
 		box-shadow: 0 12px 24px rgba(248, 112, 32, 0.35);
 	}

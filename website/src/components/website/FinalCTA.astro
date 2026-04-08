@@ -1,5 +1,7 @@
 ---
 import type { FinalCtaCopy } from '../../data/homepage';
+import ActionLink from '../primitives/ActionLink.astro';
+import SectionBlock from '../primitives/SectionBlock.astro';
 
 type Props = {
 	finalCta: FinalCtaCopy;
@@ -8,7 +10,7 @@ type Props = {
 const { finalCta } = Astro.props;
 ---
 
-<section id="final-cta" class="final-cta" aria-labelledby="final-cta-title">
+<SectionBlock id="final-cta" className="final-cta" labelledBy="final-cta-title">
 	<div class="final-cta-shell">
 		<p class="final-cta-kicker">Install with confidence</p>
 		<h2 id="final-cta-title">{finalCta.heading}</h2>
@@ -22,28 +24,24 @@ const { finalCta } = Astro.props;
 			<p id="final-supporting-path-note" class="sr-only">
 				Workflow Guide is a supporting path for technical depth and does not replace install.
 			</p>
-			<a
-				class="cta-primary install-intent-trigger"
+			<ActionLink
+				tier="primary"
+				className="install-intent-trigger"
 				href={finalCta.installHref}
-				target={finalCta.installExternal ? "_blank" : undefined}
-				rel={finalCta.installExternal ? "noreferrer noopener" : undefined}
-				data-action-tier="primary"
-				data-install-intent-trigger="true"
-				data-install-intent-source="final-cta"
-				data-install-command={finalCta.installCommand}
-				data-install-target="homebrew"
-			>
-				{finalCta.installLabel}
-			</a>
-			<a
-				class="cta-secondary cta-supporting-path"
+				label={finalCta.installLabel}
+				external={finalCta.installExternal}
+				installIntentTrigger={true}
+				installIntentSource="final-cta"
+				installCommand={finalCta.installCommand}
+				installTarget="homebrew"
+			/>
+			<ActionLink
+				tier="secondary"
+				supportingPath={true}
 				href={finalCta.workflowHref}
-				data-action-tier="secondary"
-				data-supporting-path="true"
-				aria-describedby="final-supporting-path-note"
-			>
-				{finalCta.workflowLabel}
-			</a>
+				label={finalCta.workflowLabel}
+				describedBy="final-supporting-path-note"
+			/>
 		</section>
 
 		<section
@@ -81,4 +79,4 @@ const { finalCta } = Astro.props;
 			</a>
 		</section>
 	</div>
-</section>
+</SectionBlock>

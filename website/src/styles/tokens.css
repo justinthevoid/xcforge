@@ -1,0 +1,78 @@
+:root {
+	--xcf-color-bg: #0b0f14;
+	--xcf-color-panel: #111a24;
+	--xcf-color-panel-soft: #1b2735;
+	--xcf-color-border: #2a3544;
+	--xcf-color-text: #f8f8f8;
+	--xcf-color-text-muted: #b8c3d1;
+	--xcf-color-info: #1090f0;
+	--xcf-color-conversion: #f87020;
+	--xcf-color-success: #61d095;
+	--xcf-color-warning: #f2b35d;
+	--xcf-color-error: #ee6b73;
+	--xcf-color-link: #8ec7f8;
+	--xcf-color-focus: #f2b35d;
+	--xcf-color-kicker: #9fd0fa;
+	--xcf-color-inverse-text: #111111;
+	--xcf-focus-ring: var(--xcf-color-focus);
+
+	--xcf-rgb-bg: 11, 15, 20;
+	--xcf-rgb-panel: 17, 26, 36;
+	--xcf-rgb-border: 42, 53, 68;
+	--xcf-rgb-info: 16, 144, 240;
+	--xcf-rgb-conversion: 248, 112, 32;
+	--xcf-rgb-success: 97, 208, 149;
+	--xcf-rgb-warning: 242, 179, 93;
+
+	--xcf-font-display: "Space Grotesk", "IBM Plex Sans", "Segoe UI", sans-serif;
+	--xcf-font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+	--xcf-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+
+	--xcf-space-0: 0;
+	--xcf-space-1: 4px;
+	--xcf-space-2: 8px;
+	--xcf-space-3: 12px;
+	--xcf-space-4: 16px;
+	--xcf-space-5: 20px;
+	--xcf-space-6: 24px;
+	--xcf-space-7: 32px;
+	--xcf-space-8: 36px;
+	--xcf-space-9: 44px;
+	--xcf-space-10: 56px;
+	--xcf-space-action-primary-x: 18px;
+	--xcf-space-action-secondary-x: 12px;
+
+	--xcf-radius-sm: 8px;
+	--xcf-radius-md: 10px;
+	--xcf-radius-lg: 12px;
+	--xcf-radius-xl: 16px;
+	--xcf-radius-2xl: 18px;
+	--xcf-radius-pill: 999px;
+
+	--xcf-border-thin: 1px;
+	--xcf-border-focus: 2px;
+	--xcf-border-color-strong: rgba(var(--xcf-rgb-border), 0.95);
+	--xcf-border-color-info-soft: rgba(var(--xcf-rgb-info), 0.45);
+
+	--xcf-shadow-soft: 0 12px 24px rgba(var(--xcf-rgb-conversion), 0.35);
+	--xcf-shadow-soft-hover: 0 16px 32px rgba(var(--xcf-rgb-conversion), 0.38);
+	--xcf-shadow-medium: 0 24px 48px rgba(0, 0, 0, 0.28);
+	--xcf-shadow: var(--xcf-shadow-medium);
+
+	--xcf-size-action-primary-min-height: 48px;
+	--xcf-size-action-secondary-min-height: 42px;
+
+	--xcf-overlay-subtle: rgba(255, 255, 255, 0.02);
+	--xcf-opacity-secondary-action: 0.96;
+	--xcf-letter-spacing-supporting: 0.005em;
+	--xcf-outline-offset: 2px;
+
+	--xcf-motion-fast: 160ms;
+	--xcf-motion-standard: 220ms;
+	--xcf-ease-standard: ease;
+
+	--xcf-breakpoint-mobile: 767px;
+	--xcf-breakpoint-tablet: 1023px;
+
+	--xcf-layout-max-width: 1160px;
+}

@@ -1,0 +1,41 @@
+---
+type HeadingTag = 'h1' | 'h2' | 'h3';
+
+type Props = {
+	id?: string;
+	className?: string;
+	heading?: string;
+	headingId?: string;
+	headingTag?: HeadingTag;
+	headingClassName?: string;
+	purpose?: string;
+	purposeClassName?: string;
+	labelledBy?: string;
+} & Record<string, unknown>;
+
+const {
+	id,
+	className,
+	heading,
+	headingId,
+	headingTag = 'h2',
+	headingClassName,
+	purpose,
+	purposeClassName,
+	labelledBy,
+	...rest
+} = Astro.props as Props;
+
+const Heading = headingTag;
+const resolvedHeadingId = heading ? (headingId ?? (id ? `${id}-title` : undefined)) : headingId;
+const resolvedLabelledBy = labelledBy ?? resolvedHeadingId;
+const sectionClasses = ['section-block', className].filter(Boolean).join(' ');
+const headingClasses = ['section-heading', headingClassName].filter(Boolean).join(' ');
+const purposeClasses = ['section-purpose', purposeClassName].filter(Boolean).join(' ');
+---
+
+<section {...rest} id={id} class={sectionClasses} aria-labelledby={resolvedLabelledBy}>
+	{heading ? <Heading id={resolvedHeadingId} class={headingClasses}>{heading}</Heading> : <slot name="header" />}
+	{purpose ? <p class={purposeClasses}>{purpose}</p> : Astro.slots.has('purpose') ? <slot name="purpose" /> : null}
+	<slot />
+</section>

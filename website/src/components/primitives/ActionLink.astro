@@ -1,0 +1,61 @@
+---
+export type ActionTier = 'primary' | 'secondary';
+
+type Props = {
+	href: string;
+	label: string;
+	tier?: ActionTier;
+	supportingPath?: boolean;
+	external?: boolean;
+	className?: string;
+	describedBy?: string;
+	ariaLabel?: string;
+	installIntentTrigger?: boolean;
+	installIntentSource?: 'hero' | 'final-cta';
+	installCommand?: string;
+	installTarget?: 'homebrew';
+} & Record<string, unknown>;
+
+const {
+	href,
+	label,
+	tier = 'secondary',
+	supportingPath = false,
+	external = false,
+	className,
+	describedBy,
+	ariaLabel,
+	installIntentTrigger = false,
+	installIntentSource,
+	installCommand,
+	installTarget,
+	...rest
+} = Astro.props as Props;
+
+const classes = [
+	'action-link',
+	tier === 'primary' ? 'action-link-primary cta-primary' : 'action-link-secondary cta-secondary',
+	supportingPath ? 'action-link-supporting cta-supporting-path' : undefined,
+	className,
+]
+	.filter(Boolean)
+	.join(' ');
+---
+
+<a
+	{...rest}
+	class={classes}
+	href={href}
+	target={external ? '_blank' : undefined}
+	rel={external ? 'noreferrer noopener' : undefined}
+	aria-label={ariaLabel ?? label}
+	aria-describedby={describedBy}
+	data-action-tier={tier}
+	data-supporting-path={supportingPath ? 'true' : undefined}
+	data-install-intent-trigger={installIntentTrigger ? 'true' : undefined}
+	data-install-intent-source={installIntentSource}
+	data-install-command={installCommand}
+	data-install-target={installTarget}
+>
+	{label}
+</a>
