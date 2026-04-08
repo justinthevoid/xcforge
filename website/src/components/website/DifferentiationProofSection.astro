@@ -5,31 +5,40 @@ type Props = {
 	section: DifferentiationProofSectionCopy;
 };
 
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
 const { section } = Astro.props;
 ---
 
 <section
-  id="differentiation"
-  class="narrative-section narrative-differentiation"
-  aria-labelledby="differentiation-title"
+	id="differentiation"
+	class="narrative-section narrative-differentiation"
+	aria-labelledby="differentiation-title"
 >
-  <div class="narrative-shell">
-    <h2 id="differentiation-title">{section.heading}</h2>
-    <p class="narrative-purpose">{section.purpose}</p>
-    <p class="differentiation-evidence-note">
-      Claims are constrained to local-first evidence and conservative,
-      source-linked language.
-    </p>
-    <div class="differentiation-grid" aria-label="Differentiation proof points">
-      {
-        section.points.map((point) => (
+	<div class="narrative-shell">
+		<h2 id="differentiation-title">{section.heading}</h2>
+		<p class="narrative-purpose">{section.purpose}</p>
+		<p class="differentiation-evidence-note">
+			Claims are constrained to local-first evidence and conservative, source-linked language.
+		</p>
+		<p class="proof-outcome-summary">{section.proofOutcomeSummary}</p>
+		<ul class="proof-claims-list" aria-label="Approved trust claims used in proof section">
+			{section.proofClaims.map((claim) => (
+          <li class="proof-claim-row">
+            <span class="proof-claim-row-text">{claim.text}</span>
+            <span class="proof-claim-row-state">
+              {claim.policyClass === "allowed-now"
+                ? "Approved now"
+                : "Restricted"}
+            </span>
+          </li>
+        ))}
+		</ul>
+		<div class="differentiation-grid" aria-label="Differentiation proof points">
+			{section.points.map((point) => (
           <article class="differentiation-card">
             <h3>{point.title}</h3>
             <p>{point.detail}</p>
           </article>
-        ))
-      }
-    </div>
-  </div>
+        ))}
+		</div>
+	</div>
 </section>

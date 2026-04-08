@@ -5,16 +5,14 @@ type Props = {
 	navItems: NavItem[];
 };
 
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references navItems.
 const { navItems } = Astro.props;
 ---
 
 <header class="site-header">
-  <nav class="global-nav" aria-label="Primary">
-    <a class="brand" href="/" aria-label="xcforge homepage"> xcforge </a>
-    <ul class="nav-list">
-      {
-        navItems.map((item) => (
+	<nav class="global-nav" aria-label="Primary">
+		<a class="brand" href="/" aria-label="xcforge homepage"> xcforge </a>
+		<ul class="nav-list">
+			{navItems.map((item) => (
           <li>
             <a
               class={
@@ -27,8 +25,7 @@ const { navItems } = Astro.props;
               {item.label}
             </a>
           </li>
-        ))
-      }
-    </ul>
-  </nav>
+        ))}
+		</ul>
+	</nav>
 </header>

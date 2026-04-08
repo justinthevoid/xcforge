@@ -5,73 +5,64 @@ type Props = {
 	finalCta: FinalCtaCopy;
 };
 
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references finalCta.
 const { finalCta } = Astro.props;
 ---
 
 <section id="final-cta" class="final-cta" aria-labelledby="final-cta-title">
-  <div class="final-cta-shell">
-    <p class="final-cta-kicker">Install with confidence</p>
-    <h2 id="final-cta-title">{finalCta.heading}</h2>
-    <p class="final-cta-summary">{finalCta.summary}</p>
+	<div class="final-cta-shell">
+		<p class="final-cta-kicker">Install with confidence</p>
+		<h2 id="final-cta-title">{finalCta.heading}</h2>
+		<p class="final-cta-summary">{finalCta.summary}</p>
 
-    <section
-      class="final-cta-actions"
-      role="group"
-      aria-label="Final install actions"
-    >
-      <a
-        class="cta-primary install-intent-trigger"
-        href={finalCta.installHref}
-        target={finalCta.installExternal ? "_blank" : undefined}
-        rel={finalCta.installExternal ? "noreferrer noopener" : undefined}
-        data-install-intent-trigger="true"
-        data-install-intent-source="final-cta"
-        data-install-command={finalCta.installCommand}
-        data-install-target="homebrew"
-      >
-        {finalCta.installLabel}
-      </a>
-      <a class="cta-secondary" href={finalCta.workflowHref}
-        >{finalCta.workflowLabel}</a
-      >
-    </section>
+		<section class="final-cta-actions" role="group" aria-label="Final install actions">
+			<a
+				class="cta-primary install-intent-trigger"
+				href={finalCta.installHref}
+				target={finalCta.installExternal ? "_blank" : undefined}
+				rel={finalCta.installExternal ? "noreferrer noopener" : undefined}
+				data-install-intent-trigger="true"
+				data-install-intent-source="final-cta"
+				data-install-command={finalCta.installCommand}
+				data-install-target="homebrew"
+			>
+				{finalCta.installLabel}
+			</a>
+			<a class="cta-secondary" href={finalCta.workflowHref}>{finalCta.workflowLabel}</a>
+		</section>
 
-    <section
-      class="install-handoff"
-      data-install-handoff
-      data-ready-message={finalCta.handoffReadyMessage}
-      data-failure-message={finalCta.handoffFailureMessage}
-      data-restored-message={finalCta.handoffRestoredMessage}
-      hidden
-      aria-live="polite"
-    >
-      <h3>{finalCta.handoffTitle}</h3>
-      <p
-        class="install-handoff-message"
-        data-install-handoff-message
-        role="status"
-        aria-atomic="true"
-      >
-        {finalCta.handoffReadyMessage}
-      </p>
-      <div class="install-handoff-command-row">
-        <code tabindex="0" data-install-handoff-command
-          >{finalCta.installCommand}</code
-        >
-        <button class="copy-command" type="button" data-copy-install-command>
-          {finalCta.handoffCopyButtonLabel}
-        </button>
-      </div>
-      <a
-        class="install-handoff-link"
-        data-install-handoff-guide-link
-        href={finalCta.installHref}
-        target={finalCta.installExternal ? "_blank" : undefined}
-        rel={finalCta.installExternal ? "noreferrer noopener" : undefined}
-      >
-        {finalCta.handoffGuideLabel}
-      </a>
-    </section>
-  </div>
+		<section
+			class="install-handoff"
+			data-install-handoff
+			data-ready-message={finalCta.handoffReadyMessage}
+			data-failure-message={finalCta.handoffFailureMessage}
+			data-restored-message={finalCta.handoffRestoredMessage}
+			hidden
+			aria-live="polite"
+		>
+			<h3>{finalCta.handoffTitle}</h3>
+			<p
+				class="install-handoff-message"
+				data-install-handoff-message
+				role="status"
+				aria-atomic="true"
+			>
+				{finalCta.handoffReadyMessage}
+			</p>
+			<div class="install-handoff-command-row">
+				<code tabindex="0" data-install-handoff-command>{finalCta.installCommand}</code>
+				<button class="copy-command" type="button" data-copy-install-command>
+					{finalCta.handoffCopyButtonLabel}
+				</button>
+			</div>
+			<a
+				class="install-handoff-link"
+				data-install-handoff-guide-link
+				href={finalCta.installHref}
+				target={finalCta.installExternal ? "_blank" : undefined}
+				rel={finalCta.installExternal ? "noreferrer noopener" : undefined}
+			>
+				{finalCta.handoffGuideLabel}
+			</a>
+		</section>
+	</div>
 </section>

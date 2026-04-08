@@ -1,19 +1,11 @@
 ---
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references DifferentiationProofSection. */
 import DifferentiationProofSection from '../components/website/DifferentiationProofSection.astro';
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references DocsHandoffSection. */
 import DocsHandoffSection from '../components/website/DocsHandoffSection.astro';
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references FinalCTA. */
 import FinalCTA from '../components/website/FinalCTA.astro';
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references GlobalNav. */
 import GlobalNav from '../components/website/GlobalNav.astro';
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references HeroProof. */
 import HeroProof from '../components/website/HeroProof.astro';
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references ProblemSection. */
 import ProblemSection from '../components/website/ProblemSection.astro';
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references SolutionSection. */
 import SolutionSection from '../components/website/SolutionSection.astro';
-/* biome-ignore lint/correctness/noUnusedImports: Astro template references WorkflowsJourneysSection. */
 import WorkflowsJourneysSection from '../components/website/WorkflowsJourneysSection.astro';
 import {
 	homepageContent,
@@ -24,43 +16,39 @@ import {
 import '../styles/homepage.css';
 
 const navigationState = resolveNavigationMetadata(homepageContent.navigation);
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references useProofFallback.
 const useProofFallback =
 	!navigationState.isMetadataAvailable || !isProofMetadataAvailable(homepageContent.hero);
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references narrativeSections.
 const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageContent);
 ---
 
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <title>xcforge | Install-first iOS agent execution</title>
-    <meta
-      name="description"
-      content="xcforge helps AI-assisted iOS developers move from generated code to verified local outcomes with one clear install path."
-    />
-  </head>
-  <body>
-    <a class="skip-link" href="#main-content">Skip to main content</a>
-    <GlobalNav navItems={navigationState.items} />
-    <main id="main-content">
-      <HeroProof hero={homepageContent.hero} useFallback={useProofFallback} />
-      <ProblemSection section={narrativeSections.problem} />
-      <SolutionSection section={narrativeSections.solution} />
-      <WorkflowsJourneysSection section={narrativeSections.workflows} />
-      <DifferentiationProofSection
-        section={narrativeSections.differentiation}
-      />
-      <DocsHandoffSection section={narrativeSections.docsHandoff} />
-      <FinalCTA finalCta={homepageContent.finalCta} />
-    </main>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width">
+		<title>xcforge | Install-first iOS agent execution</title>
+		<meta
+			name="description"
+			content="xcforge helps AI-assisted iOS developers move from generated code to verified local outcomes with one clear install path."
+		>
+	</head>
+	<body>
+		<a class="skip-link" href="#main-content">Skip to main content</a>
+		<GlobalNav navItems={navigationState.items} />
+		<main id="main-content">
+			<HeroProof hero={homepageContent.hero} useFallback={useProofFallback} />
+			<ProblemSection section={narrativeSections.problem} />
+			<SolutionSection section={narrativeSections.solution} />
+			<WorkflowsJourneysSection section={narrativeSections.workflows} />
+			<DifferentiationProofSection section={narrativeSections.differentiation} />
+			<DocsHandoffSection section={narrativeSections.docsHandoff} />
+			<FinalCTA finalCta={homepageContent.finalCta} />
+		</main>
 
-    <script>
-      import { initializeInstallIntentHandoff } from "../lib/install-intent";
+		<script>
+		import { initializeInstallIntentHandoff } from '../lib/install-intent';
 
-      initializeInstallIntentHandoff();
-    </script>
-  </body>
+		initializeInstallIntentHandoff();
+		</script>
+	</body>
 </html>

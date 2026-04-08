@@ -1,53 +1,52 @@
 ---
 import type { HeroCopy } from '../../data/homepage';
+import ProofToggle from './ProofToggle.svelte';
 
 type Props = {
 	hero: HeroCopy;
 	useFallback: boolean;
 };
 
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references hero and useFallback.
 const { hero, useFallback } = Astro.props;
 ---
 
 <section id="product" class="hero-proof" aria-labelledby="hero-title">
-  <div class="hero-copy">
-    <p class="hero-kicker">For AI-assisted iOS developers</p>
-    <h1 id="hero-title">{hero.problemLine}</h1>
-    <p class="hero-role">{hero.productRole}</p>
+	<div class="hero-copy">
+		<p class="hero-kicker">For AI-assisted iOS developers</p>
+		<h1 id="hero-title">{hero.problemLine}</h1>
+		<p class="hero-role">{hero.productRole}</p>
 
-    <section
-      id="install-section"
-      class="hero-actions"
-      role="group"
-      aria-label="Install and depth actions"
-    >
-      <a
-        class="cta-primary install-intent-trigger"
-        href={hero.installHref}
-        target={hero.installExternal ? "_blank" : undefined}
-        rel={hero.installExternal ? "noreferrer noopener" : undefined}
-        data-install-intent-trigger="true"
-        data-install-intent-source="hero"
-        data-install-command={hero.installCommand}
-        data-install-target="homebrew"
-      >
-        Install via Homebrew
-      </a>
-      <a class="cta-secondary" href="/docs">Docs</a>
-      <a class="cta-secondary" href="/docs/getting-started/">Workflow Guide</a>
-    </section>
+		<section
+			id="install-section"
+			class="hero-actions"
+			role="group"
+			aria-label="Install and depth actions"
+		>
+			<a
+				class="cta-primary install-intent-trigger"
+				href={hero.installHref}
+				target={hero.installExternal ? "_blank" : undefined}
+				rel={hero.installExternal ? "noreferrer noopener" : undefined}
+				data-install-intent-trigger="true"
+				data-install-intent-source="hero"
+				data-install-command={hero.installCommand}
+				data-install-target="homebrew"
+			>
+				Install via Homebrew
+			</a>
+			<a class="cta-secondary" href="/docs">Docs</a>
+			<a class="cta-secondary" href="/docs/getting-started/">Workflow Guide</a>
+		</section>
 
-    <p class="install-command">
-      <span>Run:</span>
-      <code>{hero.installCommand}</code>
-    </p>
-  </div>
+		<p class="install-command">
+			<span>Run:</span>
+			<code>{hero.installCommand}</code>
+		</p>
+	</div>
 
-  <aside class="proof-panel" aria-live="polite">
-    <h2>Technical proof</h2>
-    {
-      useFallback ? (
+	<aside class="proof-panel" aria-live="polite">
+		<h2>Technical proof</h2>
+		{useFallback ? (
         <>
           <p>{hero.fallbackProofText}</p>
           <p>
@@ -65,9 +64,23 @@ const { hero, useFallback } = Astro.props;
       ) : (
         <>
           <p class="proof-headline">{hero.proofHeadline}</p>
-          <p>{hero.proofSummary}</p>
+          <ul class="hero-proof-strip" aria-label="Approved trust claims">
+            {hero.proofClaims.map((claim) => (
+              <li class="proof-claim-chip">
+                <span>{claim.text}</span>
+              </li>
+            ))}
+          </ul>
+          <p class="proof-strip-note">
+            Capability scope only. This proof strip avoids benchmark or
+            superlative claims.
+          </p>
+          <ProofToggle
+            snapshots={hero.proofSnapshots}
+            defaultSnapshotId={hero.defaultProofSnapshotId}
+            client:load
+          />
         </>
-      )
-    }
-  </aside>
+      )}
+	</aside>
 </section>

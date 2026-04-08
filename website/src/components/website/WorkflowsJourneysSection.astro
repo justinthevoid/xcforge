@@ -4,21 +4,19 @@ import type { WorkflowsJourneysSectionCopy } from '../../data/homepage';
 type Props = {
 	section: WorkflowsJourneysSectionCopy;
 };
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
 const { section } = Astro.props;
 ---
 
 <section
-  id="workflows"
-  class="narrative-section narrative-workflows"
-  aria-labelledby="workflows-title"
+	id="workflows"
+	class="narrative-section narrative-workflows"
+	aria-labelledby="workflows-title"
 >
-  <div class="narrative-shell">
-    <h2 id="workflows-title">{section.heading}</h2>
-    <p class="narrative-purpose">{section.purpose}</p>
-    <ol class="journey-list" aria-label="Workflow journeys">
-      {
-        section.journeys.map((journey) => (
+	<div class="narrative-shell">
+		<h2 id="workflows-title">{section.heading}</h2>
+		<p class="narrative-purpose">{section.purpose}</p>
+		<ol class="journey-list" aria-label="Workflow journeys">
+			{section.journeys.map((journey) => (
           <li>
             <h3>{journey.title}</h3>
             <p>{journey.detail}</p>
@@ -52,8 +50,7 @@ const { section } = Astro.props;
               </p>
             )}
           </li>
-        ))
-      }
-    </ol>
-  </div>
+        ))}
+		</ol>
+	</div>
 </section>

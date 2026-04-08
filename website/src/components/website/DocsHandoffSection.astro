@@ -5,21 +5,19 @@ type Props = {
 	section: DocsHandoffSectionCopy;
 };
 
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
 const { section } = Astro.props;
 ---
 
 <section
-  id="docs-handoff"
-  class="narrative-section narrative-docs-handoff"
-  aria-labelledby="docs-handoff-title"
+	id="docs-handoff"
+	class="narrative-section narrative-docs-handoff"
+	aria-labelledby="docs-handoff-title"
 >
-  <div class="narrative-shell">
-    <h2 id="docs-handoff-title">{section.heading}</h2>
-    <p class="narrative-purpose">{section.purpose}</p>
-    <div class="handoff-grid" aria-label="Docs and workflow handoff links">
-      {
-        section.handoffLinks.map((link) => (
+	<div class="narrative-shell">
+		<h2 id="docs-handoff-title">{section.heading}</h2>
+		<p class="narrative-purpose">{section.purpose}</p>
+		<div class="handoff-grid" aria-label="Docs and workflow handoff links">
+			{section.handoffLinks.map((link) => (
           <article class="handoff-card">
             <h3>{link.label}</h3>
             <p>{link.summary}</p>
@@ -32,8 +30,7 @@ const { section } = Astro.props;
               {link.label}
             </a>
           </article>
-        ))
-      }
-    </div>
-  </div>
+        ))}
+		</div>
+	</div>
 </section>
