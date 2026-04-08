@@ -679,6 +679,38 @@ function validateHomepageRoutes(marketingRoutes, docsRoutes) {
 	) {
 		fail('docs-handoff links must include at least one docs depth route under /docs/.');
 	}
+
+	for (const [index, link] of docsHandoffSection.handoffLinks.entries()) {
+		const linkClassification = classifyHref(link.href);
+		if (linkClassification.kind !== 'route' || !isDocsRoute(linkClassification.routePath)) {
+			continue;
+		}
+
+		const sourceLabel = `docs-handoff.handoffLinks[${index}]`;
+		if (
+			typeof link.unavailableMessage !== 'string' ||
+			link.unavailableMessage.trim().length === 0
+		) {
+			fail(
+				`${sourceLabel}.unavailableMessage is required for internal docs handoff links so destination-unavailable fallbacks can be explicit.`,
+			);
+		}
+
+		if (link.destinationId !== 'docs' && link.destinationId !== 'workflow-guide') {
+			fail(
+				`${sourceLabel}.destinationId must be "docs" or "workflow-guide" for handoff orientation messaging.`,
+			);
+		}
+
+		if (typeof link.fallbackHref !== 'string' || link.fallbackHref.trim().length === 0) {
+			fail(
+				`${sourceLabel}.fallbackHref is required for internal docs handoff links and must target a valid docs fallback destination.`,
+			);
+			continue;
+		}
+
+		assertDocsRouteExists(`${sourceLabel}.fallbackHref`, link.fallbackHref, docsRoutes, false);
+	}
 }
 
 async function main() {

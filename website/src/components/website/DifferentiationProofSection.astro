@@ -38,50 +38,65 @@ function isExternalHref(href: string): boolean {
 		<p class="proof-outcome-summary">{section.proofOutcomeSummary}</p>
 		<ul class="proof-claims-list" aria-label="Approved trust claims used in proof section">
 			{resolvedProofClaims.map((claim) => (
-				<li class="proof-claim-row">
-					<div class="proof-claim-row-header">
-						<span class="proof-claim-row-text">{claim.text}</span>
-						<span class="proof-claim-row-state" data-state={claim.provenance.state}>
-							{claim.provenance.stateLabel}
-						</span>
-					</div>
-					<p class="proof-claim-row-detail">{claim.provenance.stateDetail}</p>
-					{claim.provenance.sources.length > 0 ? (
-						<ul class="proof-claim-row-links" aria-label={`${claim.text} source links`}>
-							{claim.provenance.sources.map((source) => (
-								<li>
-									<a
-										href={source.href}
-										target={isExternalHref(source.href) ? '_blank' : undefined}
-										rel={isExternalHref(source.href) ? 'noreferrer noopener' : undefined}
-									>
-										{source.label}
-									</a>
-									<span class="proof-claim-row-link-meta">
-										{source.capturedOnLabel} · {source.freshnessLabel}
-									</span>
-								</li>
-							))}
-						</ul>
-					) : null}
-					{claim.provenance.state === 'warning' ? (
-						<p class="proof-claim-row-warning">
-							{claim.provenance.sources.length > 0
-								? 'Some provenance entries are unavailable.'
-								: 'Provenance details are unavailable.'}
-							<a href={claim.provenance.fallbackHref}> Review provenance guidance.</a>
-						</p>
-					) : null}
-				</li>
-			))}
+					<li class="proof-claim-row">
+						<div class="proof-claim-row-header">
+							<span class="proof-claim-row-text">{claim.text}</span>
+							<span
+								class="proof-claim-row-state"
+								data-state={claim.provenance.state}
+							>
+								{claim.provenance.stateLabel}
+							</span>
+						</div>
+						<p class="proof-claim-row-detail">{claim.provenance.stateDetail}</p>
+						{claim.provenance.sources.length > 0 ? (
+							<ul
+								class="proof-claim-row-links"
+								aria-label={`${claim.text} source links`}
+							>
+								{claim.provenance.sources.map((source) => (
+									<li>
+										<a
+											href={source.href}
+											target={
+												isExternalHref(source.href) ? "_blank" : undefined
+											}
+											rel={
+												isExternalHref(source.href)
+													? "noreferrer noopener"
+													: undefined
+											}
+										>
+											{source.label}
+										</a>
+										<span class="proof-claim-row-link-meta">
+											{source.capturedOnLabel} · {source.freshnessLabel}
+										</span>
+									</li>
+								))}
+							</ul>
+						) : null}
+						{claim.provenance.state === "warning" ? (
+							<p class="proof-claim-row-warning">
+								{claim.provenance.sources.length > 0
+									? "Some provenance entries are unavailable."
+									: "Provenance details are unavailable."}
+								<a href={claim.provenance.fallbackHref}>
+									{" "}
+									Review provenance guidance.
+								</a>
+							</p>
+						) : null}
+					</li>
+				))}
 		</ul>
 		<div class="differentiation-grid" aria-label="Differentiation proof points">
 			{section.points.map((point) => (
-				<article class="differentiation-card">
-					<h3>{point.title}</h3>
-					<p>{point.detail}</p>
-				</article>
-			))}
+					<article class="differentiation-card">
+						<h3>{point.title}</h3>
+						<p>{point.detail}</p>
+					</article>
+				))}
 		</div>
 	</div>
 </section>

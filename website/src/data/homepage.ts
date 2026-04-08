@@ -153,6 +153,9 @@ export type DocsHandoffLink = {
 	href: string;
 	summary: string;
 	external?: boolean;
+	fallbackHref?: string;
+	unavailableMessage?: string;
+	destinationId?: 'docs' | 'workflow-guide';
 };
 
 export type NarrativeClaim = {
@@ -594,13 +597,21 @@ export const homepageContent: HomepageContent = {
 			handoffLinks: [
 				{
 					label: 'Read the Docs',
-					href: '/docs',
+					href: '/docs?handoff=deep-dive&destination=docs',
 					summary: 'Inspect command groups, capabilities, and reference material.',
+					fallbackHref: '/docs',
+					unavailableMessage:
+						'Docs overview is temporarily unavailable. You were redirected to the docs index.',
+					destinationId: 'docs',
 				},
 				{
 					label: 'Open Workflow Guide',
-					href: '/docs/getting-started/',
+					href: '/docs/getting-started/?handoff=deep-dive&destination=workflow-guide',
 					summary: 'Follow install-first paths from failing run to verified outcome.',
+					fallbackHref: '/docs',
+					unavailableMessage:
+						'Workflow Guide is temporarily unavailable. You were redirected to the docs index.',
+					destinationId: 'workflow-guide',
 				},
 				{
 					label: 'Review Changelog',
@@ -1485,13 +1496,53 @@ function validateNarrativeSectionPayload(
 			}
 
 			section.handoffLinks.forEach((link, index) => {
-				if (
-					!hasNonEmptyText(link.label) ||
-					!hasNonEmptyText(link.href) ||
-					!hasNonEmptyText(link.summary)
-				) {
+				const hasCoreFields =
+					hasNonEmptyText(link.label) &&
+					hasNonEmptyText(link.href) &&
+					hasNonEmptyText(link.summary);
+				if (!hasCoreFields) {
 					messages.push(
 						`Section "docs-handoff" has an invalid handoff link at index ${index}. Label, href, and summary must be non-empty.`,
+					);
+					return;
+				}
+
+				if (!isClaimSupportHrefValid(link.href)) {
+					messages.push(
+						`Section "docs-handoff" link "${link.label}" has invalid href "${link.href}". Use an absolute internal route or valid http(s) URL.`,
+					);
+					return;
+				}
+
+				if (link.external) {
+					return;
+				}
+
+				if (!link.href.startsWith('/docs')) {
+					messages.push(
+						`Section "docs-handoff" link "${link.label}" must target docs-owned routes under /docs for one-click depth handoff.`,
+					);
+				}
+
+				if (!hasNonEmptyText(link.unavailableMessage)) {
+					messages.push(
+						`Section "docs-handoff" link "${link.label}" is missing unavailableMessage. Provide explicit destination-unavailable copy for fallback redirects.`,
+					);
+				}
+
+				if (
+					!hasNonEmptyText(link.fallbackHref) ||
+					!isClaimSupportHrefValid(link.fallbackHref) ||
+					!link.fallbackHref.startsWith('/docs')
+				) {
+					messages.push(
+						`Section "docs-handoff" link "${link.label}" must define a valid docs fallbackHref under /docs.`,
+					);
+				}
+
+				if (link.destinationId !== 'docs' && link.destinationId !== 'workflow-guide') {
+					messages.push(
+						`Section "docs-handoff" link "${link.label}" must define destinationId as "docs" or "workflow-guide" for orientation context.`,
 					);
 				}
 			});

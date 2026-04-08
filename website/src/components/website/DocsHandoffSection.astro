@@ -1,11 +1,15 @@
 ---
-import type { DocsHandoffSectionCopy } from '../../data/homepage';
+import type { DocsHandoffLink, DocsHandoffSectionCopy } from '../../data/homepage';
 
 type Props = {
 	section: DocsHandoffSectionCopy;
 };
 
 const { section } = Astro.props;
+
+function isInternalDocsLink(link: DocsHandoffLink): boolean {
+	return !link.external && link.href.trim().startsWith('/docs');
+}
 ---
 
 <section
@@ -16,21 +20,50 @@ const { section } = Astro.props;
 	<div class="narrative-shell">
 		<h2 id="docs-handoff-title">{section.heading}</h2>
 		<p class="narrative-purpose">{section.purpose}</p>
+		<p class="handoff-status" data-docs-handoff-status role="status" aria-atomic="true" hidden></p>
 		<div class="handoff-grid" aria-label="Docs and workflow handoff links">
-			{section.handoffLinks.map((link) => (
-          <article class="handoff-card">
-            <h3>{link.label}</h3>
-            <p>{link.summary}</p>
-            <a
-              class="handoff-link"
-              href={link.href}
-              target={link.external ? "_blank" : undefined}
-              rel={link.external ? "noreferrer noopener" : undefined}
-            >
-              {link.label}
-            </a>
-          </article>
-        ))}
+			{section.handoffLinks.map((link) => {
+          const internalDocsLink = isInternalDocsLink(link);
+          const fallbackHref =
+            internalDocsLink && link.fallbackHref?.trim().length
+              ? link.fallbackHref
+              : "/docs";
+          const unavailableMessage =
+            internalDocsLink && link.unavailableMessage?.trim().length
+              ? link.unavailableMessage
+              : `${link.label} is temporarily unavailable. You were redirected to Docs overview.`;
+          const destinationId =
+            internalDocsLink &&
+            (link.destinationId === "docs" ||
+              link.destinationId === "workflow-guide")
+              ? link.destinationId
+              : "docs";
+
+          return (
+            <article class="handoff-card">
+              <h3>{link.label}</h3>
+              <p>{link.summary}</p>
+              <a
+                class="handoff-link"
+                href={link.href}
+                target={link.external ? "_blank" : undefined}
+                rel={link.external ? "noreferrer noopener" : undefined}
+                data-docs-handoff-link={internalDocsLink ? "true" : undefined}
+                data-handoff-fallback-href={
+                  internalDocsLink ? fallbackHref : undefined
+                }
+                data-handoff-unavailable-message={
+                  internalDocsLink ? unavailableMessage : undefined
+                }
+                data-handoff-destination-id={
+                  internalDocsLink ? destinationId : undefined
+                }
+              >
+                {link.label}
+              </a>
+            </article>
+          );
+        })}
 		</div>
 	</div>
 </section>

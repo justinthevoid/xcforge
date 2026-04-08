@@ -1,0 +1,84 @@
+---
+const returnToInstallHref = '/#install-section';
+---
+
+<section
+	class="handoff-context-notice"
+	data-handoff-context-notice
+	hidden
+	aria-live="polite"
+	aria-atomic="true"
+>
+	<p class="handoff-context-message" data-handoff-context-message></p>
+	<p class="handoff-context-actions">
+		<a href={returnToInstallHref}>Return to Install</a>
+		<span aria-hidden="true">|</span>
+		<a href="/">Back to Homepage</a>
+	</p>
+</section>
+
+<script is:inline>
+(() => {
+	const root = document.querySelector('[data-handoff-context-notice]');
+	if (!(root instanceof HTMLElement)) {
+		return;
+	}
+
+	const messageNode = root.querySelector('[data-handoff-context-message]');
+	if (!(messageNode instanceof HTMLElement)) {
+		return;
+	}
+
+	const params = new URLSearchParams(window.location.search);
+	const handoffState = params.get('handoff');
+	if (!handoffState) {
+		return;
+	}
+
+	const destination = params.get('destination');
+	const unavailableMessage = params.get('unavailableMessage');
+	const destinationLabel =
+		destination === 'workflow-guide'
+			? 'Workflow Guide'
+			: destination === 'docs'
+				? 'Docs overview'
+				: 'Requested destination';
+
+	let message = '';
+	if (handoffState === 'fallback') {
+		message =
+			unavailableMessage?.trim() ||
+			`${destinationLabel} is temporarily unavailable. You were redirected to Docs overview.`;
+	} else {
+		message = `${destinationLabel} opened from homepage handoff. Keep install momentum with the return link below.`;
+	}
+
+	root.hidden = false;
+	messageNode.textContent = message;
+})();
+</script>
+
+<style is:inline>
+.handoff-context-notice {
+	margin: 0 0 1.25rem;
+	border: 1px solid rgba(248, 112, 32, 0.4);
+	border-radius: 0.75rem;
+	padding: 0.85rem 1rem;
+	background: rgba(248, 112, 32, 0.08);
+}
+
+.handoff-context-message {
+	margin: 0;
+	font-size: 0.95rem;
+	line-height: 1.45;
+}
+
+.handoff-context-actions {
+	margin: 0.55rem 0 0;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+	font-size: 0.9rem;
+}
+</style>

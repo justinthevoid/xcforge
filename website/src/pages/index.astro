@@ -46,8 +46,10 @@ const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageCont
 		</main>
 
 		<script>
+		import { initializeDocsHandoff } from '../lib/docs-handoff';
 		import { initializeInstallIntentHandoff } from '../lib/install-intent';
 
+		initializeDocsHandoff();
 		initializeInstallIntentHandoff();
 		</script>
 	</body>
