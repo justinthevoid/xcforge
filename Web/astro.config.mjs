@@ -1,14 +1,31 @@
 // @ts-check
 import cloudflare from '@astrojs/cloudflare';
+import sitemap from '@astrojs/sitemap';
 import starlight from '@astrojs/starlight';
 import svelte from '@astrojs/svelte';
 import { defineConfig } from 'astro/config';
 
 // https://astro.build/config
+const devCacheDir =
+	process.env.NODE_ENV === 'development' ? `node_modules/.vite-${process.pid}` : undefined;
+
 export default defineConfig({
 	output: 'server',
 	adapter: cloudflare(),
+	site: 'https://xcforge.tech',
+	vite: {
+		cacheDir: devCacheDir,
+		optimizeDeps: {
+			exclude: ['astro/content/runtime', 'astro/zod'],
+		},
+		ssr: {
+			optimizeDeps: {
+				exclude: ['astro/content/runtime', 'astro/zod'],
+			},
+		},
+	},
 	integrations: [
+		sitemap(),
 		starlight({
 			title: 'xcforge Docs',
 			description: 'Technical documentation and workflow guidance for xcforge.',

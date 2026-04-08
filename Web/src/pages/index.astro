@@ -13,6 +13,7 @@ import {
 	resolveHomepageNarrativeSectionsForRender,
 	resolveNavigationMetadata,
 } from '../data/homepage';
+import { createHomepageStructuredData, homepageSeo } from '../data/seo';
 import '../styles/tokens.css';
 import '../styles/primitives.css';
 import '../styles/homepage.css';
@@ -21,6 +22,11 @@ const navigationState = resolveNavigationMetadata(homepageContent.navigation);
 const useProofFallback =
 	!navigationState.isMetadataAvailable || !isProofMetadataAvailable(homepageContent.hero);
 const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageContent);
+const siteOrigin = Astro.site?.toString();
+if (!siteOrigin) throw new Error('Missing site config.');
+const canonicalUrl = new URL(homepageSeo.canonicalPath, siteOrigin).toString();
+const socialImageUrl = new URL(homepageSeo.socialImagePath, siteOrigin).toString();
+const homepageStructuredData = createHomepageStructuredData(siteOrigin);
 ---
 
 <!doctype html>
@@ -28,11 +34,27 @@ const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageCont
 	<head>
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width">
-		<title>xcforge | Install-first iOS agent execution</title>
+		<title>{homepageSeo.title}</title>
 		<meta
 			name="description"
-			content="xcforge helps AI-assisted iOS developers move from generated code to verified local outcomes with one clear install path."
+			content={homepageSeo.description}
 		>
+		<link rel="canonical" href={canonicalUrl}>
+		<meta
+			name="robots"
+			content="index,follow"
+		>
+		<meta property="og:type" content="website">
+		<meta property="og:site_name" content="xcforge">
+		<meta property="og:url" content={canonicalUrl}>
+		<meta property="og:title" content={homepageSeo.title}>
+		<meta property="og:description" content={homepageSeo.description}>
+		<meta property="og:image" content={socialImageUrl}>
+		<meta name="twitter:card" content="summary_large_image">
+		<meta name="twitter:title" content={homepageSeo.title}>
+		<meta name="twitter:description" content={homepageSeo.description}>
+		<meta name="twitter:image" content={socialImageUrl}>
+		<script type="application/ld+json" set:html={JSON.stringify(homepageStructuredData)}></script>
 	</head>
 	<body>
 		<a class="skip-link" href="#main-content">Skip to main content</a>
