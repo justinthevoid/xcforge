@@ -1,5 +1,10 @@
 ---
-import type { HeroCopy } from '../../data/homepage';
+import {
+	type HeroCopy,
+	resolveApprovedTrustClaimForRender,
+	resolveProofSnapshotForRender,
+	resolveProvenanceFallbackHrefForRender,
+} from '../../data/homepage';
 import ProofToggle from './ProofToggle.svelte';
 
 type Props = {
@@ -8,6 +13,25 @@ type Props = {
 };
 
 const { hero, useFallback } = Astro.props;
+
+const safeFallbackDocsHref = resolveProvenanceFallbackHrefForRender(
+	hero.provenanceUnavailableDocsHref,
+);
+
+const resolvedProofClaims = useFallback
+	? []
+	: hero.proofClaims.map((claim) =>
+			resolveApprovedTrustClaimForRender(claim, safeFallbackDocsHref),
+		);
+const resolvedProofSnapshots = useFallback
+	? []
+	: hero.proofSnapshots.map((snapshot) =>
+			resolveProofSnapshotForRender(snapshot, safeFallbackDocsHref),
+		);
+
+function isExternalHref(href: string): boolean {
+	return /^https?:\/\//i.test(href);
+}
 ---
 
 <section id="product" class="hero-proof" aria-labelledby="hero-title">
@@ -47,40 +71,75 @@ const { hero, useFallback } = Astro.props;
 	<aside class="proof-panel" aria-live="polite">
 		<h2>Technical proof</h2>
 		{useFallback ? (
-        <>
-          <p>{hero.fallbackProofText}</p>
-          <p>
-            Use <a href="/docs">Docs</a> and
-            <a
-              href="https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md"
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              Changelog
-            </a>
-            for source-backed detail.
-          </p>
-        </>
-      ) : (
-        <>
-          <p class="proof-headline">{hero.proofHeadline}</p>
-          <ul class="hero-proof-strip" aria-label="Approved trust claims">
-            {hero.proofClaims.map((claim) => (
-              <li class="proof-claim-chip">
-                <span>{claim.text}</span>
-              </li>
-            ))}
-          </ul>
-          <p class="proof-strip-note">
-            Capability scope only. This proof strip avoids benchmark or
-            superlative claims.
-          </p>
-          <ProofToggle
-            snapshots={hero.proofSnapshots}
-            defaultSnapshotId={hero.defaultProofSnapshotId}
-            client:load
-          />
-        </>
-      )}
+			<>
+				<p>{hero.fallbackProofText}</p>
+				<p>
+					Use <a href="/docs">Docs</a>,
+					<a
+						href="https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md"
+						target="_blank"
+						rel="noreferrer noopener"
+					>
+						Changelog
+					</a>
+					, and
+					<a href={safeFallbackDocsHref}>provenance guidance</a>
+					for source-backed detail.
+				</p>
+			</>
+		) : (
+			<>
+				<p class="proof-headline">{hero.proofHeadline}</p>
+				<ul class="hero-proof-strip" aria-label="Approved trust claims">
+					{resolvedProofClaims.map((claim) => (
+						<li class="proof-claim-chip">
+							<details class="proof-marker">
+								<summary class="proof-marker-summary">
+									<span>{claim.text}</span>
+									<span class="proof-marker-state" data-state={claim.provenance.state}>
+										{claim.provenance.stateLabel}
+									</span>
+								</summary>
+								<p class="proof-marker-detail">{claim.provenance.stateDetail}</p>
+								{claim.provenance.sources.length > 0 ? (
+									<ul class="proof-marker-sources">
+										{claim.provenance.sources.map((source) => (
+											<li>
+												<a
+													href={source.href}
+													target={isExternalHref(source.href) ? '_blank' : undefined}
+													rel={isExternalHref(source.href) ? 'noreferrer noopener' : undefined}
+												>
+													{source.label}
+												</a>
+												<span class="proof-marker-source-meta">
+													{source.capturedOnLabel} · {source.freshnessLabel}
+												</span>
+											</li>
+										))}
+									</ul>
+								) : null}
+								{claim.provenance.state === 'warning' ? (
+									<p class="proof-marker-warning">
+										{claim.provenance.sources.length > 0
+											? 'Some provenance entries are unavailable.'
+											: 'Provenance details are unavailable.'}
+										<a href={claim.provenance.fallbackHref}> Read provenance guidance.</a>
+									</p>
+								) : null}
+							</details>
+						</li>
+					))}
+				</ul>
+				<p class="proof-strip-note">
+					Capability scope only. This proof strip avoids benchmark or superlative claims.
+				</p>
+				<ProofToggle
+					snapshots={resolvedProofSnapshots}
+					defaultSnapshotId={hero.defaultProofSnapshotId}
+					client:load
+				/>
+			</>
+		)}
 	</aside>
 </section>

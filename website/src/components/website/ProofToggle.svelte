@@ -1,9 +1,9 @@
 <script lang="ts">
 import { onMount } from 'svelte';
 
-import type { ProofSnapshot, ProofSnapshotId } from '../../data/homepage';
+import type { ProofSnapshotForRender, ProofSnapshotId } from '../../data/homepage';
 
-export let snapshots: ProofSnapshot[] = [];
+export let snapshots: ProofSnapshotForRender[] = [];
 export let defaultSnapshotId: ProofSnapshotId = 'xcforge-proof';
 
 let activeSnapshotId: ProofSnapshotId = defaultSnapshotId;
@@ -71,12 +71,16 @@ function _handleToggleKeydown(event: KeyboardEvent): void {
 	selectSnapshot(nextSnapshotId);
 }
 
-function _getButtonLabel(snapshot: ProofSnapshot): string {
+function _getButtonLabel(snapshot: ProofSnapshotForRender): string {
 	if (snapshot.id === activeSnapshotId) {
 		return `${snapshot.label} (selected)`;
 	}
 
 	return `Show ${snapshot.label}`;
+}
+
+function _isExternalHref(href: string): boolean {
+	return /^https?:\/\//i.test(href);
 }
 
 function _getLiveAnnouncement(): string {
@@ -150,12 +154,46 @@ onMount(() => {
 					id={`proof-snapshot-${snapshot.id}`}
 					class="proof-snapshot-card"
 					data-selected={snapshot.id === activeSnapshotId ? 'true' : 'false'}
+					data-state={snapshot.provenance.state}
 				>
 					<p class="proof-snapshot-state">
 						{snapshot.id === activeSnapshotId ? 'Current view' : 'Available view'}
 					</p>
 					<h3>{snapshot.label}</h3>
 					<p>{snapshot.summary}</p>
+					<p class="proof-snapshot-trust">
+						<span class="proof-marker-state" data-state={snapshot.provenance.state}>
+							{snapshot.provenance.stateLabel}
+						</span>
+						<span>{snapshot.provenance.stateDetail}</span>
+					</p>
+					{#if snapshot.provenance.sources.length > 0}
+						<ul class="proof-snapshot-sources">
+							{#each snapshot.provenance.sources as source}
+								<li>
+									<a
+										href={source.href}
+										target={_isExternalHref(source.href) ? '_blank' : undefined}
+										rel={_isExternalHref(source.href) ? 'noreferrer noopener' : undefined}
+									>
+										{source.label}
+									</a>
+									<span class="proof-snapshot-source-meta">
+										{source.capturedOnLabel}
+										· {source.freshnessLabel}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					{#if snapshot.provenance.state === 'warning'}
+						<p class="proof-snapshot-warning">
+							{snapshot.provenance.sources.length > 0
+								? 'Some provenance entries are unavailable.'
+								: 'Provenance details are unavailable.'}
+							<a href={snapshot.provenance.fallbackHref}> Review provenance guidance.</a>
+						</p>
+					{/if}
 				</article>
 			{/each}
 		</div>

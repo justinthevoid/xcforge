@@ -1,0 +1,40 @@
+---
+title: Proof Provenance and Freshness
+description: How to interpret trust-marker source links, stale evidence states, and provenance warnings on the xcforge homepage.
+slug: docs/proof-provenance
+---
+
+Homepage trust markers expose source and freshness metadata so claims can be inspected before you install.
+
+## Trust Marker States
+
+- Fresh evidence: all listed sources are within their freshness windows.
+- Stale evidence: one or more listed sources are older than their allowed freshness window.
+- Provenance warning: source metadata is missing, malformed, or partially unavailable.
+
+These states are intentionally explicit. Stale or warning states should not be interpreted as current proof.
+
+## What Metadata Is Shown
+
+For each proof artifact, the site can show:
+
+- Source label and destination link (docs, changelog, or proof reference)
+- Captured date
+- Freshness summary derived from max age policy
+
+## If You See a Warning State
+
+Use this sequence:
+
+1. Open the linked source references and confirm current behavior.
+2. Check [Getting Started](/docs/getting-started/) for current workflow validation steps.
+3. Review release context in [CHANGELOG.md](https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md).
+4. Treat warning-state proof as incomplete until source metadata is refreshed.
+
+## If You See a Stale State
+
+A stale state means the claim may still be accurate, but the source age is outside the configured freshness window.
+
+- Use linked references for current verification.
+- Prioritize the latest docs and changelog evidence.
+- Avoid treating stale markers as final proof without revalidation.

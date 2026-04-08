@@ -25,6 +25,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Overview', slug: 'docs' },
 						{ label: 'Getting Started', slug: 'docs/getting-started' },
+						{ label: 'Proof Provenance', slug: 'docs/proof-provenance' },
 					],
 				},
 			],

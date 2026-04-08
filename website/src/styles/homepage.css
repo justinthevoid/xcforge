@@ -212,6 +212,7 @@ main {
 .install-command code:focus-visible,
 .nav-link:focus-visible,
 .proof-toggle-button:focus-visible,
+.proof-marker-summary:focus-visible,
 .copy-command:focus-visible,
 .install-handoff-link:focus-visible,
 .handoff-link:focus-visible,
@@ -293,22 +294,120 @@ main {
 	margin: 14px 0 0;
 	padding: 0;
 	list-style: none;
-	display: flex;
-	flex-wrap: wrap;
+	display: grid;
 	gap: 8px;
 }
 
 .proof-claim-chip {
+	border: 1px solid rgba(42, 53, 68, 0.92);
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.proof-marker {
+	padding: 10px 12px;
+}
+
+.proof-marker-summary {
+	list-style: none;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	cursor: pointer;
+	font-size: 0.88rem;
+	font-weight: 620;
+	line-height: 1.4;
+	color: #d7ebff;
+}
+
+.proof-marker-summary::-webkit-details-marker {
+	display: none;
+}
+
+.proof-marker-detail {
+	margin: 10px 0 0;
+	font-size: 0.84rem;
+	line-height: 1.5;
+	color: var(--xcf-color-text-muted);
+}
+
+.proof-marker-state {
 	display: inline-flex;
 	align-items: center;
-	border: 1px solid rgba(16, 144, 240, 0.45);
+	justify-content: center;
+	min-height: 22px;
+	padding: 0 8px;
 	border-radius: 999px;
-	padding: 6px 10px;
-	font-size: 0.82rem;
-	font-weight: 620;
-	letter-spacing: 0.01em;
-	color: #d7ebff;
-	background: rgba(16, 144, 240, 0.14);
+	border: 1px solid rgba(16, 144, 240, 0.6);
+	background: rgba(16, 144, 240, 0.16);
+	font-size: 0.74rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #d9ebff;
+}
+
+.proof-marker-state[data-state="fresh"] {
+	border-color: rgba(56, 196, 112, 0.6);
+	background: rgba(56, 196, 112, 0.16);
+	color: #d8f7e4;
+}
+
+.proof-marker-state[data-state="stale"] {
+	border-color: rgba(242, 179, 93, 0.7);
+	background: rgba(242, 179, 93, 0.2);
+	color: #f7e0c0;
+}
+
+.proof-marker-state[data-state="warning"] {
+	border-color: rgba(248, 112, 32, 0.7);
+	background: rgba(248, 112, 32, 0.2);
+	color: #f9d7c4;
+}
+
+.proof-marker-sources {
+	margin: 10px 0 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 8px;
+}
+
+.proof-marker-sources li {
+	display: grid;
+	gap: 2px;
+}
+
+.proof-marker-sources a,
+.proof-snapshot-sources a,
+.proof-claim-row-links a {
+	color: #8ec7f8;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	font-size: 0.84rem;
+	font-weight: 580;
+}
+
+.proof-marker-source-meta,
+.proof-snapshot-source-meta,
+.proof-claim-row-link-meta {
+	font-size: 0.8rem;
+	line-height: 1.45;
+	color: var(--xcf-color-text-muted);
+}
+
+.proof-marker-warning,
+.proof-snapshot-warning,
+.proof-claim-row-warning {
+	margin: 10px 0 0;
+	padding: 8px 10px;
+	border-radius: 10px;
+	border: 1px solid rgba(248, 112, 32, 0.5);
+	background: rgba(248, 112, 32, 0.09);
+	font-size: 0.84rem;
+	line-height: 1.5;
+	color: #f7e0c0;
 }
 
 .proof-strip-note {
@@ -428,6 +527,25 @@ main {
 	font-size: 0.88rem;
 	line-height: 1.55;
 	color: var(--xcf-color-text-muted);
+}
+
+.proof-snapshot-trust {
+	margin: 10px 0 0;
+	display: grid;
+	gap: 8px;
+}
+
+.proof-snapshot-sources {
+	margin: 10px 0 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 8px;
+}
+
+.proof-snapshot-sources li {
+	display: grid;
+	gap: 2px;
 }
 
 .narrative-section {
@@ -596,15 +714,18 @@ main {
 }
 
 .proof-claim-row {
+	padding: 10px 12px;
+	border: 1px solid rgba(42, 53, 68, 0.92);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.proof-claim-row-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 10px;
 	flex-wrap: wrap;
-	padding: 10px 12px;
-	border: 1px solid rgba(42, 53, 68, 0.92);
-	border-radius: 10px;
-	background: rgba(255, 255, 255, 0.02);
 }
 
 .proof-claim-row-text {
@@ -627,6 +748,44 @@ main {
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 	color: #d9ebff;
+}
+
+.proof-claim-row-state[data-state="fresh"] {
+	border-color: rgba(56, 196, 112, 0.6);
+	background: rgba(56, 196, 112, 0.16);
+	color: #d8f7e4;
+}
+
+.proof-claim-row-state[data-state="stale"] {
+	border-color: rgba(242, 179, 93, 0.7);
+	background: rgba(242, 179, 93, 0.2);
+	color: #f7e0c0;
+}
+
+.proof-claim-row-state[data-state="warning"] {
+	border-color: rgba(248, 112, 32, 0.7);
+	background: rgba(248, 112, 32, 0.2);
+	color: #f9d7c4;
+}
+
+.proof-claim-row-detail {
+	margin: 10px 0 0;
+	font-size: 0.86rem;
+	line-height: 1.5;
+	color: var(--xcf-color-text-muted);
+}
+
+.proof-claim-row-links {
+	margin: 10px 0 0;
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 8px;
+}
+
+.proof-claim-row-links li {
+	display: grid;
+	gap: 2px;
 }
 
 .differentiation-grid,

@@ -24,6 +24,7 @@ export type HeroCopy = {
 	proofClaims: ApprovedTrustClaim[];
 	proofSnapshots: ProofSnapshot[];
 	defaultProofSnapshotId: ProofSnapshotId;
+	provenanceUnavailableDocsHref: string;
 	fallbackProofText: string;
 };
 
@@ -40,6 +41,7 @@ export type ApprovedTrustClaim = {
 	id: ApprovedTrustClaimId;
 	text: (typeof approvedTrustClaimCatalog)[ApprovedTrustClaimId];
 	policyClass: 'allowed-now';
+	supportLinks: ClaimSupportLink[];
 };
 
 export type ProofSnapshotId = 'manual-baseline' | 'xcforge-proof';
@@ -49,6 +51,32 @@ export type ProofSnapshot = {
 	label: string;
 	summary: string;
 	announcement: string;
+	supportLinks: ClaimSupportLink[];
+};
+
+export type ProofProvenanceState = 'fresh' | 'stale' | 'warning';
+
+export type ProofSupportLinkForRender = ClaimSupportLink & {
+	ageDays: number | null;
+	capturedOnLabel: string;
+	freshnessLabel: string;
+	state: ProofProvenanceState;
+};
+
+export type ProofProvenanceForRender = {
+	state: ProofProvenanceState;
+	stateLabel: string;
+	stateDetail: string;
+	sources: ProofSupportLinkForRender[];
+	fallbackHref: string;
+};
+
+export type ApprovedTrustClaimForRender = ApprovedTrustClaim & {
+	provenance: ProofProvenanceForRender;
+};
+
+export type ProofSnapshotForRender = ProofSnapshot & {
+	provenance: ProofProvenanceForRender;
 };
 
 export type HomepageNarrativeSectionId =
@@ -117,6 +145,7 @@ export type DifferentiationProofSectionCopy = HomepageNarrativeSectionBase & {
 	points: DifferentiationPoint[];
 	proofClaims: ApprovedTrustClaim[];
 	proofOutcomeSummary: string;
+	provenanceUnavailableDocsHref: string;
 };
 
 export type DocsHandoffLink = {
@@ -231,27 +260,64 @@ const safeNavigationFallback: NavItem[] = [
 
 const installCommand = 'brew install xcforge';
 const installGuideHref = 'https://github.com/justinthevoid/xcforge#install';
+const proofProvenanceDocsHref = '/docs/proof-provenance/';
 
 const approvedTrustClaims: ApprovedTrustClaim[] = [
 	{
 		id: 'mcp-tools',
 		text: approvedTrustClaimCatalog['mcp-tools'],
 		policyClass: 'allowed-now',
+		supportLinks: [
+			{
+				label: 'Docs overview',
+				href: '/docs',
+				summary: 'Lists command coverage and technical surface area used by trust claims.',
+				evidenceCapturedAt: '2026-04-07T00:00:00Z',
+				maxAgeDays: 30,
+			},
+		],
 	},
 	{
 		id: 'cli-command-groups',
 		text: approvedTrustClaimCatalog['cli-command-groups'],
 		policyClass: 'allowed-now',
+		supportLinks: [
+			{
+				label: 'Getting Started workflow guide',
+				href: '/docs/getting-started/',
+				summary: 'Shows install and verification pathways tied to command-group usage.',
+				evidenceCapturedAt: '2026-04-07T00:00:00Z',
+				maxAgeDays: 30,
+			},
+		],
 	},
 	{
 		id: 'native-swift-binary',
 		text: approvedTrustClaimCatalog['native-swift-binary'],
 		policyClass: 'allowed-now',
+		supportLinks: [
+			{
+				label: 'README feature summary',
+				href: 'https://github.com/justinthevoid/xcforge#features',
+				summary: 'Documents implementation characteristics and technical capability framing.',
+				evidenceCapturedAt: '2026-04-07T00:00:00Z',
+				maxAgeDays: 30,
+			},
+		],
 	},
 	{
 		id: 'no-external-runtime-dependencies',
 		text: approvedTrustClaimCatalog['no-external-runtime-dependencies'],
 		policyClass: 'allowed-now',
+		supportLinks: [
+			{
+				label: 'Changelog source trail',
+				href: 'https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md',
+				summary: 'Tracks release evidence and source-backed updates over time.',
+				evidenceCapturedAt: '2026-04-07T00:00:00Z',
+				maxAgeDays: 30,
+			},
+		],
 	},
 ];
 
@@ -263,6 +329,15 @@ const heroProofSnapshots: ProofSnapshot[] = [
 			'Manual tool stitching can leave diagnostics and verification evidence fragmented across separate steps.',
 		announcement:
 			'Manual baseline selected. This state describes current workflow friction, not a benchmark claim.',
+		supportLinks: [
+			{
+				label: 'Workflow Guide baseline context',
+				href: '/docs/getting-started/',
+				summary: 'Provides baseline local workflow context for comparison.',
+				evidenceCapturedAt: '2026-04-07T00:00:00Z',
+				maxAgeDays: 30,
+			},
+		],
 	},
 	{
 		id: 'xcforge-proof',
@@ -271,6 +346,22 @@ const heroProofSnapshots: ProofSnapshot[] = [
 			'xcforge keeps local execution surfaces in one contract so build, simulator, debugger, and evidence paths stay inspectable.',
 		announcement:
 			'xcforge proof selected. This state summarizes observed capability scope with conservative language.',
+		supportLinks: [
+			{
+				label: 'Workflow Guide verification path',
+				href: '/docs/getting-started/',
+				summary: 'Maps failing-run diagnosis and verification checkpoints.',
+				evidenceCapturedAt: '2026-04-07T00:00:00Z',
+				maxAgeDays: 30,
+			},
+			{
+				label: 'Release evidence log',
+				href: 'https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md',
+				summary: 'Tracks source-backed updates tied to workflow verification behavior.',
+				evidenceCapturedAt: '2026-04-07T00:00:00Z',
+				maxAgeDays: 30,
+			},
+		],
 	},
 ];
 
@@ -288,6 +379,7 @@ export const homepageContent: HomepageContent = {
 		proofClaims: approvedTrustClaims,
 		proofSnapshots: heroProofSnapshots,
 		defaultProofSnapshotId: 'xcforge-proof',
+		provenanceUnavailableDocsHref: proofProvenanceDocsHref,
 		fallbackProofText:
 			'Proof metadata is temporarily unavailable. Install via Homebrew now, then verify workflows in docs and changelog.',
 	},
@@ -475,6 +567,7 @@ export const homepageContent: HomepageContent = {
 			proofClaims: approvedTrustClaims,
 			proofOutcomeSummary:
 				'These proof claims describe currently verifiable capability scope. They are not broad speed or benchmark assertions.',
+			provenanceUnavailableDocsHref: proofProvenanceDocsHref,
 			points: [
 				{
 					title: 'Local-first by default',
@@ -585,6 +678,7 @@ export function isProofMetadataAvailable(hero: HeroCopy | undefined): boolean {
 		hero.productRole.trim().length > 0 &&
 		hero.installHref.trim().length > 0 &&
 		hero.proofHeadline.trim().length > 0 &&
+		hero.provenanceUnavailableDocsHref.trim().length > 0 &&
 		hasExactApprovedTrustClaims(hero.proofClaims) &&
 		hasValidHeroProofSnapshots(hero)
 	);
@@ -614,6 +708,223 @@ export function createHomepageNarrativeSectionContract(
 
 function hasNonEmptyText(value: unknown): value is string {
 	return typeof value === 'string' && value.trim().length > 0;
+}
+
+const evidenceTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const proofDateFormatter = new Intl.DateTimeFormat('en-US', {
+	month: 'short',
+	day: 'numeric',
+	year: 'numeric',
+});
+
+function parseEvidenceTimestamp(value: unknown): Date | null {
+	if (!hasNonEmptyText(value) || !evidenceTimestampPattern.test(value)) {
+		return null;
+	}
+
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) {
+		return null;
+	}
+
+	return parsed;
+}
+
+export function resolveProvenanceFallbackHrefForRender(fallbackHref: unknown): string {
+	if (hasNonEmptyText(fallbackHref) && isClaimSupportHrefValid(fallbackHref)) {
+		return fallbackHref;
+	}
+
+	return proofProvenanceDocsHref;
+}
+
+function resolveProofProvenanceStateLabel(state: ProofProvenanceState): string {
+	switch (state) {
+		case 'fresh':
+			return 'Fresh evidence';
+		case 'stale':
+			return 'Stale evidence';
+		default:
+			return 'Provenance warning';
+	}
+}
+
+function resolveProofSourceForRender(source: unknown, now: Date): ProofSupportLinkForRender | null {
+	if (!source || typeof source !== 'object') {
+		return null;
+	}
+
+	const rawSource = source as Partial<ClaimSupportLink>;
+	if (
+		!hasNonEmptyText(rawSource.label) ||
+		!hasNonEmptyText(rawSource.href) ||
+		!hasNonEmptyText(rawSource.summary)
+	) {
+		return null;
+	}
+
+	if (!isClaimSupportHrefValid(rawSource.href)) {
+		return null;
+	}
+
+	if (
+		typeof rawSource.maxAgeDays !== 'number' ||
+		!Number.isInteger(rawSource.maxAgeDays) ||
+		rawSource.maxAgeDays < 1 ||
+		rawSource.maxAgeDays > 365
+	) {
+		return null;
+	}
+
+	const capturedAt = parseEvidenceTimestamp(rawSource.evidenceCapturedAt);
+	if (!capturedAt) {
+		return null;
+	}
+
+	const ageMs = now.getTime() - capturedAt.getTime();
+	if (ageMs < 0) {
+		return null;
+	}
+
+	const maxAgeMs = rawSource.maxAgeDays * 24 * 60 * 60 * 1000;
+	const ageDays = Math.max(0, Math.floor(ageMs / (24 * 60 * 60 * 1000)));
+	const state: ProofProvenanceState = ageMs > maxAgeMs ? 'stale' : 'fresh';
+	const freshnessLabel =
+		state === 'fresh'
+			? `Captured ${ageDays} day${ageDays === 1 ? '' : 's'} ago`
+			: `Stale: ${ageDays} days old (max ${rawSource.maxAgeDays})`;
+
+	return {
+		label: rawSource.label,
+		href: rawSource.href,
+		summary: rawSource.summary,
+		evidenceCapturedAt: capturedAt.toISOString(),
+		maxAgeDays: rawSource.maxAgeDays,
+		ageDays,
+		capturedOnLabel: proofDateFormatter.format(capturedAt),
+		freshnessLabel,
+		state,
+	};
+}
+
+export function resolveProofProvenanceForRender(
+	rawSources: unknown,
+	fallbackHref: string,
+	now = new Date(),
+): ProofProvenanceForRender {
+	const safeFallbackHref = resolveProvenanceFallbackHrefForRender(fallbackHref);
+
+	if (!Array.isArray(rawSources) || rawSources.length === 0) {
+		return {
+			state: 'warning',
+			stateLabel: resolveProofProvenanceStateLabel('warning'),
+			stateDetail: 'Source and freshness metadata are temporarily unavailable for this artifact.',
+			sources: [],
+			fallbackHref: safeFallbackHref,
+		};
+	}
+
+	let invalidSourceCount = 0;
+	const sources: ProofSupportLinkForRender[] = [];
+
+	for (const rawSource of rawSources) {
+		const resolvedSource = resolveProofSourceForRender(rawSource, now);
+		if (!resolvedSource) {
+			invalidSourceCount += 1;
+			continue;
+		}
+
+		sources.push(resolvedSource);
+	}
+
+	if (sources.length === 0) {
+		return {
+			state: 'warning',
+			stateLabel: resolveProofProvenanceStateLabel('warning'),
+			stateDetail:
+				'Source metadata could not be parsed for this artifact. Use provenance guidance before treating this as current proof.',
+			sources: [],
+			fallbackHref: safeFallbackHref,
+		};
+	}
+
+	const hasStaleSource = sources.some((source) => source.state === 'stale');
+	const state: ProofProvenanceState =
+		invalidSourceCount > 0 ? 'warning' : hasStaleSource ? 'stale' : 'fresh';
+	let stateDetail =
+		state === 'fresh'
+			? 'All listed sources are within their freshness windows.'
+			: 'One or more listed sources are stale. Treat this artifact as historical context until refreshed.';
+
+	if (state === 'warning') {
+		stateDetail =
+			'Some provenance entries are unavailable or invalid. Review listed sources and fallback guidance before trusting this artifact.';
+	}
+
+	return {
+		state,
+		stateLabel: resolveProofProvenanceStateLabel(state),
+		stateDetail,
+		sources,
+		fallbackHref: safeFallbackHref,
+	};
+}
+
+export function resolveApprovedTrustClaimForRender(
+	claim: ApprovedTrustClaim,
+	fallbackHref: string,
+	now = new Date(),
+): ApprovedTrustClaimForRender {
+	return {
+		...claim,
+		provenance: resolveProofProvenanceForRender(claim.supportLinks, fallbackHref, now),
+	};
+}
+
+export function resolveProofSnapshotForRender(
+	snapshot: ProofSnapshot,
+	fallbackHref: string,
+	now = new Date(),
+): ProofSnapshotForRender {
+	return {
+		...snapshot,
+		provenance: resolveProofProvenanceForRender(snapshot.supportLinks, fallbackHref, now),
+	};
+}
+
+export type ProofProvenanceCoverageCheck = {
+	artifactId: string;
+	state: ProofProvenanceState;
+	hasInspectableSources: boolean;
+	hasFallbackLink: boolean;
+};
+
+export function runProofProvenanceCoverageChecks(
+	hero: HeroCopy,
+	now = new Date(),
+): ProofProvenanceCoverageCheck[] {
+	const fallbackHref = hero.provenanceUnavailableDocsHref;
+	const trustClaimChecks = hero.proofClaims.map((claim) => {
+		const provenance = resolveProofProvenanceForRender(claim.supportLinks, fallbackHref, now);
+		return {
+			artifactId: claim.id,
+			state: provenance.state,
+			hasInspectableSources: provenance.sources.length > 0,
+			hasFallbackLink: hasNonEmptyText(provenance.fallbackHref),
+		};
+	});
+
+	const snapshotChecks = hero.proofSnapshots.map((snapshot) => {
+		const provenance = resolveProofProvenanceForRender(snapshot.supportLinks, fallbackHref, now);
+		return {
+			artifactId: snapshot.id,
+			state: provenance.state,
+			hasInspectableSources: provenance.sources.length > 0,
+			hasFallbackLink: hasNonEmptyText(provenance.fallbackHref),
+		};
+	});
+
+	return [...trustClaimChecks, ...snapshotChecks];
 }
 
 function isApprovedTrustClaimId(value: unknown): value is ApprovedTrustClaimId {
@@ -1099,11 +1410,31 @@ function validateNarrativeSectionPayload(
 				);
 			}
 
+			if (!isClaimSupportHrefValid(section.provenanceUnavailableDocsHref)) {
+				messages.push(
+					`Section "differentiation" has invalid provenance fallback href "${section.provenanceUnavailableDocsHref}". Provide a valid docs or evidence destination for warning-state trust markers.`,
+				);
+			}
+
 			validateApprovedTrustClaims(
 				section.proofClaims,
 				'Section "differentiation" proof claims',
 				messages,
 			);
+
+			for (const claim of section.proofClaims) {
+				const provenance = resolveProofProvenanceForRender(
+					claim.supportLinks,
+					section.provenanceUnavailableDocsHref,
+					now,
+				);
+
+				if (provenance.state !== 'warning' && provenance.sources.length === 0) {
+					messages.push(
+						`Section "differentiation" claim "${claim.id}" has no inspectable provenance sources despite state "${provenance.state}". Ensure source metadata is visible when artifact state is not warning.`,
+					);
+				}
+			}
 
 			if (!hasNonEmptyText(section.proofOutcomeSummary)) {
 				messages.push(
@@ -1177,6 +1508,28 @@ export function validateHomepageNarrativeSections(
 	const now = new Date();
 	validateApprovedTrustClaims(content.hero.proofClaims, 'Section "hero" proof strip', messages);
 	validateHeroProofSnapshots(content.hero, messages);
+
+	if (!isClaimSupportHrefValid(content.hero.provenanceUnavailableDocsHref)) {
+		messages.push(
+			`Section "hero" has invalid provenance fallback href "${content.hero.provenanceUnavailableDocsHref}". Provide a valid docs or evidence destination for warning-state trust markers.`,
+		);
+	}
+
+	const provenanceCoverageChecks = runProofProvenanceCoverageChecks(content.hero, now);
+	for (const check of provenanceCoverageChecks) {
+		if (!check.hasFallbackLink) {
+			messages.push(
+				`Proof artifact "${check.artifactId}" is missing a provenance fallback destination. Add an explicit docs fallback link for warning-state rendering.`,
+			);
+		}
+
+		if (check.state !== 'warning' && !check.hasInspectableSources) {
+			messages.push(
+				`Proof artifact "${check.artifactId}" has no inspectable provenance sources despite state "${check.state}". Ensure source metadata is visible when artifact state is not warning.`,
+			);
+		}
+	}
+
 	const seenSectionIds = new Set<HomepageNarrativeSectionId>();
 	const duplicateSectionIds = new Set<HomepageNarrativeSectionId>();
 
