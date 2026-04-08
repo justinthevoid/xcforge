@@ -1,31 +1,52 @@
 ---
-import type { NavItem } from '../../data/homepage';
+import type { NavItem, NavItemId } from '../../data/homepage';
 
 type Props = {
 	navItems: NavItem[];
 };
 
 const { navItems } = Astro.props;
+
+const supportingSecondaryNavIds = new Set<NavItemId>([
+	'docs',
+	'workflow-guide',
+	'changelog',
+	'github',
+]);
 ---
 
 <header class="site-header">
 	<nav class="global-nav" aria-label="Primary">
 		<a class="brand" href="/" aria-label="xcforge homepage"> xcforge </a>
+		<p id="global-nav-support-note" class="sr-only">
+			Install is the primary action. Docs, Workflow Guide, Changelog, and GitHub are supporting
+			depth paths.
+		</p>
 		<ul class="nav-list">
-			{navItems.map((item) => (
-          <li>
-            <a
-              class={
-                item.id === "install" ? "nav-link nav-link-install" : "nav-link"
-              }
-              href={item.href}
-              target={item.external ? "_blank" : undefined}
-              rel={item.external ? "noreferrer noopener" : undefined}
-            >
-              {item.label}
-            </a>
-          </li>
-        ))}
+			{navItems.map((item) => {
+          const isInstall = item.id === "install";
+          const isSupportingSecondary = supportingSecondaryNavIds.has(item.id);
+
+          return (
+            <li>
+              <a
+                class={isInstall ? "nav-link nav-link-install" : "nav-link"}
+                href={item.href}
+                target={item.external ? "_blank" : undefined}
+                rel={item.external ? "noreferrer noopener" : undefined}
+                data-action-tier={isInstall ? "primary" : "secondary"}
+                data-supporting-path={
+                  isSupportingSecondary ? "true" : undefined
+                }
+                aria-describedby={
+                  isSupportingSecondary ? "global-nav-support-note" : undefined
+                }
+              >
+                {item.label}
+              </a>
+            </li>
+          );
+        })}
 		</ul>
 	</nav>
 </header>

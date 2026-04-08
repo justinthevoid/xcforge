@@ -20,6 +20,9 @@ function isInternalDocsLink(link: DocsHandoffLink): boolean {
 	<div class="narrative-shell">
 		<h2 id="docs-handoff-title">{section.heading}</h2>
 		<p class="narrative-purpose">{section.purpose}</p>
+		<p id="docs-handoff-support-note" class="sr-only">
+			These links are supporting paths for technical depth and remain secondary to install.
+		</p>
 		<p class="handoff-status" data-docs-handoff-status role="status" aria-atomic="true" hidden></p>
 		<div class="handoff-grid" aria-label="Docs and workflow handoff links">
 			{section.handoffLinks.map((link) => {
@@ -44,10 +47,13 @@ function isInternalDocsLink(link: DocsHandoffLink): boolean {
               <h3>{link.label}</h3>
               <p>{link.summary}</p>
               <a
-                class="handoff-link"
+                class="handoff-link cta-supporting-path"
                 href={link.href}
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noreferrer noopener" : undefined}
+                data-action-tier="secondary"
+                data-supporting-path="true"
+                aria-describedby="docs-handoff-support-note"
                 data-docs-handoff-link={internalDocsLink ? "true" : undefined}
                 data-handoff-fallback-href={
                   internalDocsLink ? fallbackHref : undefined

@@ -25,19 +25,20 @@ bun run dev
 
 ## Commands
 
-| Command                   | Purpose                                                                                                 |
-| ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `bun run doctor`          | Validate runtime and dependency baseline with actionable diagnostics                                    |
-| `bun run dev`             | Start local server                                                                                      |
-| `bun run validate:routes` | Validate marketing/docs route ownership and internal cross-surface homepage links                       |
-| `bun run typecheck`       | Run `astro check`                                                                                       |
-| `bun run lint`            | Run Biome checks                                                                                        |
-| `bun run lint:fix`        | Apply safe Biome lint fixes                                                                             |
-| `bun run format`          | Apply Biome formatting                                                                                  |
-| `bun run validate`        | Run full baseline checks                                                                                |
-| `bun run workers:check`   | Validate Workers preflight contract (adapter + wrangler + binding parity checks)                        |
-| `bun run workers:preview` | Run Workers preflight and build, then start Wrangler preview from generated `dist/server/wrangler.json` |
-| `bun run workers:deploy`  | Run Workers preflight and build, then deploy with Wrangler from generated `dist/server/wrangler.json`   |
+| Command                                 | Purpose                                                                                                 |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `bun run doctor`                        | Validate runtime and dependency baseline with actionable diagnostics                                    |
+| `bun run dev`                           | Start local server                                                                                      |
+| `bun run validate:routes`               | Validate marketing/docs route ownership and internal cross-surface homepage links                       |
+| `bun run validate:conversion-hierarchy` | Validate install-vs-secondary action hierarchy contracts across desktop and mobile breakpoints          |
+| `bun run typecheck`                     | Run `astro check`                                                                                       |
+| `bun run lint`                          | Run Biome checks                                                                                        |
+| `bun run lint:fix`                      | Apply safe Biome lint fixes                                                                             |
+| `bun run format`                        | Apply Biome formatting                                                                                  |
+| `bun run validate`                      | Run full baseline checks                                                                                |
+| `bun run workers:check`                 | Validate Workers preflight contract (adapter + wrangler + binding parity checks)                        |
+| `bun run workers:preview`               | Run Workers preflight and build, then start Wrangler preview from generated `dist/server/wrangler.json` |
+| `bun run workers:deploy`                | Run Workers preflight and build, then deploy with Wrangler from generated `dist/server/wrangler.json`   |
 
 ## Route Boundary Validation
 
@@ -49,6 +50,18 @@ bun run dev
 - Homepage internal links to docs/workflow destinations resolve to valid routes.
 
 `bun run build` runs this check before `astro build`, so broken cross-surface links fail early and block release.
+
+## Conversion Hierarchy Validation
+
+`bun run validate:conversion-hierarchy` enforces Story 4.3 install-momentum contracts:
+
+- Navigation, hero, final CTA, and docs-handoff actions must expose explicit primary/secondary action tiers.
+- Docs, Workflow Guide, Changelog, and GitHub paths must remain tagged as supporting conversion paths.
+- Responsive hierarchy contracts must remain present for mobile stacking and primary CTA region handling.
+
+If hierarchy rules regress, validation fails with a release-blocking error and writes breakpoint snapshot artifacts to `.artifacts/conversion-hierarchy/...` for defect attachment.
+
+`bun run build` runs this check before `astro build`, so hierarchy regressions cannot ship.
 
 ## Cloudflare Workers Baseline
 

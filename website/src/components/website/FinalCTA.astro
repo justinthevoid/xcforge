@@ -14,12 +14,20 @@ const { finalCta } = Astro.props;
 		<h2 id="final-cta-title">{finalCta.heading}</h2>
 		<p class="final-cta-summary">{finalCta.summary}</p>
 
-		<section class="final-cta-actions" role="group" aria-label="Final install actions">
+		<section
+			class="final-cta-actions"
+			role="group"
+			aria-label="Final install primary action with supporting workflow link"
+		>
+			<p id="final-supporting-path-note" class="sr-only">
+				Workflow Guide is a supporting path for technical depth and does not replace install.
+			</p>
 			<a
 				class="cta-primary install-intent-trigger"
 				href={finalCta.installHref}
 				target={finalCta.installExternal ? "_blank" : undefined}
 				rel={finalCta.installExternal ? "noreferrer noopener" : undefined}
+				data-action-tier="primary"
 				data-install-intent-trigger="true"
 				data-install-intent-source="final-cta"
 				data-install-command={finalCta.installCommand}
@@ -27,7 +35,15 @@ const { finalCta } = Astro.props;
 			>
 				{finalCta.installLabel}
 			</a>
-			<a class="cta-secondary" href={finalCta.workflowHref}>{finalCta.workflowLabel}</a>
+			<a
+				class="cta-secondary cta-supporting-path"
+				href={finalCta.workflowHref}
+				data-action-tier="secondary"
+				data-supporting-path="true"
+				aria-describedby="final-supporting-path-note"
+			>
+				{finalCta.workflowLabel}
+			</a>
 		</section>
 
 		<section
