@@ -1,8 +1,8 @@
 ---
-import type { DifferentiationProofSectionCopy } from "../../data/homepage";
+import type { DifferentiationProofSectionCopy } from '../../data/homepage';
 
 type Props = {
-  section: DifferentiationProofSectionCopy;
+	section: DifferentiationProofSectionCopy;
 };
 
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references section.
@@ -17,6 +17,10 @@ const { section } = Astro.props;
   <div class="narrative-shell">
     <h2 id="differentiation-title">{section.heading}</h2>
     <p class="narrative-purpose">{section.purpose}</p>
+    <p class="differentiation-evidence-note">
+      Claims are constrained to local-first evidence and conservative,
+      source-linked language.
+    </p>
     <div class="differentiation-grid" aria-label="Differentiation proof points">
       {
         section.points.map((point) => (

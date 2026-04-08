@@ -42,9 +42,31 @@ export type SolutionSectionCopy = HomepageNarrativeSectionBase & {
 	capabilities: NarrativeClaim[];
 };
 
+export type NarrativeJourneyId =
+	| 'failing-build-or-test-to-verified-fix'
+	| 'simulator-recovery-and-stabilization'
+	| 'lldb-assisted-diagnosis'
+	| 'evidence-backed-verification';
+
+export type NarrativeJourneyArtifact =
+	| {
+			status: 'available';
+			label: string;
+			href: string;
+			summary: string;
+			external?: boolean;
+	  }
+	| {
+			status: 'unavailable';
+			unavailableMessage: string;
+	  };
+
 export type NarrativeJourney = {
+	id: NarrativeJourneyId;
 	title: string;
 	detail: string;
+	outcome: string;
+	artifact: NarrativeJourneyArtifact;
 };
 
 export type WorkflowsJourneysSectionCopy = HomepageNarrativeSectionBase & {
@@ -304,24 +326,66 @@ export const homepageContent: HomepageContent = {
 				'Each journey is outcome-first so evaluators can quickly judge if xcforge fits their current rescue loops.',
 			journeys: [
 				{
+					id: 'failing-build-or-test-to-verified-fix',
 					title: 'Failing build or test to verified fix',
 					detail:
 						'Start from a broken run, execute diagnosis steps, apply fixes, and verify with reproducible output.',
+					outcome:
+						'Outcome: move from failing local state to a confirmed fix with reproducible evidence.',
+					artifact: {
+						status: 'available',
+						label: 'Workflow Guide: failing run to verified fix',
+						href: '/docs/getting-started/',
+						summary:
+							'Documents the local diagnosis path and final verification checkpoints for a repaired run.',
+					},
 				},
 				{
+					id: 'simulator-recovery-and-stabilization',
 					title: 'Simulator recovery and stabilization',
 					detail:
 						'Recover unstable simulator state quickly so agent workflows stay unblocked and repeatable.',
+					outcome:
+						'Outcome: recover a stable simulator session so validation loops can proceed without manual reset churn.',
+					artifact: {
+						status: 'available',
+						label: 'Docs: simulator control and recovery references',
+						href: '/docs',
+						summary:
+							'Indexes simulator control surfaces used to recover and stabilize local execution state.',
+					},
 				},
 				{
+					id: 'lldb-assisted-diagnosis',
 					title: 'LLDB-assisted diagnosis',
 					detail:
 						'Use structured LLDB flows to inspect runtime behavior and isolate root causes without guesswork.',
+					outcome:
+						'Outcome: isolate runtime faults with debugger-backed evidence that can be handed off confidently.',
+					artifact: {
+						status: 'available',
+						label: 'README: debugger and diagnosis capability summary',
+						href: 'https://github.com/justinthevoid/xcforge#features',
+						summary:
+							'Links debugger-focused capability coverage used in LLDB-assisted diagnosis journeys.',
+						external: true,
+					},
 				},
 				{
+					id: 'evidence-backed-verification',
 					title: 'Evidence-backed verification',
 					detail:
 						'Capture screenshots and logs to prove what changed and confirm the fix with concrete artifacts.',
+					outcome:
+						'Outcome: publish verified before/after evidence so fixes are auditable instead of anecdotal.',
+					artifact: {
+						status: 'available',
+						label: 'Changelog: workflow evidence and release validation',
+						href: 'https://github.com/justinthevoid/xcforge/blob/main/CHANGELOG.md',
+						summary:
+							'Tracks evidence-backed workflow updates and verification-oriented release notes over time.',
+						external: true,
+					},
 				},
 			],
 		},
@@ -339,12 +403,12 @@ export const homepageContent: HomepageContent = {
 				{
 					title: 'Proof-oriented output',
 					detail:
-						'Trust markers and workflow evidence stay close to conversion surfaces so credibility is inspectable.',
+						'Trust markers link directly to docs, changelog, and workflow evidence so claims stay inspectable.',
 				},
 				{
 					title: 'End-to-end workflow coverage',
 					detail:
-						'Build, test, simulator control, diagnostics, and verification stay in one coherent execution contract.',
+						'Build, test, simulator control, diagnosis, and verification stay in one contract without broad productivity hype.',
 				},
 			],
 		},
@@ -485,6 +549,44 @@ const requiredSolutionSurfaces: readonly [string, RegExp][] = [
 	['LLDB', /\blldb\b/i],
 	['verification', /verif/i],
 ];
+
+const requiredWorkflowScenarioIds: readonly NarrativeJourneyId[] = [
+	'failing-build-or-test-to-verified-fix',
+	'simulator-recovery-and-stabilization',
+	'lldb-assisted-diagnosis',
+	'evidence-backed-verification',
+];
+
+const journeyOutcomeCuePattern = /verified|recover|isolat|confirm|prove|unblock|reproduc|determin/i;
+
+const requiredDifferentiationSignals: readonly [string, RegExp][] = [
+	['local-first execution depth', /local[-\s]?first|local\s+(build|simulator|debugger|execution)/i],
+	['trust model', /trust|proof|evidence|inspectable/i],
+	['workflow depth', /workflow|end-to-end|build|test|diagnos|verif/i],
+];
+
+const disallowedDifferentiationHypePatterns: readonly [string, RegExp][] = [
+	['best-in-class', /best[-\s]?in[-\s]?class/i],
+	['fastest', /\bfastest\b/i],
+	['world-class', /world[-\s]?class/i],
+	['unmatched', /\bunmatched\b/i],
+	['revolutionary', /\brevolutionary\b/i],
+	['guaranteed', /\bguaranteed\b/i],
+];
+
+const workflowsRemediation =
+	'Remediation: restore required scenario coverage and artifact state metadata before publishing.';
+
+const differentiationRemediation =
+	'Remediation: anchor differentiation to local-first trust evidence and remove unsupported hype language before publishing.';
+
+function isNarrativeJourneyId(value: unknown): value is NarrativeJourneyId {
+	if (typeof value !== 'string') {
+		return false;
+	}
+
+	return requiredWorkflowScenarioIds.includes(value as NarrativeJourneyId);
+}
 
 function isClaimSupportHrefValid(href: string): boolean {
 	if (href.startsWith('//')) {
@@ -677,17 +779,85 @@ function validateNarrativeSectionPayload(
 		case 'workflows': {
 			if (section.journeys.length === 0) {
 				messages.push(
-					'Section "workflows" must include at least one journey in website/src/data/homepage.ts.',
+					`Section "workflows" must include at least one journey in website/src/data/homepage.ts. Mark this section non-publishable. ${workflowsRemediation}`,
 				);
 			}
 
+			const seenScenarioIds = new Set<NarrativeJourneyId>();
+			const duplicateScenarioIds = new Set<NarrativeJourneyId>();
+
 			section.journeys.forEach((journey, index) => {
-				if (!hasNonEmptyText(journey.title) || !hasNonEmptyText(journey.detail)) {
+				if (!journey || typeof journey !== 'object') {
 					messages.push(
-						`Section "workflows" has an invalid journey at index ${index}. Both title and detail must be non-empty.`,
+						`Section "workflows" has malformed journey data at index ${index}. Mark this section non-publishable. ${workflowsRemediation}`,
+					);
+					return;
+				}
+
+				if (!hasNonEmptyText(journey.id) || !isNarrativeJourneyId(journey.id)) {
+					messages.push(
+						`Section "workflows" has an invalid scenario id at index ${index}. Expected one of: ${requiredWorkflowScenarioIds.join(', ')}. Mark this section non-publishable. ${workflowsRemediation}`,
+					);
+				} else if (seenScenarioIds.has(journey.id)) {
+					duplicateScenarioIds.add(journey.id);
+				} else {
+					seenScenarioIds.add(journey.id);
+				}
+
+				if (
+					!hasNonEmptyText(journey.title) ||
+					!hasNonEmptyText(journey.detail) ||
+					!hasNonEmptyText(journey.outcome)
+				) {
+					messages.push(
+						`Section "workflows" has an invalid journey at index ${index}. Scenario id, title, detail, and outcome must be non-empty. Mark this section non-publishable. ${workflowsRemediation}`,
+					);
+				} else if (!journeyOutcomeCuePattern.test(journey.outcome)) {
+					messages.push(
+						`Section "workflows" scenario "${journey.id}" is not outcome-oriented enough. Include concrete result language (for example verified, recovered, isolated, confirmed). Mark this section non-publishable. ${workflowsRemediation}`,
 					);
 				}
+
+				const artifact = journey.artifact;
+
+				if (artifact.status === 'available') {
+					if (
+						!hasNonEmptyText(artifact.label) ||
+						!hasNonEmptyText(artifact.href) ||
+						!hasNonEmptyText(artifact.summary)
+					) {
+						messages.push(
+							`Section "workflows" scenario "${journey.id}" has incomplete available artifact metadata. Mark this section non-publishable. ${workflowsRemediation}`,
+						);
+					} else if (!isClaimSupportHrefValid(artifact.href)) {
+						messages.push(
+							`Section "workflows" scenario "${journey.id}" has invalid artifact href "${artifact.href}". Mark this section non-publishable. ${workflowsRemediation}`,
+						);
+					}
+				} else {
+					if (!hasNonEmptyText(artifact.unavailableMessage)) {
+						messages.push(
+							`Section "workflows" scenario "${journey.id}" is unavailable but missing explicit fallback text. Mark this section non-publishable. ${workflowsRemediation}`,
+						);
+					}
+				}
 			});
+
+			if (duplicateScenarioIds.size > 0) {
+				messages.push(
+					`Section "workflows" has duplicate required scenarios: ${[...duplicateScenarioIds].join(', ')}. Mark this section non-publishable. ${workflowsRemediation}`,
+				);
+			}
+
+			const missingScenarioIds = requiredWorkflowScenarioIds.filter(
+				(scenarioId) => !seenScenarioIds.has(scenarioId),
+			);
+
+			if (missingScenarioIds.length > 0) {
+				messages.push(
+					`Section "workflows" is missing required scenarios: ${missingScenarioIds.join(', ')}. Mark this section non-publishable. ${workflowsRemediation}`,
+				);
+			}
 			break;
 		}
 		case 'differentiation': {
@@ -700,10 +870,36 @@ function validateNarrativeSectionPayload(
 			section.points.forEach((point, index) => {
 				if (!hasNonEmptyText(point.title) || !hasNonEmptyText(point.detail)) {
 					messages.push(
-						`Section "differentiation" has an invalid point at index ${index}. Both title and detail must be non-empty.`,
+						`Section "differentiation" has an invalid point at index ${index}. Both title and detail must be non-empty. Mark this section non-publishable. ${differentiationRemediation}`,
 					);
 				}
 			});
+
+			const differentiationText = [
+				section.heading,
+				section.purpose,
+				...section.points.map((point) => `${point.title} ${point.detail}`),
+			].join(' ');
+
+			const missingDifferentiationSignals = requiredDifferentiationSignals
+				.filter(([, pattern]) => !pattern.test(differentiationText))
+				.map(([signal]) => signal);
+
+			if (missingDifferentiationSignals.length > 0) {
+				messages.push(
+					`Section "differentiation" is missing required framing: ${missingDifferentiationSignals.join(', ')}. Mark this section non-publishable. ${differentiationRemediation}`,
+				);
+			}
+
+			const matchedHypeTerms = disallowedDifferentiationHypePatterns
+				.filter(([, pattern]) => pattern.test(differentiationText))
+				.map(([term]) => term);
+
+			if (matchedHypeTerms.length > 0) {
+				messages.push(
+					`Section "differentiation" contains disallowed hype language (${matchedHypeTerms.join(', ')}). Mark this section non-publishable. ${differentiationRemediation}`,
+				);
+			}
 			break;
 		}
 		case 'docs-handoff': {
