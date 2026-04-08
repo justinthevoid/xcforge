@@ -1,36 +1,34 @@
 ---
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references DifferentiationProofSection. */
-import DifferentiationProofSection from "../components/website/DifferentiationProofSection.astro";
+import DifferentiationProofSection from '../components/website/DifferentiationProofSection.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references DocsHandoffSection. */
-import DocsHandoffSection from "../components/website/DocsHandoffSection.astro";
+import DocsHandoffSection from '../components/website/DocsHandoffSection.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references FinalCTA. */
-import FinalCTA from "../components/website/FinalCTA.astro";
+import FinalCTA from '../components/website/FinalCTA.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references GlobalNav. */
-import GlobalNav from "../components/website/GlobalNav.astro";
+import GlobalNav from '../components/website/GlobalNav.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references HeroProof. */
-import HeroProof from "../components/website/HeroProof.astro";
+import HeroProof from '../components/website/HeroProof.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references ProblemSection. */
-import ProblemSection from "../components/website/ProblemSection.astro";
+import ProblemSection from '../components/website/ProblemSection.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references SolutionSection. */
-import SolutionSection from "../components/website/SolutionSection.astro";
+import SolutionSection from '../components/website/SolutionSection.astro';
 /* biome-ignore lint/correctness/noUnusedImports: Astro template references WorkflowsJourneysSection. */
-import WorkflowsJourneysSection from "../components/website/WorkflowsJourneysSection.astro";
+import WorkflowsJourneysSection from '../components/website/WorkflowsJourneysSection.astro';
 import {
-  homepageContent,
-  isProofMetadataAvailable,
-  resolveHomepageNarrativeSectionsForRender,
-  resolveNavigationMetadata,
-} from "../data/homepage";
-import "../styles/homepage.css";
+	homepageContent,
+	isProofMetadataAvailable,
+	resolveHomepageNarrativeSectionsForRender,
+	resolveNavigationMetadata,
+} from '../data/homepage';
+import '../styles/homepage.css';
 
 const navigationState = resolveNavigationMetadata(homepageContent.navigation);
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references useProofFallback.
 const useProofFallback =
-  !navigationState.isMetadataAvailable ||
-  !isProofMetadataAvailable(homepageContent.hero);
+	!navigationState.isMetadataAvailable || !isProofMetadataAvailable(homepageContent.hero);
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references narrativeSections.
-const narrativeSections =
-  resolveHomepageNarrativeSectionsForRender(homepageContent);
+const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageContent);
 ---
 
 <!doctype html>

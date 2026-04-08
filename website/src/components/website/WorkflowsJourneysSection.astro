@@ -22,30 +22,35 @@ const { section } = Astro.props;
           <li>
             <h3>{journey.title}</h3>
             <p>{journey.detail}</p>
-              <p class="journey-outcome">
-                <span class="journey-outcome-label">Outcome:</span> {journey.outcome}
+            <p class="journey-outcome">
+              <span class="journey-outcome-label">Outcome:</span>{" "}
+              {journey.outcome}
+            </p>
+            {journey.artifact.status === "available" ? (
+              <p class="journey-artifact">
+                <span class="journey-artifact-label">Artifact:</span>{" "}
+                <a
+                  class="journey-artifact-link"
+                  href={journey.artifact.href}
+                  target={journey.artifact.external ? "_blank" : undefined}
+                  rel={
+                    journey.artifact.external
+                      ? "noopener noreferrer"
+                      : undefined
+                  }
+                >
+                  {journey.artifact.label}
+                </a>
+                <span class="journey-artifact-summary">
+                  {journey.artifact.summary}
+                </span>
               </p>
-              {
-                journey.artifact.status === "available" ? (
-                  <p class="journey-artifact">
-                    <span class="journey-artifact-label">Artifact:</span>{" "}
-                    <a
-                      class="journey-artifact-link"
-                      href={journey.artifact.href}
-                      target={journey.artifact.external ? "_blank" : undefined}
-                      rel={journey.artifact.external ? "noopener noreferrer" : undefined}
-                    >
-                      {journey.artifact.label}
-                    </a>
-                    <span class="journey-artifact-summary">{journey.artifact.summary}</span>
-                  </p>
-                ) : (
-                  <p class="journey-artifact-unavailable" role="status">
-                    <span class="journey-artifact-state">Unavailable</span>
-                    {journey.artifact.unavailableMessage}
-                  </p>
-                )
-              }
+            ) : (
+              <p class="journey-artifact-unavailable" role="status">
+                <span class="journey-artifact-state">Unavailable</span>
+                {journey.artifact.unavailableMessage}
+              </p>
+            )}
           </li>
         ))
       }
