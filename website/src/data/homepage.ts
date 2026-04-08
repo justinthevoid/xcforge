@@ -1,3 +1,10 @@
+import {
+	type ClaimBenchmarkEvidence,
+	type ClaimPolicyClass,
+	type ClaimSupportLink,
+	validateNarrativeClaimPolicy,
+} from './claims-policy';
+
 export type NavItemId = 'product' | 'docs' | 'workflow-guide' | 'changelog' | 'github' | 'install';
 
 export type NavItem = {
@@ -50,16 +57,16 @@ export type NarrativeJourneyId =
 
 export type NarrativeJourneyArtifact =
 	| {
-			status: 'available';
-			label: string;
-			href: string;
-			summary: string;
-			external?: boolean;
-	  }
+		status: 'available';
+		label: string;
+		href: string;
+		summary: string;
+		external?: boolean;
+	}
 	| {
-			status: 'unavailable';
-			unavailableMessage: string;
-	  };
+		status: 'unavailable';
+		unavailableMessage: string;
+	};
 
 export type NarrativeJourney = {
 	id: NarrativeJourneyId;
@@ -91,18 +98,12 @@ export type DocsHandoffLink = {
 	external?: boolean;
 };
 
-export type ClaimSupportLink = {
-	label: string;
-	href: string;
-	summary: string;
-	evidenceCapturedAt: string;
-	maxAgeDays: number;
-};
-
 export type NarrativeClaim = {
 	id: string;
 	text: string;
+	policyClass: ClaimPolicyClass;
 	supportLinks: ClaimSupportLink[];
+	benchmarkEvidence?: ClaimBenchmarkEvidence;
 };
 
 export type DocsHandoffSectionCopy = HomepageNarrativeSectionBase & {
@@ -229,6 +230,7 @@ export const homepageContent: HomepageContent = {
 				{
 					id: 'local-state-mismatch',
 					text: 'Build or test suggestions pass in-chat, then fail against real local Xcode and simulator state.',
+					policyClass: 'allowed-now',
 					supportLinks: [
 						{
 							label: 'Workflow Guide: install-first local verification path',
@@ -243,6 +245,7 @@ export const homepageContent: HomepageContent = {
 				{
 					id: 'fragmented-evidence',
 					text: 'Logs, screenshots, LLDB output, and UI state live in disconnected tools with no single execution thread.',
+					policyClass: 'allowed-now',
 					supportLinks: [
 						{
 							label: 'Docs reference: command-group coverage',
@@ -257,6 +260,7 @@ export const homepageContent: HomepageContent = {
 				{
 					id: 'manual-rescue-loop',
 					text: 'Each rescue loop becomes manual context switching that is slow to verify and hard to hand off.',
+					policyClass: 'allowed-now',
 					supportLinks: [
 						{
 							label: 'Changelog evidence trail',
@@ -279,6 +283,7 @@ export const homepageContent: HomepageContent = {
 				{
 					id: 'unified-command-surface',
 					text: 'Run build, test, simulator control, and diagnostics from one command surface.',
+					policyClass: 'allowed-now',
 					supportLinks: [
 						{
 							label: 'xcforge docs reference',
@@ -292,6 +297,7 @@ export const homepageContent: HomepageContent = {
 				{
 					id: 'evidence-capture',
 					text: 'Capture logs, screenshots, UI inspection output, and LLDB diagnostics as reusable evidence.',
+					policyClass: 'allowed-now',
 					supportLinks: [
 						{
 							label: 'README capability summary',
@@ -306,6 +312,7 @@ export const homepageContent: HomepageContent = {
 				{
 					id: 'verification-closure',
 					text: 'Move from failing run to verified fix with deterministic local execution steps and explicit verification checkpoints.',
+					policyClass: 'allowed-now',
 					supportLinks: [
 						{
 							label: 'Workflow Guide verification flow',
@@ -537,7 +544,11 @@ function hasNonEmptyText(value: unknown): value is string {
 const claimSupportRemediation =
 	'Remediation: refresh or replace supporting links and record the correction in release notes before publishing.';
 
-const evidenceTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const claimPolicyRemediation =
+	'Remediation: classify each claim with an approved policy class and restore compliant source metadata before publishing.';
+
+const benchmarkClaimRemediation =
+	'Remediation: attach benchmark evidence metadata for benchmark-gated claims or reclassify the claim until benchmark evidence is available.';
 
 const requiredSolutionSurfaces: readonly [string, RegExp][] = [
 	['build', /\bbuild\b/i],
@@ -605,106 +616,6 @@ function isClaimSupportHrefValid(href: string): boolean {
 	}
 }
 
-function parseEvidenceCapturedAt(value: unknown): Date | null {
-	if (!hasNonEmptyText(value) || !evidenceTimestampPattern.test(value)) {
-		return null;
-	}
-
-	const parsed = new Date(value);
-	if (Number.isNaN(parsed.getTime())) {
-		return null;
-	}
-
-	return parsed;
-}
-
-function validateClaimSupportLinks(
-	sectionId: 'problem' | 'solution',
-	claimId: string,
-	links: unknown,
-	messages: string[],
-	now: Date,
-): void {
-	if (!Array.isArray(links)) {
-		messages.push(
-			`Section "${sectionId}" claim "${claimId}" has malformed support links (expected an array). Mark this claim non-publishable. ${claimSupportRemediation}`,
-		);
-		return;
-	}
-
-	if (links.length === 0) {
-		messages.push(
-			`Section "${sectionId}" claim "${claimId}" has no supporting proof links. Mark this claim non-publishable. ${claimSupportRemediation}`,
-		);
-		return;
-	}
-
-	links.forEach((rawLink, index) => {
-		if (!rawLink || typeof rawLink !== 'object') {
-			messages.push(
-				`Section "${sectionId}" claim "${claimId}" has malformed support link metadata at index ${index}. Mark this claim non-publishable. ${claimSupportRemediation}`,
-			);
-			return;
-		}
-
-		const link = rawLink as Partial<ClaimSupportLink>;
-
-		if (
-			!hasNonEmptyText(link.label) ||
-			!hasNonEmptyText(link.summary) ||
-			!hasNonEmptyText(link.href)
-		) {
-			messages.push(
-				`Section "${sectionId}" claim "${claimId}" support link at index ${index} is missing label, href, or summary. Mark this claim non-publishable. ${claimSupportRemediation}`,
-			);
-			return;
-		}
-
-		if (!isClaimSupportHrefValid(link.href)) {
-			messages.push(
-				`Section "${sectionId}" claim "${claimId}" support link at index ${index} has an invalid href "${link.href}". Mark this claim non-publishable. ${claimSupportRemediation}`,
-			);
-			return;
-		}
-
-		if (
-			typeof link.maxAgeDays !== 'number' ||
-			!Number.isInteger(link.maxAgeDays) ||
-			link.maxAgeDays < 1 ||
-			link.maxAgeDays > 365
-		) {
-			messages.push(
-				`Section "${sectionId}" claim "${claimId}" support link at index ${index} has invalid maxAgeDays "${link.maxAgeDays}". Mark this claim non-publishable. ${claimSupportRemediation}`,
-			);
-			return;
-		}
-
-		const capturedAt = parseEvidenceCapturedAt(link.evidenceCapturedAt);
-		if (!capturedAt) {
-			messages.push(
-				`Section "${sectionId}" claim "${claimId}" support link at index ${index} has invalid evidenceCapturedAt "${link.evidenceCapturedAt}". Mark this claim non-publishable. ${claimSupportRemediation}`,
-			);
-			return;
-		}
-
-		const maxAgeMs = link.maxAgeDays * 24 * 60 * 60 * 1000;
-		const ageMs = now.getTime() - capturedAt.getTime();
-		if (ageMs < 0) {
-			messages.push(
-				`Section "${sectionId}" claim "${claimId}" support link at index ${index} has a future evidenceCapturedAt value. Mark this claim non-publishable. ${claimSupportRemediation}`,
-			);
-			return;
-		}
-
-		if (ageMs > maxAgeMs) {
-			const ageDays = Math.ceil(ageMs / (24 * 60 * 60 * 1000));
-			messages.push(
-				`Section "${sectionId}" claim "${claimId}" support link at index ${index} is stale (${ageDays} days old; max ${link.maxAgeDays}). Mark this claim non-publishable. ${claimSupportRemediation}`,
-			);
-		}
-	});
-}
-
 function validateNarrativeSectionPayload(
 	section: HomepageNarrativeBodySection,
 	messages: string[],
@@ -726,14 +637,26 @@ function validateNarrativeSectionPayload(
 					return;
 				}
 
-				const claimId = hasNonEmptyText(signal.id) ? signal.id : `problem-${index}`;
-				if (!hasNonEmptyText(signal.id) || !hasNonEmptyText(signal.text)) {
+				const claim = signal as Partial<NarrativeClaim>;
+				const claimId = hasNonEmptyText(claim.id) ? claim.id : `problem-${index}`;
+				if (!hasNonEmptyText(claim.id) || !hasNonEmptyText(claim.text)) {
 					messages.push(
 						`Section "problem" claim at index ${index} has empty id or text. Mark this claim non-publishable. ${claimSupportRemediation}`,
 					);
 				}
 
-				validateClaimSupportLinks('problem', claimId, signal.supportLinks, messages, now);
+				validateNarrativeClaimPolicy({
+					sectionId: 'problem',
+					claimId,
+					policyClass: claim.policyClass,
+					supportLinks: claim.supportLinks,
+					benchmarkEvidence: claim.benchmarkEvidence,
+					messages,
+					now,
+					claimSupportRemediation,
+					claimPolicyRemediation,
+					benchmarkRemediation: benchmarkClaimRemediation,
+				});
 			});
 			break;
 		}
@@ -752,14 +675,26 @@ function validateNarrativeSectionPayload(
 					return;
 				}
 
-				const claimId = hasNonEmptyText(capability.id) ? capability.id : `solution-${index}`;
-				if (!hasNonEmptyText(capability.id) || !hasNonEmptyText(capability.text)) {
+				const claim = capability as Partial<NarrativeClaim>;
+				const claimId = hasNonEmptyText(claim.id) ? claim.id : `solution-${index}`;
+				if (!hasNonEmptyText(claim.id) || !hasNonEmptyText(claim.text)) {
 					messages.push(
 						`Section "solution" claim at index ${index} has empty id or text. Mark this claim non-publishable. ${claimSupportRemediation}`,
 					);
 				}
 
-				validateClaimSupportLinks('solution', claimId, capability.supportLinks, messages, now);
+				validateNarrativeClaimPolicy({
+					sectionId: 'solution',
+					claimId,
+					policyClass: claim.policyClass,
+					supportLinks: claim.supportLinks,
+					benchmarkEvidence: claim.benchmarkEvidence,
+					messages,
+					now,
+					claimSupportRemediation,
+					claimPolicyRemediation,
+					benchmarkRemediation: benchmarkClaimRemediation,
+				});
 			});
 
 			const combinedCapabilityText = section.capabilities

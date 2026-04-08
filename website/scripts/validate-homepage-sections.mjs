@@ -12,10 +12,15 @@ try {
 	if (!validation.isValid) {
 		const report = formatHomepageNarrativeValidationReport(validation);
 		console.error(report);
+		const normalizedReport = report.toLowerCase();
 
-		if (report.toLowerCase().includes('non-publishable')) {
+		if (
+			normalizedReport.includes('non-publishable') ||
+			normalizedReport.includes('disallowed-until-validated') ||
+			normalizedReport.includes('benchmark-gated')
+		) {
 			console.error(
-				'[homepage narrative] Release blocked: resolve non-publishable narrative claim diagnostics and update release notes remediation before publishing.',
+				'[homepage narrative] Release blocked: resolve claims-policy diagnostics (class, metadata, or benchmark evidence) and update release notes remediation before publishing.',
 			);
 		} else {
 			console.error(
