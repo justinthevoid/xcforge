@@ -9,6 +9,17 @@ export let defaultSnapshotId: ProofSnapshotId = 'xcforge-proof';
 let activeSnapshotId: ProofSnapshotId = defaultSnapshotId;
 let _prefersReducedMotion = true;
 
+function _focusToggleButton(snapshotId: ProofSnapshotId): void {
+	if (typeof document === 'undefined') {
+		return;
+	}
+
+	const button = document.querySelector<HTMLButtonElement>(
+		`[data-proof-toggle-id="${snapshotId}"]`,
+	);
+	button?.focus();
+}
+
 function resolveDefaultSnapshotId(): ProofSnapshotId {
 	if (snapshots.some((snapshot) => snapshot.id === defaultSnapshotId)) {
 		return defaultSnapshotId;
@@ -25,7 +36,10 @@ function resolveDefaultSnapshotId(): ProofSnapshotId {
 	return snapshots[0]?.id ?? 'xcforge-proof';
 }
 
-function selectSnapshot(nextSnapshotId: ProofSnapshotId): void {
+function selectSnapshot(
+	nextSnapshotId: ProofSnapshotId,
+	options: { moveFocus?: boolean } = {},
+): void {
 	if (!snapshots.some((snapshot) => snapshot.id === nextSnapshotId)) {
 		return;
 	}
@@ -35,6 +49,10 @@ function selectSnapshot(nextSnapshotId: ProofSnapshotId): void {
 	}
 
 	activeSnapshotId = nextSnapshotId;
+
+	if (options.moveFocus) {
+		_focusToggleButton(nextSnapshotId);
+	}
 }
 
 function getOrderedSnapshotIds(): ProofSnapshotId[] {
@@ -68,7 +86,7 @@ function _handleToggleKeydown(event: KeyboardEvent): void {
 	const delta = event.key === 'ArrowRight' ? 1 : -1;
 	const nextIndex = (currentIndex + delta + orderedSnapshotIds.length) % orderedSnapshotIds.length;
 	const nextSnapshotId = orderedSnapshotIds[nextIndex];
-	selectSnapshot(nextSnapshotId);
+	selectSnapshot(nextSnapshotId, { moveFocus: true });
 }
 
 function _getButtonLabel(snapshot: ProofSnapshotForRender): string {
@@ -132,15 +150,16 @@ onMount(() => {
 			class="proof-toggle-controls"
 			role="group"
 			aria-labelledby="proof-toggle-heading"
-			on:keydown={_handleToggleKeydown}
 		>
 			{#each snapshots as snapshot}
 				<button
 					type="button"
 					class="proof-toggle-button"
+					data-proof-toggle-id={snapshot.id}
 					data-selected={snapshot.id === activeSnapshotId ? 'true' : 'false'}
 					aria-pressed={snapshot.id === activeSnapshotId}
 					aria-controls={`proof-snapshot-${snapshot.id}`}
+					on:keydown={_handleToggleKeydown}
 					on:click={() => selectSnapshot(snapshot.id)}
 				>
 					<span class="proof-toggle-button-label">{_getButtonLabel(snapshot)}</span>

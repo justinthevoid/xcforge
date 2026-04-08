@@ -862,12 +862,13 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 	flex-wrap: wrap;
 }
 
-.install-handoff-command-row code {
+.install-handoff-command {
 	flex: 1;
 	min-width: 240px;
 	border: 1px solid rgba(42, 53, 68, 0.95);
 	border-radius: 10px;
 	padding: 10px;
+	margin: 0;
 	font-family: var(--xcf-font-mono);
 	background: rgba(0, 0, 0, 0.28);
 	color: var(--xcf-color-text);
@@ -993,7 +994,7 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 		grid-template-columns: 1fr;
 	}
 
-	.install-handoff-command-row code,
+	.install-handoff-command,
 	.copy-command,
 	.install-handoff-link,
 	.handoff-link {

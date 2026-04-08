@@ -64,9 +64,12 @@ const { finalCta } = Astro.props;
 				{finalCta.handoffReadyMessage}
 			</p>
 			<div class="install-handoff-command-row">
-				<code tabindex="0" data-install-handoff-command
-					>{finalCta.installCommand}</code
-				>
+				<pre
+					class="install-handoff-command"
+					data-install-handoff-command
+					tabindex="0"
+					aria-label="Install command"
+				>{finalCta.installCommand}</pre>
 				<button class="copy-command" type="button" data-copy-install-command>
 					{finalCta.handoffCopyButtonLabel}
 				</button>

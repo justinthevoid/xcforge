@@ -103,7 +103,7 @@
 .install-handoff-link:focus-visible,
 .handoff-link:focus-visible,
 .journey-artifact-link:focus-visible,
-.install-handoff-command-row code:focus-visible {
+.install-handoff-command:focus-visible {
 	outline: var(--xcf-border-focus) solid var(--xcf-color-focus);
 	outline-offset: var(--xcf-outline-offset);
 }
