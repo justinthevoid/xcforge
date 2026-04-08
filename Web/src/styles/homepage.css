@@ -127,13 +127,16 @@ main {
 
 .hero-copy {
 	padding: 36px;
+	isolation: isolate;
 }
 
-.hero-logo-video {
+.hero-og-image {
 	display: block;
-	max-height: 100px;
-	width: auto;
-	margin: 0 0 24px;
+	width: 100%;
+	max-width: 520px;
+	height: auto;
+	margin: -8px auto 16px;
+	mix-blend-mode: multiply;
 }
 
 .install-steps {
