@@ -1,4 +1,6 @@
 :root {
+	color-scheme: dark;
+
 	--xcf-color-bg: #0b0f14;
 	--xcf-color-panel: #111a24;
 	--xcf-color-panel-soft: #1b2735;
@@ -14,6 +16,9 @@
 	--xcf-color-focus: #f2b35d;
 	--xcf-color-kicker: #9fd0fa;
 	--xcf-color-inverse-text: #111111;
+	--xcf-color-text-on-info: #d9ebff;
+	--xcf-color-text-on-conversion: #f5d5bf;
+	--xcf-color-text-on-success: #d8f7e4;
 	--xcf-focus-ring: var(--xcf-color-focus);
 
 	--xcf-rgb-bg: 11, 15, 20;
