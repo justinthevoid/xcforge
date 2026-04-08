@@ -29,6 +29,7 @@ bun run dev
 | ------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `bun run doctor`          | Validate runtime and dependency baseline with actionable diagnostics                                    |
 | `bun run dev`             | Start local server                                                                                      |
+| `bun run validate:routes` | Validate marketing/docs route ownership and internal cross-surface homepage links                       |
 | `bun run typecheck`       | Run `astro check`                                                                                       |
 | `bun run lint`            | Run Biome checks                                                                                        |
 | `bun run lint:fix`        | Apply safe Biome lint fixes                                                                             |
@@ -37,6 +38,17 @@ bun run dev
 | `bun run workers:check`   | Validate Workers preflight contract (adapter + wrangler + binding parity checks)                        |
 | `bun run workers:preview` | Run Workers preflight and build, then start Wrangler preview from generated `dist/server/wrangler.json` |
 | `bun run workers:deploy`  | Run Workers preflight and build, then deploy with Wrangler from generated `dist/server/wrangler.json`   |
+
+## Route Boundary Validation
+
+`bun run validate:routes` enforces Story 4.1 routing contracts before release packaging:
+
+- Marketing pages remain in `src/pages` and do not overlap `/docs`.
+- Starlight docs slugs resolve to `/docs` and `/docs/*` routes.
+- `astro.config.mjs` preserves both Starlight and Svelte integrations.
+- Homepage internal links to docs/workflow destinations resolve to valid routes.
+
+`bun run build` runs this check before `astro build`, so broken cross-surface links fail early and block release.
 
 ## Cloudflare Workers Baseline
 
