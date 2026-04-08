@@ -50,3 +50,13 @@ jobs:
 
       - name: Build website
         run: bun run build
+
+      - name: Upload Story 5.3 remediation tasks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: website-story-5-3-remediation
+          path: |
+            ${{ github.workspace }}/_bmad-output/implementation-artifacts/story-5-3-remediation-tasks.md
+            ${{ github.workspace }}/_bmad-output/implementation-artifacts/story-5-3-remediation-tasks.json
+          if-no-files-found: ignore
