@@ -54,12 +54,12 @@ public actor SessionState {
     self.repoDefaults = RepoConfig.discover(from: startDir)
 
     // Load persisted defaults eagerly from disk.
-    // Only restore the three user-managed fields; build info (bundleId/appPath)
-    // is populated by workflow execution, not persisted defaults.
     if let persisted = defaultsStore.load() {
       self.project = persisted.project
       self.scheme = persisted.scheme
       self.simulator = persisted.simulator
+      self.bundleId = persisted.bundleId
+      self.appPath = persisted.appPath
       if persisted.project != nil { projectSource = .persisted }
       if persisted.scheme != nil { schemeSource = .persisted }
       if persisted.simulator != nil { simulatorSource = .persisted }
@@ -129,6 +129,7 @@ public actor SessionState {
   func setBuildInfo(bundleId: String, appPath: String?) {
     self.bundleId = bundleId
     self.appPath = appPath
+    defaultsStore.save(PersistedDefaults(bundleId: bundleId, appPath: appPath))
   }
 
   public func resolveBundleId(_ explicit: String?) -> String? {

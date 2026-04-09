@@ -16,7 +16,7 @@ struct Build: AsyncParsableCommand {
 struct BuildRun: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "run",
-    abstract: "Build an iOS app for simulator."
+    abstract: "Build, install, and launch an iOS app on a simulator."
   )
 
   @Option(help: "Path to .xcodeproj or .xcworkspace. Auto-detected if omitted.")
@@ -71,13 +71,56 @@ struct BuildRun: AsyncParsableCommand {
         configuration: configuration
       )
 
+      guard execution.succeeded else {
+        if useJSON {
+          print(try WorkflowJSONRenderer.renderJSON(execution))
+        } else {
+          print(BuildRenderer.renderBuild(execution))
+        }
+        throw ExitCode.failure
+      }
+
+      // Build succeeded — continue with boot → install → launch pipeline.
+      let resolvedSimulator = execution.simulator
+
+      let bootResult = await SimTools.executeBootSim(simulator: resolvedSimulator, env: env)
+      let bootStatus = bootResult.succeeded ? "ok" : "failed: \(bootResult.message)"
+
+      var installStatus = "skipped"
+      var launchStatus = "skipped"
+
+      if bootResult.succeeded, let appPath = execution.appPath {
+        let installResult = await SimTools.executeInstallApp(
+          simulator: resolvedSimulator, appPath: appPath, env: env)
+        installStatus = installResult.succeeded ? "ok" : "failed: \(installResult.message)"
+
+        if installResult.succeeded, let bundleId = execution.bundleId {
+          let launchResult = await SimTools.executeLaunchApp(
+            simulator: resolvedSimulator, bundleId: bundleId, env: env)
+          launchStatus = launchResult.succeeded ? "ok" : "failed: \(launchResult.message)"
+        } else if !installResult.succeeded {
+          launchStatus = "skipped (install failed)"
+        }
+      } else if !bootResult.succeeded {
+        installStatus = "skipped (boot failed)"
+        launchStatus = "skipped (boot failed)"
+      } else {
+        installStatus = "skipped (no app path)"
+      }
+
       if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(execution))
       } else {
-        print(BuildRenderer.renderBuild(execution))
+        print(
+          BuildRenderer.renderBuildRun(
+            execution, bootStatus: bootStatus, installStatus: installStatus,
+            launchStatus: launchStatus))
       }
 
-      if !execution.succeeded {
+      let failed =
+        bootStatus.hasPrefix("failed") || installStatus.hasPrefix("failed")
+        || launchStatus.hasPrefix("failed")
+      if failed {
         throw ExitCode.failure
       }
     }

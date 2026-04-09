@@ -43,6 +43,32 @@ enum BuildRenderer {
     return lines.joined(separator: "\n")
   }
 
+  static func renderBuildRun(
+    _ execution: BuildTools.BuildExecution,
+    bootStatus: String,
+    installStatus: String,
+    launchStatus: String
+  ) -> String {
+    var lines: [String] = []
+
+    lines.append("Scheme: \(execution.scheme) | Simulator: \(execution.simulator)")
+
+    if let bid = execution.bundleId {
+      lines.append("Bundle ID: \(bid)")
+    }
+    if let path = execution.appPath {
+      lines.append("App path: \(path)")
+    }
+
+    lines.append("")
+    lines.append("  Build:   \(execution.elapsed)s")
+    lines.append("  Boot:    \(bootStatus)")
+    lines.append("  Install: \(installStatus)")
+    lines.append("  Launch:  \(launchStatus)")
+
+    return lines.joined(separator: "\n")
+  }
+
   static func renderDiagnose(_ execution: TestTools.BuildDiagnosisExecution) -> String {
     var lines: [String] = []
 
