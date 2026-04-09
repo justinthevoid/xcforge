@@ -24,6 +24,10 @@ public enum BuildTools {
     public let errors: [String]
     public let failureReason: String?
     public let structuredErrors: [String]?
+    public let xcresultPath: String?
+    public let issues: [TestTools.BuildIssueObservation]?
+    public let errorCount: Int?
+    public let warningCount: Int?
   }
 
   /// Returns true if `text` contains a known infrastructure failure pattern.
@@ -250,6 +254,10 @@ public enum BuildTools {
     let projectFlag = isWorkspace ? "-workspace" : "-project"
     let destination = await AutoDetect.buildDestination(resolvedSimulator)
 
+    // Always generate an xcresult bundle for structured diagnostics
+    let resultPath = TestTools.xcresultPath(prefix: "build")
+    _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
+
     var buildArgs = [
       projectFlag, resolvedProject,
       "-scheme", resolvedScheme,
@@ -257,6 +265,7 @@ public enum BuildTools {
       "-destination", destination,
       "-skipMacroValidation",
       "-parallelizeTargets",
+      "-resultBundlePath", resultPath,
       "build",
     ]
     buildArgs += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
@@ -264,6 +273,9 @@ public enum BuildTools {
     let start = CFAbsoluteTimeGetCurrent()
     let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: 1800)
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
+
+    // Extract structured issues from xcresult (best source of diagnostics)
+    let xcresultIssues = await extractIssuesFromXcresult(resultPath, env: env)
 
     if result.succeeded {
       let buildInfo = await extractBuildInfo(
@@ -287,13 +299,33 @@ public enum BuildTools {
         appPath: buildInfo.appPath,
         errors: [],
         failureReason: nil,
-        structuredErrors: nil
+        structuredErrors: nil,
+        xcresultPath: resultPath,
+        issues: xcresultIssues.issues.isEmpty ? nil : xcresultIssues.issues,
+        errorCount: xcresultIssues.errorCount,
+        warningCount: xcresultIssues.warningCount
       )
     } else {
-      let reason = classifyFailureReason(stderr: result.stderr)
-      let structured = extractStructuredErrors(stderr: result.stderr, failureReason: reason)
+      // Use xcresult issues if available, fall back to stderr parsing
+      var issues = xcresultIssues.issues
+      var errorCount = xcresultIssues.errorCount
+      var warningCount = xcresultIssues.warningCount
 
-      // Keep legacy errors field for backward compat
+      if issues.isEmpty {
+        issues = TestTools.fallbackBuildIssues(stderr: result.stderr)
+        errorCount = issues.filter { $0.severity == .error }.count
+        warningCount = issues.filter { $0.severity == .warning }.count
+      }
+
+      // Classify failure from xcresult issues first, then stderr
+      let reason: String
+      if !issues.isEmpty {
+        reason = classifyFailureFromIssues(issues)
+      } else {
+        reason = classifyFailureReason(stderr: result.stderr)
+      }
+
+      let structured = extractStructuredErrors(stderr: result.stderr, failureReason: reason)
       let errors = extractLegacyErrors(from: result.stderr)
 
       return BuildExecution(
@@ -306,9 +338,52 @@ public enum BuildTools {
         appPath: nil,
         errors: errors,
         failureReason: reason,
-        structuredErrors: structured
+        structuredErrors: structured,
+        xcresultPath: resultPath,
+        issues: issues.isEmpty ? nil : issues,
+        errorCount: errorCount,
+        warningCount: warningCount
       )
     }
+  }
+
+  /// Extract structured issues from an xcresult bundle.
+  private static func extractIssuesFromXcresult(
+    _ path: String, env: Environment
+  ) async -> (
+    issues: [TestTools.BuildIssueObservation], errorCount: Int, warningCount: Int,
+    analyzerWarningCount: Int
+  ) {
+    guard let buildJSON = await TestTools.parseBuildResults(path, env: env),
+      let data = buildJSON.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      return ([], 0, 0, 0)
+    }
+    let parsed = TestTools.parseBuildIssues(json)
+    return (parsed.issues, parsed.errorCount, parsed.warningCount, parsed.analyzerWarningCount)
+  }
+
+  /// Classify failure reason from structured issues (more reliable than stderr).
+  private static func classifyFailureFromIssues(
+    _ issues: [TestTools.BuildIssueObservation]
+  ) -> String {
+    let errors = issues.filter { $0.severity == .error }
+    for error in errors {
+      let lower = error.message.lowercased()
+      if isInfrastructureMessage(error.message) {
+        return "infrastructure"
+      }
+      if lower.contains("no signing certificate") || lower.contains("provisioning profile")
+        || lower.contains("code signing") || lower.contains("requires a provisioning profile")
+      {
+        return "signing_error"
+      }
+      if lower.contains("undefined symbols") || lower.contains("linker command failed") {
+        return "linker_error"
+      }
+    }
+    return errors.isEmpty ? "unknown" : "compiler_error"
   }
 
   static func buildSim(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -332,6 +407,18 @@ public enum BuildTools {
           }
           if let path = execution.appPath {
             output += "\nApp path: \(path)"
+          }
+          if let path = execution.xcresultPath {
+            output += "\nxcresult: \(path)"
+          }
+          if let issues = execution.issues {
+            let warnings = issues.filter { $0.severity == .warning }
+            if !warnings.isEmpty {
+              output += "\nWarnings (\(warnings.count)):"
+              for w in warnings.prefix(5) {
+                output += "\n  \(formatIssue(w))"
+              }
+            }
           }
           return .ok(output)
         } else {
@@ -366,7 +453,25 @@ public enum BuildTools {
     lines.append("Simulator: \(execution.simulator)")
     lines.append("Configuration: \(execution.configuration)")
 
-    if let structured = execution.structuredErrors, !structured.isEmpty {
+    // Prefer xcresult-parsed issues (most structured and actionable)
+    if let issues = execution.issues, !issues.isEmpty {
+      let errors = issues.filter { $0.severity == .error }
+      let warnings = issues.filter { $0.severity != .error }
+      if !errors.isEmpty {
+        lines.append("")
+        lines.append("Errors (\(errors.count)):")
+        for issue in errors.prefix(20) {
+          lines.append("  \(formatIssue(issue))")
+        }
+      }
+      if !warnings.isEmpty {
+        lines.append("")
+        lines.append("Warnings (\(warnings.count)):")
+        for issue in warnings.prefix(10) {
+          lines.append("  \(formatIssue(issue))")
+        }
+      }
+    } else if let structured = execution.structuredErrors, !structured.isEmpty {
       lines.append("")
       lines.append("Errors (\(structured.count)):")
       for error in structured {
@@ -380,7 +485,62 @@ public enum BuildTools {
       }
     }
 
+    if let path = execution.xcresultPath {
+      lines.append("")
+      lines.append("xcresult: \(path)")
+    }
+
     return lines.joined(separator: "\n")
+  }
+
+  /// Format a single build issue for display.
+  private static func formatIssue(_ issue: TestTools.BuildIssueObservation) -> String {
+    if let loc = issue.location {
+      let shortPath = (loc.filePath as NSString).lastPathComponent
+      var location = shortPath
+      if let line = loc.line {
+        location += ":\(line)"
+        if let col = loc.column { location += ":\(col)" }
+      }
+      return "\(location): \(issue.message)"
+    }
+    return issue.message
+  }
+
+  /// Find the most recent xcresult bundle from a build in /tmp.
+  public static func findRecentBuildXcresult(env: Environment = .live) async -> String? {
+    do {
+      let result = try await env.shell.run(
+        "/bin/ls", arguments: ["-1t", "/tmp/"], timeout: 5)
+      guard result.succeeded else { return nil }
+      let candidates = result.stdout.split(separator: "\n")
+        .map(String.init)
+        .filter { $0.hasPrefix("xcf-build-") && $0.hasSuffix(".xcresult") }
+      return candidates.first.map { "/tmp/\($0)" }
+    } catch {
+      return nil
+    }
+  }
+
+  /// Parse issues from an existing xcresult bundle without rebuilding.
+  public static func diagnoseFromXcresult(
+    path: String, errorsOnly: Bool = false, env: Environment = .live
+  ) async -> (
+    issues: [TestTools.BuildIssueObservation], errorCount: Int, warningCount: Int,
+    analyzerWarningCount: Int, xcresultPath: String
+  ) {
+    guard let buildJSON = await TestTools.parseBuildResults(path, env: env),
+      let data = buildJSON.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+      return ([], 0, 0, 0, path)
+    }
+    let parsed = TestTools.parseBuildIssues(json)
+    let issues =
+      errorsOnly
+      ? parsed.issues.filter { $0.severity == .error }
+      : parsed.issues
+    return (issues, parsed.errorCount, parsed.warningCount, parsed.analyzerWarningCount, path)
   }
 
   static func clean(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -469,6 +629,10 @@ public enum BuildTools {
 
     let totalStart = CFAbsoluteTimeGetCurrent()
 
+    // Always generate xcresult for structured diagnostics
+    let resultPath = TestTools.xcresultPath(prefix: "build")
+    _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
+
     let buildArgs = [
       projectFlag, project,
       "-scheme", scheme,
@@ -476,6 +640,7 @@ public enum BuildTools {
       "-destination", destination,
       "-skipMacroValidation",
       "-parallelizeTargets",
+      "-resultBundlePath", resultPath,
       "build",
       "COMPILATION_CACHE_ENABLE_CACHING=YES",
     ]
@@ -511,7 +676,20 @@ public enum BuildTools {
     let buildElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - totalStart)
 
     guard buildResult.succeeded else {
-      let reason = classifyFailureReason(stderr: buildResult.stderr)
+      let xcresultIssues = await extractIssuesFromXcresult(resultPath, env: env)
+      var issues = xcresultIssues.issues
+      var errorCount = xcresultIssues.errorCount
+      var warningCount = xcresultIssues.warningCount
+
+      if issues.isEmpty {
+        issues = TestTools.fallbackBuildIssues(stderr: buildResult.stderr)
+        errorCount = issues.filter { $0.severity == .error }.count
+        warningCount = issues.filter { $0.severity == .warning }.count
+      }
+
+      let reason =
+        !issues.isEmpty
+        ? classifyFailureFromIssues(issues) : classifyFailureReason(stderr: buildResult.stderr)
       let structured = extractStructuredErrors(stderr: buildResult.stderr, failureReason: reason)
       let legacyErrors = extractLegacyErrors(from: buildResult.stderr)
 
@@ -525,7 +703,11 @@ public enum BuildTools {
         appPath: nil,
         errors: legacyErrors,
         failureReason: reason,
-        structuredErrors: structured
+        structuredErrors: structured,
+        xcresultPath: resultPath,
+        issues: issues.isEmpty ? nil : issues,
+        errorCount: errorCount,
+        warningCount: warningCount
       )
       return .fail(formatBuildFailure(execution))
     }
@@ -663,12 +845,21 @@ public enum BuildTools {
       return .fail("Build + Install succeeded\nLaunch FAILED: \(launchResult.stderr)")
     }
 
+    // simctl launch prints "<bundleId>: <pid>" on stdout
+    let appPid = launchResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(separator: ":").last
+      .map { String($0).trimmingCharacters(in: .whitespaces) }
+
     let totalElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - totalStart)
 
     var output = "build_run_sim completed in \(totalElapsed)s"
     output += "\nScheme: \(scheme) | Simulator: \(simulator)"
     output += "\nBundle ID: \(bundleId)"
     output += "\nApp path: \(finalAppPath)"
+    if let pid = appPid, !pid.isEmpty {
+      output += "\nApp PID: \(pid)"
+    }
+    output += "\nApp running: true"
     output += "\n"
     output += "\n  Build:     \(buildElapsed)s"
     output += "\n  App info:  \(infoSource) (parallel)"
@@ -676,6 +867,17 @@ public enum BuildTools {
     output += "\n  Install:   \(installElapsed)s"
     output += "\n  Launch:    OK"
     output += "\n  Simulator: opened"
+
+    // Surface build warnings from xcresult if any
+    let xcresultIssues = await extractIssuesFromXcresult(resultPath, env: env)
+    let buildWarnings = xcresultIssues.issues.filter { $0.severity == .warning }
+    if !buildWarnings.isEmpty {
+      output += "\n"
+      output += "\nWarnings (\(buildWarnings.count)):"
+      for w in buildWarnings.prefix(5) {
+        output += "\n  \(formatIssue(w))"
+      }
+    }
 
     return .ok(output)
   }

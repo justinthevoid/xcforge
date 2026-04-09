@@ -506,9 +506,37 @@ public enum TestTools {
   // MARK: - Shared helpers
 
   /// Generate a unique xcresult path
-  private static func xcresultPath(prefix: String) -> String {
+  static func xcresultPath(prefix: String) -> String {
     let ts = Int(Date().timeIntervalSince1970)
     return "/tmp/xcf-\(prefix)-\(ts).xcresult"
+  }
+
+  /// Find the most recent xcresult bundle in /tmp that has coverage data.
+  /// Returns the path if one is found and contains valid coverage, nil otherwise.
+  private static func findRecentCoverageXcresult(env: Environment) async -> String? {
+    do {
+      // List xcresult bundles created by xcforge (test or cov prefixed)
+      let result = try await env.shell.run(
+        "/bin/ls",
+        arguments: ["-1t", "/tmp/"],
+        timeout: 5
+      )
+      guard result.succeeded else { return nil }
+      let candidates = result.stdout.split(separator: "\n")
+        .map(String.init)
+        .filter { $0.hasPrefix("xcf-") && $0.hasSuffix(".xcresult") }
+
+      // Try each candidate (sorted newest-first by ls -t) for valid coverage
+      for candidate in candidates.prefix(5) {
+        let path = "/tmp/\(candidate)"
+        if let _ = await parseCoverage(path, env: env) {
+          return path
+        }
+      }
+    } catch {
+      // Ignore — fallback to running tests
+    }
+    return nil
   }
 
   /// Resolve a partial test filter into the full `-only-testing` format.
@@ -760,7 +788,7 @@ public enum TestTools {
   }
 
   /// Parse xcresult build results JSON
-  private static func parseBuildResults(_ path: String, env: Environment) async -> String? {
+  static func parseBuildResults(_ path: String, env: Environment) async -> String? {
     do {
       let result = try await env.shell.run(
         "/usr/bin/xcrun",
@@ -1245,7 +1273,11 @@ public enum TestTools {
     let resolvedPath: String
     if let provided = xcresultPath {
       resolvedPath = provided
+    } else if let recent = await findRecentCoverageXcresult(env: env) {
+      // Reuse a recent xcresult that already has coverage data
+      resolvedPath = recent
     } else {
+      // No recent coverage data — run tests with coverage enabled
       let resolvedProject = try await env.session.resolveProject(project)
       let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
       let resolvedSimulator = try await env.session.resolveSimulator(simulator)
@@ -1575,17 +1607,31 @@ public enum TestTools {
       }
 
       // swift test list format: "Target.Class/method()"
-      if trimmed.contains(".") && trimmed.contains("/") {
+      // Guard against URLs, xcodebuild commands, and other noise lines:
+      // - Must not contain spaces (test identifiers are single tokens)
+      // - Must not contain "://" (URLs)
+      // - Must not start with "-" (flags) or "/" (absolute paths)
+      // - Target part (before ".") must be a valid Swift identifier
+      if trimmed.contains(".") && trimmed.contains("/")
+        && !trimmed.contains(" ") && !trimmed.contains("://")
+        && !trimmed.hasPrefix("-") && !trimmed.hasPrefix("/")
+      {
         let dotParts = trimmed.split(separator: ".", maxSplits: 1).map(String.init)
         guard dotParts.count == 2 else { continue }
         let target = dotParts[0]
+        // Target must look like a Swift identifier (alphanumeric + underscore)
+        guard target.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
         let rest = dotParts[1].split(separator: "/", maxSplits: 1).map(String.init)
         guard rest.count == 2 else { continue }
         let className = rest[0]
+        // Class must also look like a Swift identifier
+        guard className.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
         var methodName = rest[1]
         if methodName.hasSuffix("()") {
           methodName = String(methodName.dropLast(2))
         }
+        // Method must not contain "/" (would indicate URL path segments)
+        guard !methodName.contains("/") else { continue }
         let fullId = "\(target)/\(className)/\(methodName)"
         tests.append(
           TestIdentifier(
@@ -1704,7 +1750,9 @@ public enum TestTools {
           }
 
           let hasFailures = (json["failedTests"] as? Int ?? 0) > 0
-          return hasFailures ? .fail(summary) : .ok(summary)
+          // Filter matched nothing → treat as failure so agents don't assume tests passed
+          let zeroMatchWithFilter = totalTests == 0 && input.filter != nil
+          return (hasFailures || zeroMatchWithFilter) ? .fail(summary) : .ok(summary)
         }
 
         // Fallback: no xcresult parseable
@@ -1787,7 +1835,11 @@ public enum TestTools {
 
       if let provided = input.xcresult_path {
         xcresultPath = provided
+      } else if let recent = await findRecentCoverageXcresult(env: env) {
+        // Reuse a recent xcresult that already has coverage data
+        xcresultPath = recent
       } else {
+        // No recent coverage data — run tests with coverage enabled
         do {
           let project = try await env.session.resolveProject(input.project)
           let scheme = try await env.session.resolveScheme(input.scheme, project: project)
@@ -2103,7 +2155,9 @@ public enum TestTools {
       lines.append("")
       lines.append("xcresult: \(test.xcresultPath)")
       let text = lines.joined(separator: "\n") + suffix
-      return test.succeeded ? .ok(text) : .fail(text)
+      // Filter matched nothing → treat as failure so agents don't assume tests passed
+      let zeroMatchWithFilter = test.totalTestCount == 0 && filter != nil
+      return (test.succeeded && !zeroMatchWithFilter) ? .ok(text) : .fail(text)
     }
 
     return .ok(
@@ -2483,7 +2537,7 @@ public enum TestTools {
     return execution.succeeded ? .ok(truncated) : .fail(truncated)
   }
 
-  private static func parseBuildIssues(
+  static func parseBuildIssues(
     _ json: [String: Any]
   ) -> (
     issues: [BuildIssueObservation],

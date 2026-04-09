@@ -153,7 +153,8 @@ struct BuildFailureReasonTests {
       simulator: "iPhone 16", configuration: "Debug",
       bundleId: nil, appPath: nil,
       errors: [], failureReason: "compiler_error",
-      structuredErrors: ["/path/File.swift:42:5: error: cannot find 'foo'"]
+      structuredErrors: ["/path/File.swift:42:5: error: cannot find 'foo'"],
+      xcresultPath: nil, issues: nil, errorCount: nil, warningCount: nil
     )
     let output = BuildTools.formatBuildFailure(execution)
     #expect(output.contains("Failure reason: compiler_error"))
@@ -167,9 +168,63 @@ struct BuildFailureReasonTests {
       simulator: "iPhone 16", configuration: "Debug",
       bundleId: nil, appPath: nil,
       errors: ["some raw error"], failureReason: "unknown",
-      structuredErrors: nil
+      structuredErrors: nil,
+      xcresultPath: nil, issues: nil, errorCount: nil, warningCount: nil
     )
     let output = BuildTools.formatBuildFailure(execution)
     #expect(output.contains("some raw error"))
+  }
+
+  @Test func formatPrefersIssuesOverStructuredErrors() {
+    let issues = [
+      TestTools.BuildIssueObservation(
+        severity: .error,
+        message: "cannot find 'foo' in scope",
+        location: SourceLocation(filePath: "/path/File.swift", line: 42, column: 5),
+        source: "xcresult.errors"
+      )
+    ]
+    let execution = BuildTools.BuildExecution(
+      succeeded: false, elapsed: "2.0", scheme: "MyApp",
+      simulator: "iPhone 16", configuration: "Debug",
+      bundleId: nil, appPath: nil,
+      errors: ["legacy error"], failureReason: "compiler_error",
+      structuredErrors: ["legacy structured"],
+      xcresultPath: "/tmp/xcf-build-123.xcresult",
+      issues: issues, errorCount: 1, warningCount: 0
+    )
+    let output = BuildTools.formatBuildFailure(execution)
+    #expect(output.contains("cannot find 'foo' in scope"))
+    #expect(output.contains("File.swift:42:5"))
+    #expect(!output.contains("legacy error"))
+    #expect(!output.contains("legacy structured"))
+    #expect(output.contains("xcresult:"))
+  }
+
+  @Test func formatSeparatesErrorsAndWarnings() {
+    let issues = [
+      TestTools.BuildIssueObservation(
+        severity: .error, message: "type mismatch",
+        location: nil, source: "xcresult.errors"
+      ),
+      TestTools.BuildIssueObservation(
+        severity: .warning, message: "unused variable",
+        location: nil, source: "xcresult.warnings"
+      ),
+    ]
+    let execution = BuildTools.BuildExecution(
+      succeeded: false, elapsed: "1.0", scheme: "MyApp",
+      simulator: "iPhone 16", configuration: "Debug",
+      bundleId: nil, appPath: nil,
+      errors: [], failureReason: "compiler_error",
+      structuredErrors: nil,
+      xcresultPath: "/tmp/xcf-build-123.xcresult",
+      issues: issues, errorCount: 1, warningCount: 1
+    )
+    let output = BuildTools.formatBuildFailure(execution)
+    #expect(output.contains("Errors (1):"))
+    #expect(output.contains("type mismatch"))
+    #expect(output.contains("Warnings (1):"))
+    #expect(output.contains("unused variable"))
   }
 }

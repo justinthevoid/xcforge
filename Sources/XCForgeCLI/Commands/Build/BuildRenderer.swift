@@ -8,6 +8,8 @@ struct BuildRunResult: Codable {
   let boot: String?
   let install: String?
   let launch: String?
+  let appPid: String?
+  let appRunning: Bool?
 }
 
 enum BuildRenderer {
@@ -35,7 +37,25 @@ enum BuildRenderer {
       lines.append("Failure reason: \(reason)")
     }
 
-    if let structured = execution.structuredErrors, !structured.isEmpty {
+    // Prefer xcresult-parsed issues (most actionable)
+    if let issues = execution.issues, !issues.isEmpty {
+      let errors = issues.filter { $0.severity == .error }
+      let warnings = issues.filter { $0.severity != .error }
+      if !errors.isEmpty {
+        lines.append("")
+        lines.append("Errors (\(errors.count)):")
+        for issue in errors.prefix(20) {
+          lines.append("  \(formatIssue(issue))")
+        }
+      }
+      if !warnings.isEmpty {
+        lines.append("")
+        lines.append("Warnings (\(warnings.count)):")
+        for issue in warnings.prefix(10) {
+          lines.append("  \(formatIssue(issue))")
+        }
+      }
+    } else if let structured = execution.structuredErrors, !structured.isEmpty {
       lines.append("")
       lines.append("Errors (\(structured.count)):")
       for error in structured {
@@ -49,6 +69,14 @@ enum BuildRenderer {
       }
     }
 
+    if let path = execution.xcresultPath {
+      lines.append("")
+      lines.append("xcresult: \(path)")
+      if !execution.succeeded {
+        lines.append("Tip: run `xcforge build diagnose` to re-inspect without rebuilding")
+      }
+    }
+
     return lines.joined(separator: "\n")
   }
 
@@ -56,7 +84,9 @@ enum BuildRenderer {
     _ execution: BuildTools.BuildExecution,
     bootStatus: String,
     installStatus: String,
-    launchStatus: String
+    launchStatus: String,
+    appPid: String? = nil,
+    appRunning: Bool = false
   ) -> String {
     var lines: [String] = []
 
@@ -67,6 +97,12 @@ enum BuildRenderer {
     }
     if let path = execution.appPath {
       lines.append("App path: \(path)")
+    }
+    if let pid = appPid {
+      lines.append("App PID: \(pid)")
+    }
+    if appRunning {
+      lines.append("App running: true")
     }
 
     lines.append("")
@@ -183,5 +219,58 @@ enum BuildRenderer {
     }
 
     return lines.joined(separator: "\n")
+  }
+
+  static func renderDiagnoseFromXcresult(
+    _ result: (
+      issues: [TestTools.BuildIssueObservation], errorCount: Int, warningCount: Int,
+      analyzerWarningCount: Int, xcresultPath: String
+    ),
+    errorsOnly: Bool
+  ) -> String {
+    var lines: [String] = []
+
+    if result.issues.isEmpty {
+      lines.append("No issues found in xcresult bundle.")
+    } else {
+      var parts: [String] = []
+      if result.errorCount > 0 { parts.append("\(result.errorCount) error(s)") }
+      if !errorsOnly {
+        if result.warningCount > 0 { parts.append("\(result.warningCount) warning(s)") }
+        if result.analyzerWarningCount > 0 {
+          parts.append("\(result.analyzerWarningCount) analyzer warning(s)")
+        }
+      }
+      lines.append(parts.joined(separator: ", "))
+      lines.append("")
+
+      for issue in result.issues.prefix(30) {
+        let prefix: String
+        switch issue.severity {
+        case .error: prefix = "ERROR"
+        case .warning: prefix = "WARNING"
+        case .analyzerWarning: prefix = "ANALYZER"
+        }
+        lines.append("  \(prefix) \(formatIssue(issue))")
+      }
+    }
+
+    lines.append("")
+    lines.append("xcresult: \(result.xcresultPath)")
+
+    return lines.joined(separator: "\n")
+  }
+
+  private static func formatIssue(_ issue: TestTools.BuildIssueObservation) -> String {
+    if let loc = issue.location {
+      let shortPath = (loc.filePath as NSString).lastPathComponent
+      var location = shortPath
+      if let line = loc.line {
+        location += ":\(line)"
+        if let col = loc.column { location += ":\(col)" }
+      }
+      return "\(location): \(issue.message)"
+    }
+    return issue.message
   }
 }

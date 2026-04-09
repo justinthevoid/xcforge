@@ -6,7 +6,9 @@ struct Build: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "build",
     abstract: "Build, clean, and inspect Xcode projects.",
-    subcommands: [BuildRun.self, BuildClean.self, BuildDiscover.self, BuildSchemes.self],
+    subcommands: [
+      BuildRun.self, BuildDiagnose.self, BuildClean.self, BuildDiscover.self, BuildSchemes.self,
+    ],
     defaultSubcommand: BuildRun.self
   )
 }
@@ -74,7 +76,8 @@ struct BuildRun: AsyncParsableCommand {
       guard execution.succeeded else {
         if useJSON {
           let result = BuildRunResult(
-            build: execution, boot: nil, install: nil, launch: nil)
+            build: execution, boot: nil, install: nil, launch: nil,
+            appPid: nil, appRunning: nil)
           print(try WorkflowJSONRenderer.renderJSON(result))
         } else {
           print(BuildRenderer.renderBuild(execution))
@@ -90,6 +93,8 @@ struct BuildRun: AsyncParsableCommand {
 
       var installStatus = "skipped"
       var launchStatus = "skipped"
+      var appPid: String?
+      var appRunning = false
 
       if bootResult.succeeded, let appPath = execution.appPath {
         let installResult = await SimTools.executeInstallApp(
@@ -100,6 +105,14 @@ struct BuildRun: AsyncParsableCommand {
           let launchResult = await SimTools.executeLaunchApp(
             simulator: resolvedSimulator, bundleId: bundleId, env: env)
           launchStatus = launchResult.succeeded ? "ok" : "failed: \(launchResult.message)"
+          if launchResult.succeeded {
+            // simctl launch prints "<bundleId>: <pid>" — extract PID from message
+            appPid = launchResult.message
+              .split(separator: "\n").last
+              .flatMap { $0.split(separator: ":").last }
+              .map { String($0).trimmingCharacters(in: .whitespaces) }
+            appRunning = true
+          }
         } else if !installResult.succeeded {
           launchStatus = "skipped (install failed)"
         }
@@ -112,13 +125,14 @@ struct BuildRun: AsyncParsableCommand {
 
       if useJSON {
         let result = BuildRunResult(
-          build: execution, boot: bootStatus, install: installStatus, launch: launchStatus)
+          build: execution, boot: bootStatus, install: installStatus, launch: launchStatus,
+          appPid: appPid, appRunning: appRunning)
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
         print(
           BuildRenderer.renderBuildRun(
             execution, bootStatus: bootStatus, installStatus: installStatus,
-            launchStatus: launchStatus))
+            launchStatus: launchStatus, appPid: appPid, appRunning: appRunning))
       }
 
       let failed =
@@ -127,6 +141,56 @@ struct BuildRun: AsyncParsableCommand {
       if failed {
         throw ExitCode.failure
       }
+    }
+  }
+}
+
+// MARK: - build diagnose
+
+struct BuildDiagnose: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "diagnose",
+    abstract: "Show structured diagnostics from the last build's xcresult bundle."
+  )
+
+  @Option(help: "Path to an xcresult bundle. Auto-detected from /tmp if omitted.")
+  var xcresult: String?
+
+  @Flag(help: "Show only errors, suppressing warnings.")
+  var errorsOnly = false
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
+
+    let path: String
+    if let provided = xcresult {
+      path = provided
+    } else if let recent = await BuildTools.findRecentBuildXcresult() {
+      path = recent
+    } else {
+      let message = "No recent build results found in /tmp. Run `xcforge build` first."
+      if useJSON {
+        print(try WorkflowJSONRenderer.renderJSON(["error": message]))
+      } else {
+        print(message)
+      }
+      throw ExitCode.failure
+    }
+
+    let result = await BuildTools.diagnoseFromXcresult(
+      path: path, errorsOnly: errorsOnly)
+
+    if useJSON {
+      print(try WorkflowJSONRenderer.renderJSON(result.issues))
+    } else {
+      print(BuildRenderer.renderDiagnoseFromXcresult(result, errorsOnly: errorsOnly))
+    }
+
+    if result.errorCount > 0 {
+      throw ExitCode.failure
     }
   }
 }
