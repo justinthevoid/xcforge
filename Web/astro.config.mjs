@@ -29,6 +29,7 @@ export default defineConfig({
 		starlight({
 			title: 'xcforge Docs',
 			description: 'Technical documentation and workflow guidance for xcforge.',
+			customCss: ['./src/styles/starlight-theme.css'],
 			social: [
 				{
 					icon: 'github',

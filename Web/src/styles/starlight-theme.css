@@ -1,0 +1,113 @@
+/*
+ * xcforge Starlight docs theme — maps the website design tokens to Starlight's
+ * CSS custom properties so both surfaces share a single visual identity.
+ *
+ * Reference: Web/src/styles/tokens.css  (source palette)
+ *            @astrojs/starlight/style/props.css  (target variables)
+ */
+
+:root,
+::backdrop {
+	/* ── Gray scale (dark mode) ── */
+	--sl-color-white: #f8f8f8;
+	--sl-color-gray-1: #b8c3d1;
+	--sl-color-gray-2: #8a96a8;
+	--sl-color-gray-3: #5e6e82;
+	--sl-color-gray-4: #3d4d60;
+	--sl-color-gray-5: #1b2735;
+	--sl-color-gray-6: #111a24;
+	--sl-color-black: #0b0f14;
+
+	/* ── Accent (info blue from the website) ── */
+	--sl-color-accent-low: #0a2440;
+	--sl-color-accent: #1090f0;
+	--sl-color-accent-high: #8ec7f8;
+
+	/* ── Semantic hues aligned to token palette ── */
+	--sl-color-orange-low: #3d2210;
+	--sl-color-orange: #f2b35d;
+	--sl-color-orange-high: #fce4bf;
+	--sl-color-green-low: #12331f;
+	--sl-color-green: #61d095;
+	--sl-color-green-high: #c4f0d7;
+	--sl-color-blue-low: #0a2440;
+	--sl-color-blue: #1090f0;
+	--sl-color-blue-high: #8ec7f8;
+	--sl-color-red-low: #3d1418;
+	--sl-color-red: #ee6b73;
+	--sl-color-red-high: #f8c4c7;
+	--sl-color-purple-low: #251040;
+	--sl-color-purple: #b080e0;
+	--sl-color-purple-high: #dcc4f0;
+
+	/* ── Surface colors ── */
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: var(--sl-color-gray-6);
+	--sl-color-bg-sidebar: var(--sl-color-gray-6);
+	--sl-color-bg-inline-code: var(--sl-color-gray-5);
+	--sl-color-bg-accent: var(--sl-color-accent-high);
+	--sl-color-hairline-light: #2a3544;
+	--sl-color-hairline: var(--sl-color-gray-6);
+	--sl-color-hairline-shade: var(--sl-color-black);
+	--sl-color-text: var(--sl-color-gray-1);
+	--sl-color-text-accent: var(--sl-color-accent-high);
+	--sl-color-text-invert: var(--sl-color-accent-low);
+	--sl-color-backdrop-overlay: hsla(213, 29%, 6%, 0.66);
+
+	/* ── Typography ── */
+	--sl-font: "IBM Plex Sans", "Segoe UI", sans-serif;
+	--sl-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+/* Force dark palette even when Starlight's theme toggle is set to "light". */
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+	--sl-color-white: #f8f8f8;
+	--sl-color-gray-1: #b8c3d1;
+	--sl-color-gray-2: #8a96a8;
+	--sl-color-gray-3: #5e6e82;
+	--sl-color-gray-4: #3d4d60;
+	--sl-color-gray-5: #1b2735;
+	--sl-color-gray-6: #111a24;
+	--sl-color-black: #0b0f14;
+
+	--sl-color-accent-low: #0a2440;
+	--sl-color-accent: #1090f0;
+	--sl-color-accent-high: #8ec7f8;
+
+	--sl-color-orange-low: #3d2210;
+	--sl-color-orange: #f2b35d;
+	--sl-color-orange-high: #fce4bf;
+	--sl-color-green-low: #12331f;
+	--sl-color-green: #61d095;
+	--sl-color-green-high: #c4f0d7;
+	--sl-color-blue-low: #0a2440;
+	--sl-color-blue: #1090f0;
+	--sl-color-blue-high: #8ec7f8;
+	--sl-color-red-low: #3d1418;
+	--sl-color-red: #ee6b73;
+	--sl-color-red-high: #f8c4c7;
+	--sl-color-purple-low: #251040;
+	--sl-color-purple: #b080e0;
+	--sl-color-purple-high: #dcc4f0;
+
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: var(--sl-color-gray-6);
+	--sl-color-bg-sidebar: var(--sl-color-gray-6);
+	--sl-color-bg-inline-code: var(--sl-color-gray-5);
+	--sl-color-bg-accent: var(--sl-color-accent-high);
+	--sl-color-hairline-light: #2a3544;
+	--sl-color-hairline: var(--sl-color-gray-6);
+	--sl-color-hairline-shade: var(--sl-color-black);
+	--sl-color-text: var(--sl-color-gray-1);
+	--sl-color-text-accent: var(--sl-color-accent-high);
+	--sl-color-text-invert: var(--sl-color-accent-low);
+	--sl-color-backdrop-overlay: hsla(213, 29%, 6%, 0.66);
+
+	--sl-shadow-sm: 0px 1px 1px hsla(0, 0%, 0%, 0.12), 0px 2px 1px hsla(0, 0%, 0%, 0.24);
+	--sl-shadow-md: 0px 8px 4px hsla(0, 0%, 0%, 0.08), 0px 5px 2px hsla(0, 0%, 0%, 0.08),
+		0px 3px 2px hsla(0, 0%, 0%, 0.12), 0px 1px 1px hsla(0, 0%, 0%, 0.15);
+	--sl-shadow-lg: 0px 25px 7px hsla(0, 0%, 0%, 0.03), 0px 16px 6px hsla(0, 0%, 0%, 0.1),
+		0px 9px 5px hsla(213, 29%, 6%, 0.33), 0px 4px 4px hsla(0, 0%, 0%, 0.75),
+		0px 4px 2px hsla(0, 0%, 0%, 0.25);
+}
