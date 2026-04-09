@@ -70,13 +70,13 @@ a {
 }
 
 .brand-xcf {
-	color: var(--xcf-color-conversion);
-	text-shadow: 0 0 8px rgba(var(--xcf-rgb-conversion), 0.5), 0 0 20px rgba(var(--xcf-rgb-conversion), 0.25);
+	color: var(--xcf-color-text);
+	text-shadow: 0 0 6px rgba(var(--xcf-rgb-conversion), 0.6), 0 0 18px rgba(var(--xcf-rgb-conversion), 0.3), 0 0 40px rgba(var(--xcf-rgb-conversion), 0.15);
 }
 
 .brand-orge {
-	color: var(--xcf-color-kicker);
-	text-shadow: 0 0 8px rgba(159, 208, 250, 0.5), 0 0 20px rgba(159, 208, 250, 0.25);
+	color: var(--xcf-color-text);
+	text-shadow: 0 0 6px rgba(159, 208, 250, 0.6), 0 0 18px rgba(159, 208, 250, 0.3), 0 0 40px rgba(159, 208, 250, 0.15);
 }
 
 .nav-list {
