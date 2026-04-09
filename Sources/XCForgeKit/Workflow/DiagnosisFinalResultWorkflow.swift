@@ -1,50 +1,29 @@
 import Foundation
 
 public struct DiagnosisFinalResultWorkflow: Sendable {
-  typealias LoadRun = @Sendable (String) throws -> WorkflowRunRecord
-  typealias LoadLatestActiveRun = @Sendable () throws -> WorkflowRunRecord?
-  typealias LoadLatestTerminalRun = @Sendable () throws -> WorkflowRunRecord?
-  typealias LoadLatestRun = @Sendable () throws -> WorkflowRunRecord?
   typealias RunPath = @Sendable (String) -> URL
 
-  private let loadRun: LoadRun
-  private let loadLatestActiveRun: LoadLatestActiveRun
-  private let loadLatestTerminalRun: LoadLatestTerminalRun
-  private let loadLatestRun: LoadLatestRun
+  private let resolver: RunResolver
   private let runPath: RunPath
 
   public init() {
     self.init(
-      loadRun: { runId in
-        let store = RunStore()
-        let fileURL = store.runFileURL(runId: runId)
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-          throw DiagnosisFinalResultWorkflowError(
-            field: .run,
-            classification: .notFound,
-            message: "No diagnosis run was found for run ID \(runId)."
-          )
-        }
-        return try store.load(runId: runId)
-      },
-      loadLatestActiveRun: { try RunStore().latestActiveDiagnosisRun() },
-      loadLatestTerminalRun: { try RunStore().latestTerminalDiagnosisRun() },
-      loadLatestRun: { try RunStore().latestDiagnosisRun() },
+      resolver: RunResolver(
+        strategy: .terminalFirst,
+        loadRun: { runId in try RunStore().load(runId: runId) },
+        loadLatestActiveRun: { try RunStore().latestActiveDiagnosisRun() },
+        loadLatestTerminalRun: { try RunStore().latestTerminalDiagnosisRun() },
+        loadLatestRun: { try RunStore().latestDiagnosisRun() }
+      ),
       runPath: { runId in RunStore().runFileURL(runId: runId) }
     )
   }
 
   init(
-    loadRun: @escaping LoadRun,
-    loadLatestActiveRun: @escaping LoadLatestActiveRun,
-    loadLatestTerminalRun: @escaping LoadLatestTerminalRun,
-    loadLatestRun: @escaping LoadLatestRun,
+    resolver: RunResolver,
     runPath: @escaping RunPath
   ) {
-    self.loadRun = loadRun
-    self.loadLatestActiveRun = loadLatestActiveRun
-    self.loadLatestTerminalRun = loadLatestTerminalRun
-    self.loadLatestRun = loadLatestRun
+    self.resolver = resolver
     self.runPath = runPath
   }
 
@@ -85,9 +64,12 @@ public struct DiagnosisFinalResultWorkflow: Sendable {
       }
 
       let compareWorkflow = DiagnosisCompareWorkflow(
-        loadRun: loadRun,
-        loadLatestActiveRun: loadLatestActiveRun,
-        loadLatestRun: loadLatestRun,
+        resolver: RunResolver(
+          strategy: .activeOrRecent,
+          loadRun: resolver.loadRun,
+          loadLatestActiveRun: resolver.loadLatestActiveRun,
+          loadLatestRun: resolver.loadLatestRun
+        ),
         runPath: runPath
       )
       let compareResult = await compareWorkflow.compare(
@@ -207,57 +189,36 @@ public struct DiagnosisFinalResultWorkflow: Sendable {
   }
 
   private func resolveRun(for request: DiagnosisFinalResultRequest) throws -> WorkflowRunRecord {
-    if let runId = request.runId {
-      let trimmedRunId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !trimmedRunId.isEmpty else {
-        throw DiagnosisFinalResultWorkflowError(
-          field: .run,
-          classification: .notFound,
-          message: "Run ID must not be empty."
-        )
-      }
-      do {
-        return try loadRun(trimmedRunId)
-      } catch let error as DiagnosisFinalResultWorkflowError {
-        throw error
-      } catch let error as CocoaError
-        where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
-      {
-        throw DiagnosisFinalResultWorkflowError(
-          field: .run,
-          classification: .notFound,
-          message: "No diagnosis run was found for run ID \(trimmedRunId)."
-        )
-      } catch {
-        throw DiagnosisFinalResultWorkflowError(
-          field: .run,
-          classification: .executionFailed,
-          message: "\(error)"
-        )
-      }
-    }
-
-    if let run = try loadLatestTerminalRun() {
+    switch resolver.resolve(request.runId) {
+    case .success(let run):
       return run
+    case .failure(let failure):
+      throw Self.mapResolutionFailure(failure)
     }
+  }
 
-    let activeRun = try loadLatestActiveRun()
-    let latestRun = try loadLatestRun()
-
-    if let run = activeRun ?? latestRun {
-      throw DiagnosisFinalResultWorkflowError(
-        field: .run,
-        classification: .invalidRunState,
+  private static func mapResolutionFailure(_ failure: RunResolutionFailure) -> Error {
+    switch failure {
+    case .emptyRunId:
+      return DiagnosisFinalResultWorkflowError(
+        field: .run, classification: .notFound, message: "Run ID must not be empty.")
+    case .notFound(let runId):
+      return DiagnosisFinalResultWorkflowError(
+        field: .run, classification: .notFound,
+        message: "No diagnosis run was found for run ID \(runId).")
+    case .noRunsAvailable:
+      return DiagnosisFinalResultWorkflowError(
+        field: .run, classification: .notFound,
+        message: "No terminal diagnosis runs are available to inspect.")
+    case .runStillInProgress(let runId):
+      return DiagnosisFinalResultWorkflowError(
+        field: .run, classification: .invalidRunState,
         message:
-          "Run \(run.runId) is still in progress; final results require a completed diagnosis."
-      )
+          "Run \(runId) is still in progress; final results require a completed diagnosis.")
+    case .loadFailed(let error):
+      return DiagnosisFinalResultWorkflowError(
+        field: .run, classification: .executionFailed, message: "\(error)")
     }
-
-    throw DiagnosisFinalResultWorkflowError(
-      field: .run,
-      classification: .notFound,
-      message: "No terminal diagnosis runs are available to inspect."
-    )
   }
 
   private static func validate(_ run: WorkflowRunRecord) throws {

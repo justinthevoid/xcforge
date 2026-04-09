@@ -266,27 +266,32 @@ enum DiagnoseTools {
   /// Resolves an optional run_id to a concrete value by auto-detecting the newest active or recent run.
   /// Returns the resolved run ID, or a `.fail` CallTool.Result if resolution fails.
   private static func resolveOptionalRunId(_ runId: String?) -> (String?, CallTool.Result?) {
-    if let runId {
-      let trimmed = runId.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !trimmed.isEmpty else {
-        return (nil, .fail("run_id must not be empty."))
-      }
-      return (trimmed, nil)
+    let resolver = RunResolver(
+      strategy: .activeOrRecent,
+      loadRun: { runId in try RunStore().load(runId: runId) },
+      loadLatestActiveRun: { try RunStore().latestActiveDiagnosisRun() },
+      loadLatestRun: { try RunStore().latestDiagnosisRun() }
+    )
+    switch resolver.resolve(runId) {
+    case .success(let run):
+      return (run.runId, nil)
+    case .failure(let failure):
+      return (nil, .fail(Self.resolverFailureMessage(failure)))
     }
-    do {
-      let store = RunStore()
-      if let active = try store.latestActiveDiagnosisRun() {
-        return (active.runId, nil)
-      }
-      if let recent = try store.latestDiagnosisRun() {
-        return (recent.runId, nil)
-      }
-      return (
-        nil,
-        .fail("No active or recent diagnosis runs found. Start one with diagnose_start first.")
-      )
-    } catch {
-      return (nil, .fail("Failed to resolve diagnosis run: \(error)"))
+  }
+
+  private static func resolverFailureMessage(_ failure: RunResolutionFailure) -> String {
+    switch failure {
+    case .emptyRunId:
+      return "run_id must not be empty."
+    case .notFound(let runId):
+      return "No diagnosis run was found for run ID \(runId)."
+    case .noRunsAvailable:
+      return "No active or recent diagnosis runs found. Start one with diagnose_start first."
+    case .runStillInProgress(let runId):
+      return "Run \(runId) is still in progress."
+    case .loadFailed(let error):
+      return "Failed to resolve diagnosis run: \(error)"
     }
   }
 

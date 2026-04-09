@@ -1,45 +1,28 @@
 import Foundation
 
 public struct DiagnosisCompareWorkflow: Sendable {
-  typealias LoadRun = @Sendable (String) throws -> WorkflowRunRecord
-  typealias LoadLatestActiveRun = @Sendable () throws -> WorkflowRunRecord?
-  typealias LoadLatestRun = @Sendable () throws -> WorkflowRunRecord?
   typealias RunPath = @Sendable (String) -> URL
 
-  private let loadRun: LoadRun
-  private let loadLatestActiveRun: LoadLatestActiveRun
-  private let loadLatestRun: LoadLatestRun
+  private let resolver: RunResolver
   private let runPath: RunPath
 
   public init() {
     self.init(
-      loadRun: { runId in
-        let store = RunStore()
-        let fileURL = store.runFileURL(runId: runId)
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-          throw DiagnosisCompareWorkflowError(
-            field: .run,
-            classification: .notFound,
-            message: "No diagnosis run was found for run ID \(runId)."
-          )
-        }
-        return try store.load(runId: runId)
-      },
-      loadLatestActiveRun: { try RunStore().latestActiveDiagnosisRun() },
-      loadLatestRun: { try RunStore().latestDiagnosisRun() },
+      resolver: RunResolver(
+        strategy: .activeOrRecent,
+        loadRun: { runId in try RunStore().load(runId: runId) },
+        loadLatestActiveRun: { try RunStore().latestActiveDiagnosisRun() },
+        loadLatestRun: { try RunStore().latestDiagnosisRun() }
+      ),
       runPath: { runId in RunStore().runFileURL(runId: runId) }
     )
   }
 
   init(
-    loadRun: @escaping LoadRun,
-    loadLatestActiveRun: @escaping LoadLatestActiveRun,
-    loadLatestRun: @escaping LoadLatestRun,
+    resolver: RunResolver,
     runPath: @escaping RunPath
   ) {
-    self.loadRun = loadRun
-    self.loadLatestActiveRun = loadLatestActiveRun
-    self.loadLatestRun = loadLatestRun
+    self.resolver = resolver
     self.runPath = runPath
   }
 
@@ -190,48 +173,35 @@ public struct DiagnosisCompareWorkflow: Sendable {
   }
 
   private func resolveRun(for request: DiagnosisCompareRequest) throws -> WorkflowRunRecord {
-    if let runId = request.runId {
-      let trimmedRunId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !trimmedRunId.isEmpty else {
-        throw DiagnosisCompareWorkflowError(
-          field: .run,
-          classification: .notFound,
-          message: "Run ID must not be empty."
-        )
-      }
-      do {
-        return try loadRun(trimmedRunId)
-      } catch let error as DiagnosisCompareWorkflowError {
-        throw error
-      } catch let error as CocoaError
-        where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile
-      {
-        throw DiagnosisCompareWorkflowError(
-          field: .run,
-          classification: .notFound,
-          message: "No diagnosis run was found for run ID \(trimmedRunId)."
-        )
-      } catch {
-        throw DiagnosisCompareWorkflowError(
-          field: .run,
-          classification: .executionFailed,
-          message: "\(error)"
-        )
-      }
-    }
-
-    if let run = try loadLatestActiveRun() {
+    switch resolver.resolve(request.runId) {
+    case .success(let run):
       return run
+    case .failure(let failure):
+      throw Self.mapResolutionFailure(failure)
     }
-    if let run = try loadLatestRun() {
-      return run
-    }
+  }
 
-    throw DiagnosisCompareWorkflowError(
-      field: .run,
-      classification: .notFound,
-      message: "No diagnosis runs are available to compare."
-    )
+  private static func mapResolutionFailure(_ failure: RunResolutionFailure) -> Error {
+    switch failure {
+    case .emptyRunId:
+      return DiagnosisCompareWorkflowError(
+        field: .run, classification: .notFound, message: "Run ID must not be empty.")
+    case .notFound(let runId):
+      return DiagnosisCompareWorkflowError(
+        field: .run, classification: .notFound,
+        message: "No diagnosis run was found for run ID \(runId).")
+    case .noRunsAvailable:
+      return DiagnosisCompareWorkflowError(
+        field: .run, classification: .notFound,
+        message: "No diagnosis runs are available to compare.")
+    case .runStillInProgress(let runId):
+      return DiagnosisCompareWorkflowError(
+        field: .run, classification: .invalidRunState,
+        message: "Run \(runId) is still in progress; final results require a completed diagnosis.")
+    case .loadFailed(let error):
+      return DiagnosisCompareWorkflowError(
+        field: .run, classification: .executionFailed, message: "\(error)")
+    }
   }
 
   private static func validate(_ run: WorkflowRunRecord) throws {
@@ -505,7 +475,7 @@ public struct DiagnosisCompareWorkflow: Sendable {
     let improved = buildImprovementDetected(
       priorSummary: priorSummary, currentSummary: currentSummary)
     let regressed = buildRegressionDetected(
-      priorSummary: priorSummary, currentSummary: currentSummary)
+      priorSummary: priorSummary, currentSummary: currentSummary, priorStatus: priorStatus)
 
     if improved && !regressed {
       return .partial
@@ -875,7 +845,8 @@ public struct DiagnosisCompareWorkflow: Sendable {
 
   private func buildRegressionDetected(
     priorSummary: BuildDiagnosisSummary?,
-    currentSummary: BuildDiagnosisSummary?
+    currentSummary: BuildDiagnosisSummary?,
+    priorStatus: WorkflowStatus
   ) -> Bool {
     guard let priorSummary, let currentSummary else {
       return false
@@ -886,10 +857,15 @@ public struct DiagnosisCompareWorkflow: Sendable {
     if prior.primarySignal == nil, current.primarySignal != nil {
       return true
     }
+    // When the prior build failed early, warning/analyzer-warning increases are expected
+    // (the current build simply got further in compilation). Only count error-level deltas.
+    let warningRegressed =
+      priorStatus != .failed
+      && (current.warningCount > prior.warningCount
+        || current.analyzerWarningCount > prior.analyzerWarningCount)
     return current.additionalIssueCount > prior.additionalIssueCount
       || current.errorCount > prior.errorCount
-      || current.warningCount > prior.warningCount
-      || current.analyzerWarningCount > prior.analyzerWarningCount
+      || warningRegressed
   }
 
   private func testImprovementDetected(

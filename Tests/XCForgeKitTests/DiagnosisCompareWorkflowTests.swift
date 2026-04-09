@@ -492,11 +492,168 @@ struct DiagnosisCompareWorkflowTests {
     #expect(result.attemptId == "attempt-3")
   }
 
+  @Test("both-failed with warning increase is not regressed")
+  func bothFailedWithWarningIncreaseIsNotRegressed() async throws {
+    let tempDir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let store = RunStore(baseDirectory: tempDir)
+    let sourceXCResult = tempDir.appendingPathComponent(
+      "source-warn-regress.xcresult", isDirectory: true)
+    let rerunXCResult = tempDir.appendingPathComponent(
+      "rerun-warn-regress.xcresult", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: sourceXCResult, withIntermediateDirectories: true, attributes: nil)
+    try FileManager.default.createDirectory(
+      at: rerunXCResult, withIntermediateDirectories: true, attributes: nil)
+
+    let run = makeBuildComparisonRun(
+      runId: "run-warn-not-regressed",
+      sourceStatus: .failed,
+      currentStatus: .failed,
+      sourceSummary: makeBuildSummary(
+        headline: "Build failed early — stopped before full compilation.",
+        primaryMessage: "Cannot find 'WidgetView' in scope",
+        additionalIssueCount: 0,
+        errorCount: 1,
+        warningCount: 2,
+        analyzerWarningCount: 0,
+        inferredSummary: "The run failed because WidgetView is unresolved.",
+        supportingEvidencePath: sourceXCResult.path
+      ),
+      currentSummary: makeBuildSummary(
+        headline: "Build failed — got further but still failed.",
+        primaryMessage: "Cannot find 'WidgetView' in scope",
+        additionalIssueCount: 0,
+        errorCount: 1,
+        warningCount: 5,
+        analyzerWarningCount: 1,
+        inferredSummary: "The run still fails because WidgetView is unresolved.",
+        supportingEvidencePath: rerunXCResult.path
+      ),
+      sourceEvidencePath: sourceXCResult.path,
+      currentEvidencePath: rerunXCResult.path
+    )
+    _ = try store.save(run)
+
+    let workflow = makeWorkflow(store: store)
+    let result = await workflow.compare(request: DiagnosisCompareRequest(runId: run.runId))
+
+    #expect(result.isSuccessfulComparison)
+    #expect(result.outcome != .regressed, "Warning-only increase when prior failed should not be regressed")
+    #expect(result.outcome == .partial)
+  }
+
+  @Test("both-failed with error increase is still regressed")
+  func bothFailedWithErrorIncreaseIsStillRegressed() async throws {
+    let tempDir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let store = RunStore(baseDirectory: tempDir)
+    let sourceXCResult = tempDir.appendingPathComponent(
+      "source-err-regress.xcresult", isDirectory: true)
+    let rerunXCResult = tempDir.appendingPathComponent(
+      "rerun-err-regress.xcresult", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: sourceXCResult, withIntermediateDirectories: true, attributes: nil)
+    try FileManager.default.createDirectory(
+      at: rerunXCResult, withIntermediateDirectories: true, attributes: nil)
+
+    let run = makeBuildComparisonRun(
+      runId: "run-err-regressed",
+      sourceStatus: .failed,
+      currentStatus: .failed,
+      sourceSummary: makeBuildSummary(
+        headline: "Build failed with one error.",
+        primaryMessage: "Cannot find 'WidgetView' in scope",
+        additionalIssueCount: 0,
+        errorCount: 1,
+        warningCount: 0,
+        analyzerWarningCount: 0,
+        inferredSummary: "The run failed because WidgetView is unresolved.",
+        supportingEvidencePath: sourceXCResult.path
+      ),
+      currentSummary: makeBuildSummary(
+        headline: "Build failed with more errors.",
+        primaryMessage: "Cannot find 'WidgetView' in scope",
+        additionalIssueCount: 0,
+        errorCount: 3,
+        warningCount: 0,
+        analyzerWarningCount: 0,
+        inferredSummary: "The run still fails with additional errors.",
+        supportingEvidencePath: rerunXCResult.path
+      ),
+      sourceEvidencePath: sourceXCResult.path,
+      currentEvidencePath: rerunXCResult.path
+    )
+    _ = try store.save(run)
+
+    let workflow = makeWorkflow(store: store)
+    let result = await workflow.compare(request: DiagnosisCompareRequest(runId: run.runId))
+
+    #expect(result.isSuccessfulComparison)
+    #expect(result.outcome == .regressed)
+  }
+
+  @Test("non-failed prior with warning increase is still regressed")
+  func nonFailedPriorWithWarningIncreaseIsStillRegressed() async throws {
+    let tempDir = makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let store = RunStore(baseDirectory: tempDir)
+    let sourceXCResult = tempDir.appendingPathComponent(
+      "source-pass-warn.xcresult", isDirectory: true)
+    let rerunXCResult = tempDir.appendingPathComponent(
+      "rerun-pass-warn.xcresult", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: sourceXCResult, withIntermediateDirectories: true, attributes: nil)
+    try FileManager.default.createDirectory(
+      at: rerunXCResult, withIntermediateDirectories: true, attributes: nil)
+
+    let run = makeBuildComparisonRun(
+      runId: "run-pass-warn-regressed",
+      sourceStatus: .succeeded,
+      currentStatus: .succeeded,
+      sourceSummary: makeBuildSummary(
+        headline: "Build succeeded with 2 warnings.",
+        primaryMessage: nil,
+        additionalIssueCount: 0,
+        errorCount: 0,
+        warningCount: 2,
+        analyzerWarningCount: 0,
+        inferredSummary: "Build succeeded.",
+        supportingEvidencePath: sourceXCResult.path
+      ),
+      currentSummary: makeBuildSummary(
+        headline: "Build succeeded with 5 warnings.",
+        primaryMessage: nil,
+        additionalIssueCount: 0,
+        errorCount: 0,
+        warningCount: 5,
+        analyzerWarningCount: 0,
+        inferredSummary: "Build succeeded but with more warnings.",
+        supportingEvidencePath: rerunXCResult.path
+      ),
+      sourceEvidencePath: sourceXCResult.path,
+      currentEvidencePath: rerunXCResult.path
+    )
+    _ = try store.save(run)
+
+    let workflow = makeWorkflow(store: store)
+    let result = await workflow.compare(request: DiagnosisCompareRequest(runId: run.runId))
+
+    #expect(result.isSuccessfulComparison)
+    #expect(result.outcome == .regressed)
+  }
+
   private func makeWorkflow(store: RunStore) -> DiagnosisCompareWorkflow {
     DiagnosisCompareWorkflow(
-      loadRun: { runId in try store.load(runId: runId) },
-      loadLatestActiveRun: { try store.latestActiveDiagnosisRun() },
-      loadLatestRun: { try store.latestDiagnosisRun() },
+      resolver: RunResolver(
+        strategy: .activeOrRecent,
+        loadRun: { runId in try store.load(runId: runId) },
+        loadLatestActiveRun: { try store.latestActiveDiagnosisRun() },
+        loadLatestRun: { try store.latestDiagnosisRun() }
+      ),
       runPath: { runId in store.runFileURL(runId: runId) }
     )
   }

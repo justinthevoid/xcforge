@@ -6,23 +6,34 @@ import XCForgeKit
 /// Resolves an optional CLI `--run-id` value to a concrete run ID.
 /// When `nil`, auto-resolves to the newest active diagnosis run, or the newest recent one.
 func resolveRunId(_ runId: String?) throws -> String {
-  if let runId {
-    let trimmed = runId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else {
-      throw ValidationError("--run-id must not be empty.")
-    }
-    return trimmed
-  }
-  let store = RunStore()
-  if let active = try store.latestActiveDiagnosisRun() {
-    return active.runId
-  }
-  if let recent = try store.latestDiagnosisRun() {
-    return recent.runId
-  }
-  throw ValidationError(
-    "No active or recent diagnosis runs found. Start one with `xcforge diagnose start`."
+  let resolver = RunResolver(
+    strategy: .activeOrRecent,
+    loadRun: { runId in try RunStore().load(runId: runId) },
+    loadLatestActiveRun: { try RunStore().latestActiveDiagnosisRun() },
+    loadLatestRun: { try RunStore().latestDiagnosisRun() }
   )
+  switch resolver.resolve(runId) {
+  case .success(let run):
+    return run.runId
+  case .failure(let failure):
+    throw cliResolutionError(failure)
+  }
+}
+
+private func cliResolutionError(_ failure: RunResolutionFailure) -> ValidationError {
+  switch failure {
+  case .emptyRunId:
+    return ValidationError("--run-id must not be empty.")
+  case .notFound(let runId):
+    return ValidationError("No diagnosis run was found for run ID \(runId).")
+  case .noRunsAvailable:
+    return ValidationError(
+      "No active or recent diagnosis runs found. Start one with `xcforge diagnose start`.")
+  case .runStillInProgress(let runId):
+    return ValidationError("Run \(runId) is still in progress.")
+  case .loadFailed(let error):
+    return ValidationError("Failed to resolve diagnosis run: \(error)")
+  }
 }
 
 // MARK: - diagnose (group)

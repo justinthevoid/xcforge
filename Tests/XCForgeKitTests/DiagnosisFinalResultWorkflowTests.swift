@@ -469,10 +469,13 @@ struct DiagnosisFinalResultWorkflowTests {
     defer { try? FileManager.default.removeItem(at: tempDir) }
 
     let missingWorkflow = DiagnosisFinalResultWorkflow(
-      loadRun: { _ in throw CocoaError(.fileNoSuchFile) },
-      loadLatestActiveRun: { nil },
-      loadLatestTerminalRun: { nil },
-      loadLatestRun: { nil },
+      resolver: RunResolver(
+        strategy: .terminalFirst,
+        loadRun: { _ in throw CocoaError(.fileNoSuchFile) },
+        loadLatestActiveRun: { nil },
+        loadLatestTerminalRun: { nil },
+        loadLatestRun: { nil }
+      ),
       runPath: { runId in tempDir.appendingPathComponent("\(runId).json") }
     )
     let missingResult = await missingWorkflow.assemble(
@@ -568,10 +571,13 @@ struct DiagnosisFinalResultWorkflowTests {
 
   private func makeWorkflow(store: RunStore) -> DiagnosisFinalResultWorkflow {
     DiagnosisFinalResultWorkflow(
-      loadRun: { runId in try store.load(runId: runId) },
-      loadLatestActiveRun: { try store.latestActiveDiagnosisRun() },
-      loadLatestTerminalRun: { try store.latestTerminalDiagnosisRun() },
-      loadLatestRun: { try store.latestDiagnosisRun() },
+      resolver: RunResolver(
+        strategy: .terminalFirst,
+        loadRun: { runId in try store.load(runId: runId) },
+        loadLatestActiveRun: { try store.latestActiveDiagnosisRun() },
+        loadLatestTerminalRun: { try store.latestTerminalDiagnosisRun() },
+        loadLatestRun: { try store.latestDiagnosisRun() }
+      ),
       runPath: { runId in store.runFileURL(runId: runId) }
     )
   }

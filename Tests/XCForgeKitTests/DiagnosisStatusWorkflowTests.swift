@@ -677,9 +677,12 @@ struct DiagnosisStatusWorkflowTests {
   @Test("missing explicit run IDs fail explicitly")
   func missingExplicitRunIDsFailExplicitly() async {
     let workflow = DiagnosisStatusWorkflow(
-      loadRun: { _ in throw CocoaError(.fileNoSuchFile) },
-      loadLatestActiveRun: { nil },
-      loadLatestRun: { nil },
+      resolver: RunResolver(
+        strategy: .activeOrRecent,
+        loadRun: { _ in throw CocoaError(.fileNoSuchFile) },
+        loadLatestActiveRun: { nil },
+        loadLatestRun: { nil }
+      ),
       runPath: { runId in URL(fileURLWithPath: "/tmp/\(runId).json") }
     )
 
@@ -721,9 +724,12 @@ struct DiagnosisStatusWorkflowTests {
   @Test("empty stores report that no diagnosis runs are available")
   func emptyStoresReportUnavailableRuns() async {
     let workflow = DiagnosisStatusWorkflow(
-      loadRun: { _ in throw TestFailure.unusedResolver },
-      loadLatestActiveRun: { nil },
-      loadLatestRun: { nil },
+      resolver: RunResolver(
+        strategy: .activeOrRecent,
+        loadRun: { _ in throw TestFailure.unusedResolver },
+        loadLatestActiveRun: { nil },
+        loadLatestRun: { nil }
+      ),
       runPath: { runId in URL(fileURLWithPath: "/tmp/\(runId).json") }
     )
 
@@ -784,9 +790,12 @@ struct DiagnosisStatusWorkflowTests {
     )
 
     let workflow = DiagnosisStatusWorkflow(
-      loadRun: { _ in canceledRun },
-      loadLatestActiveRun: { nil },
-      loadLatestRun: { nil },
+      resolver: RunResolver(
+        strategy: .activeOrRecent,
+        loadRun: { _ in canceledRun },
+        loadLatestActiveRun: { nil },
+        loadLatestRun: { nil }
+      ),
       runPath: { runId in URL(fileURLWithPath: "/tmp/\(runId).json") }
     )
 
@@ -799,9 +808,12 @@ struct DiagnosisStatusWorkflowTests {
 
   private func makeWorkflow(store: RunStore) -> DiagnosisStatusWorkflow {
     DiagnosisStatusWorkflow(
-      loadRun: { runId in try store.load(runId: runId) },
-      loadLatestActiveRun: { try store.latestActiveDiagnosisRun() },
-      loadLatestRun: { try store.latestDiagnosisRun() },
+      resolver: RunResolver(
+        strategy: .activeOrRecent,
+        loadRun: { runId in try store.load(runId: runId) },
+        loadLatestActiveRun: { try store.latestActiveDiagnosisRun() },
+        loadLatestRun: { try store.latestDiagnosisRun() }
+      ),
       runPath: { runId in store.runFileURL(runId: runId) }
     )
   }
