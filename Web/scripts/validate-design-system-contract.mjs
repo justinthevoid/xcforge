@@ -11,19 +11,10 @@ const paths = {
 	tokens: join(projectRoot, 'src', 'styles', 'tokens.css'),
 	primitives: join(projectRoot, 'src', 'styles', 'primitives.css'),
 	homepage: join(projectRoot, 'src', 'styles', 'homepage.css'),
-	hero: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'Hero.astro'),
+	terminalDemo: join(projectRoot, 'src', 'components', 'web', 'TerminalDemo.astro'),
+	featureGrid: join(projectRoot, 'src', 'components', 'web', 'FeatureGrid.astro'),
 	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
-	problem: join(projectRoot, 'src', 'components', 'web', 'ProblemSection.astro'),
-	solution: join(projectRoot, 'src', 'components', 'web', 'SolutionSection.astro'),
-	workflows: join(projectRoot, 'src', 'components', 'web', 'WorkflowsJourneysSection.astro'),
-	differentiation: join(
-		projectRoot,
-		'src',
-		'components',
-		'web',
-		'DifferentiationProofSection.astro',
-	),
 	globalNav: join(projectRoot, 'src', 'components', 'web', 'GlobalNav.astro'),
 	actionLink: join(projectRoot, 'src', 'components', 'primitives', 'ActionLink.astro'),
 	sectionBlock: join(projectRoot, 'src', 'components', 'primitives', 'SectionBlock.astro'),
@@ -133,7 +124,11 @@ function validateImportOrder(indexSource) {
 	}
 }
 
-function validateRequiredPrimitiveComposition(filePath, source) {
+/**
+ * Components that use ActionLink must import and compose it.
+ * Components that only use SectionBlock (no ActionLinks) are TerminalDemo and FeatureGrid.
+ */
+function validateActionLinkComposition(filePath, source) {
 	const hasActionLinkImport = /import\s+ActionLink\s+from\s+['"][^'"]*ActionLink\.astro['"]/.test(
 		source,
 	);
@@ -141,7 +136,9 @@ function validateRequiredPrimitiveComposition(filePath, source) {
 	if (!hasActionLinkImport || !hasActionLinkUsage) {
 		fail(`${rel(filePath)} must compose action UI through ActionLink primitive.`);
 	}
+}
 
+function validateSectionBlockComposition(filePath, source) {
 	const hasSectionBlockImport =
 		/import\s+SectionBlock\s+from\s+['"][^'"]*SectionBlock\.astro['"]/.test(source);
 	const hasSectionBlockUsage = /<SectionBlock\b/.test(source);
@@ -166,12 +163,9 @@ function main() {
 	const primitivesSource = readRequired(paths.primitives);
 	const homepageSource = readRequired(paths.homepage);
 	const heroSource = readRequired(paths.hero);
+	const terminalDemoSource = readRequired(paths.terminalDemo);
+	const featureGridSource = readRequired(paths.featureGrid);
 	const finalCtaSource = readRequired(paths.finalCta);
-	const docsHandoffSource = readRequired(paths.docsHandoff);
-	const problemSource = readRequired(paths.problem);
-	const solutionSource = readRequired(paths.solution);
-	const workflowsSource = readRequired(paths.workflows);
-	const differentiationSource = readRequired(paths.differentiation);
 	const globalNavSource = readRequired(paths.globalNav);
 	const actionLinkSource = readRequired(paths.actionLink);
 	const sectionBlockSource = readRequired(paths.sectionBlock);
@@ -182,12 +176,9 @@ function main() {
 		!primitivesSource ||
 		!homepageSource ||
 		!heroSource ||
+		!terminalDemoSource ||
+		!featureGridSource ||
 		!finalCtaSource ||
-		!docsHandoffSource ||
-		!problemSource ||
-		!solutionSource ||
-		!workflowsSource ||
-		!differentiationSource ||
 		!globalNavSource ||
 		!actionLinkSource ||
 		!sectionBlockSource
@@ -203,18 +194,22 @@ function main() {
 	]);
 	validateImportOrder(indexSource);
 
-	validateRequiredPrimitiveComposition(paths.hero, heroSource);
-	validateRequiredPrimitiveComposition(paths.finalCta, finalCtaSource);
-	validateRequiredPrimitiveComposition(paths.docsHandoff, docsHandoffSource);
+	// Hero and FinalCTA have ActionLinks; TerminalDemo and FeatureGrid do not.
+	validateActionLinkComposition(paths.hero, heroSource);
+	validateActionLinkComposition(paths.finalCta, finalCtaSource);
 
+	// All four section components must use SectionBlock.
+	validateSectionBlockComposition(paths.hero, heroSource);
+	validateSectionBlockComposition(paths.terminalDemo, terminalDemoSource);
+	validateSectionBlockComposition(paths.featureGrid, featureGridSource);
+	validateSectionBlockComposition(paths.finalCta, finalCtaSource);
+
+	// No inline styles or hex literals in any product component.
 	const componentSources = [
 		[paths.hero, heroSource],
+		[paths.terminalDemo, terminalDemoSource],
+		[paths.featureGrid, featureGridSource],
 		[paths.finalCta, finalCtaSource],
-		[paths.docsHandoff, docsHandoffSource],
-		[paths.problem, problemSource],
-		[paths.solution, solutionSource],
-		[paths.workflows, workflowsSource],
-		[paths.differentiation, differentiationSource],
 		[paths.globalNav, globalNavSource],
 		[paths.actionLink, actionLinkSource],
 		[paths.sectionBlock, sectionBlockSource],

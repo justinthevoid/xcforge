@@ -11,9 +11,8 @@ const paths = {
 	installIntent: join(projectRoot, 'src', 'lib', 'install-intent.ts'),
 	indexRoute: join(projectRoot, 'src', 'pages', 'index.astro'),
 	globalNav: join(projectRoot, 'src', 'components', 'web', 'GlobalNav.astro'),
-	heroProof: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'Hero.astro'),
 	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
 	apiAnalytics: join(projectRoot, 'src', 'pages', 'api', 'analytics.ts'),
 	packageJson: join(projectRoot, 'package.json'),
 };
@@ -34,7 +33,7 @@ function readRequiredFile(filePath, scope) {
 			scope,
 			filePath,
 			'Required file is missing.',
-			'Restore the file and re-run Story 5.5 analytics validation.',
+			'Restore the file and re-run analytics validation.',
 		);
 		return null;
 	}
@@ -177,6 +176,29 @@ function validateAnalyticsContract(analyticsSource) {
 		'Missing safe-drop branch for non-retryable relay failures.',
 		'Restore safe-drop logic so user interactions are never blocked by non-retryable telemetry failures.',
 	);
+
+	// Validate that source surfaces include all new homepage sections and exclude removed ones.
+	const requiredSourceSurfaces = ['hero', 'final-cta', 'global-nav', 'install-handoff'];
+	for (const surface of requiredSourceSurfaces) {
+		expectIncludes(
+			analyticsSource,
+			`'${surface}'`,
+			scope,
+			filePath,
+			`Missing analytics source surface "${surface}" in AnalyticsSourceSurface type.`,
+			'Restore all required source surfaces in the AnalyticsSourceSurface union type.',
+		);
+	}
+
+	// docs-handoff surface must not exist in the new homepage.
+	if (analyticsSource.includes("'docs-handoff'")) {
+		fail(
+			scope,
+			filePath,
+			'Removed source surface "docs-handoff" is still present in analytics contract.',
+			'Remove the docs-handoff surface from AnalyticsSourceSurface — it no longer exists in the new homepage.',
+		);
+	}
 }
 
 function validateInstallIntentBridge(installIntentSource) {
@@ -211,95 +233,93 @@ function validateInstallIntentBridge(installIntentSource) {
 	);
 }
 
-function validateTaggedInstrumentation(
-	globalNavSource,
-	heroSource,
-	finalCtaSource,
-	docsHandoffSource,
-) {
+function validateTaggedInstrumentation(globalNavSource, heroSource, finalCtaSource) {
 	const scope = 'instrumentation:homepage-links';
 
-	const requiredChecks = [
+	// GlobalNav instrumentation.
+	const navChecks = [
 		{
-			filePath: paths.globalNav,
-			source: globalNavSource,
-			tokens: [
-				'data-analytics-event-name',
-				'homepage.install.cta.clicked',
-				'homepage.docs.clicked',
-				'homepage.workflow-guide.clicked',
-				'homepage.github.outbound.clicked',
-			],
-			patterns: [
-				{
-					pattern:
-						/data-analytics-source-surface=\{[\s\S]*analyticsConfig[\s\S]*["']global-nav["'][\s\S]*undefined[\s\S]*\}/m,
-					label: "data-analytics-source-surface={analyticsConfig ? 'global-nav' : undefined}",
-				},
-			],
+			token: 'data-analytics-event-name',
+			message: 'GlobalNav is missing data-analytics-event-name attributes.',
 		},
 		{
-			filePath: paths.heroProof,
-			source: heroSource,
-			tokens: [
-				'data-analytics-event-name="homepage.install.cta.clicked"',
-				'data-analytics-event-name="homepage.docs.clicked"',
-				'data-analytics-event-name="homepage.workflow-guide.clicked"',
-				'data-analytics-source-surface="hero"',
-			],
+			token: 'homepage.install.cta.clicked',
+			message: 'GlobalNav is missing homepage.install.cta.clicked event.',
 		},
 		{
-			filePath: paths.finalCta,
-			source: finalCtaSource,
-			tokens: [
-				'data-analytics-event-name="homepage.install.cta.clicked"',
-				'data-analytics-event-name="homepage.workflow-guide.clicked"',
-				'data-analytics-source-surface="final-cta"',
-			],
+			token: 'homepage.docs.clicked',
+			message: 'GlobalNav is missing homepage.docs.clicked event.',
 		},
 		{
-			filePath: paths.docsHandoff,
-			source: docsHandoffSource,
-			tokens: [
-				'data-analytics-intent-signal="depth-navigation"',
-				'data-analytics-source-surface="docs-handoff"',
-			],
-			patterns: [
-				{
-					pattern: /data-analytics-event-name=\{analyticsEventName\}/m,
-					label: 'data-analytics-event-name={analyticsEventName}',
-				},
-				{
-					pattern: /data-analytics-destination=\{analyticsDestination\}/m,
-					label: 'data-analytics-destination={analyticsDestination}',
-				},
-			],
+			token: 'homepage.workflow-guide.clicked',
+			message: 'GlobalNav is missing homepage.workflow-guide.clicked event.',
+		},
+		{
+			token: 'homepage.github.outbound.clicked',
+			message: 'GlobalNav is missing homepage.github.outbound.clicked event.',
 		},
 	];
 
-	for (const check of requiredChecks) {
-		for (const token of check.tokens) {
-			expectIncludes(
-				check.source,
-				token,
-				scope,
-				check.filePath,
-				`Missing analytics instrumentation token: ${token}`,
-				'Restore explicit analytics data attributes for conversion-critical links.',
-			);
-		}
-
-		for (const matcher of check.patterns ?? []) {
-			expectMatches(
-				check.source,
-				matcher.pattern,
-				scope,
-				check.filePath,
-				`Missing analytics instrumentation token: ${matcher.label}`,
-				'Restore explicit analytics data attributes for conversion-critical links.',
-			);
-		}
+	for (const check of navChecks) {
+		expectIncludes(
+			globalNavSource,
+			check.token,
+			scope,
+			paths.globalNav,
+			check.message,
+			'Restore explicit analytics data attributes for conversion-critical nav links.',
+		);
 	}
+
+	// GlobalNav: source surface must resolve to "global-nav" or undefined.
+	expectMatches(
+		globalNavSource,
+		/data-analytics-source-surface=\{[\s\S]*analyticsConfig[\s\S]*["']global-nav["'][\s\S]*undefined[\s\S]*\}/m,
+		scope,
+		paths.globalNav,
+		"GlobalNav is missing data-analytics-source-surface={analyticsConfig ? 'global-nav' : undefined} binding.",
+		'Restore conditional source-surface binding so untracked nav items do not emit surface attribution.',
+	);
+
+	// Hero instrumentation.
+	const heroChecks = [
+		'data-analytics-event-name="homepage.install.cta.clicked"',
+		'data-analytics-event-name="homepage.docs.clicked"',
+		'data-analytics-event-name="homepage.github.outbound.clicked"',
+		'data-analytics-source-surface="hero"',
+	];
+
+	for (const token of heroChecks) {
+		expectIncludes(
+			heroSource,
+			token,
+			scope,
+			paths.hero,
+			`Hero is missing analytics instrumentation: ${token}`,
+			'Restore explicit analytics data attributes for conversion-critical hero links.',
+		);
+	}
+
+	// FinalCTA instrumentation.
+	const finalCtaChecks = [
+		'data-analytics-event-name="homepage.install.cta.clicked"',
+		'data-analytics-event-name="homepage.docs.clicked"',
+		'data-analytics-source-surface="final-cta"',
+	];
+
+	for (const token of finalCtaChecks) {
+		expectIncludes(
+			finalCtaSource,
+			token,
+			scope,
+			paths.finalCta,
+			`FinalCTA is missing analytics instrumentation: ${token}`,
+			'Restore explicit analytics data attributes for conversion-critical final CTA links.',
+		);
+	}
+
+	// TerminalDemo and FeatureGrid have no analytics — confirm Hero/FinalCTA are the only surfaces.
+	// (No negative checks needed here; the positive checks above are sufficient.)
 }
 
 function validateInitializationOrdering(indexSource) {
@@ -315,22 +335,38 @@ function validateInitializationOrdering(indexSource) {
 		'Restore initializeHomepageAnalytics in index route startup script.',
 	);
 
+	expectIncludes(
+		indexSource,
+		'initializeInstallIntentHandoff',
+		scope,
+		filePath,
+		'Missing install intent handoff initialization import/call.',
+		'Restore initializeInstallIntentHandoff in index route startup script.',
+	);
+
 	const analyticsCallIndex = indexSource.indexOf('initializeHomepageAnalytics();');
-	const docsCallIndex = indexSource.indexOf('initializeDocsHandoff();');
 	const installCallIndex = indexSource.indexOf('initializeInstallIntentHandoff();');
 
 	if (
 		analyticsCallIndex === -1 ||
-		docsCallIndex === -1 ||
 		installCallIndex === -1 ||
-		analyticsCallIndex > docsCallIndex ||
 		analyticsCallIndex > installCallIndex
 	) {
 		fail(
 			scope,
 			filePath,
-			'Homepage analytics must initialize before docs/install click interceptors.',
-			'Move initializeHomepageAnalytics() before initializeDocsHandoff() and initializeInstallIntentHandoff().',
+			'Homepage analytics must initialize before install intent handoff.',
+			'Move initializeHomepageAnalytics() before initializeInstallIntentHandoff().',
+		);
+	}
+
+	// Ensure removed docs-handoff init is not present.
+	if (indexSource.includes('initializeDocsHandoff')) {
+		fail(
+			scope,
+			filePath,
+			'Removed initializeDocsHandoff call is still present in index route.',
+			'Remove initializeDocsHandoff — the docs-handoff module no longer exists.',
 		);
 	}
 }
@@ -377,7 +413,7 @@ function validateRelayApi(apiSource) {
 }
 
 function validatePackageScripts(packageSource) {
-	const scope = 'build-gate:story-5-5';
+	const scope = 'build-gate:analytics-validator';
 	const filePath = paths.packageJson;
 
 	let parsed;
@@ -388,12 +424,13 @@ function validatePackageScripts(packageSource) {
 			scope,
 			filePath,
 			`Unable to parse package.json. ${error.message}`,
-			'Restore valid package.json JSON before running Story 5.5 validation.',
+			'Restore valid package.json JSON before running analytics validation.',
 		);
 		return;
 	}
 
 	const scripts = parsed.scripts || {};
+
 	if (scripts['validate:story-5-5'] !== 'bun run scripts/validate-qualified-intent-analytics.mjs') {
 		fail(
 			scope,
@@ -407,15 +444,15 @@ function validatePackageScripts(packageSource) {
 		fail(
 			scope,
 			filePath,
-			'Build script does not include Story 5.5 validation gate.',
+			'Build script does not include analytics validation gate.',
 			'Wire "bun run validate:story-5-5" into build before "astro build".',
 		);
 	}
 }
 
 function printFailuresAndExit() {
-	console.error('[story-5-5 analytics] Validation failed.');
-	console.error('[story-5-5 analytics] Remediation guidance follows:');
+	console.error('[analytics] Validation failed.');
+	console.error('[analytics] Remediation guidance follows:');
 
 	for (let index = 0; index < failures.length; index += 1) {
 		const failure = failures[index];
@@ -432,11 +469,10 @@ const analyticsSource = readRequiredFile(paths.analyticsLib, 'contract:analytics
 const installIntentSource = readRequiredFile(paths.installIntent, 'bridge:install-intent');
 const indexSource = readRequiredFile(paths.indexRoute, 'runtime:init-order');
 const globalNavSource = readRequiredFile(paths.globalNav, 'instrumentation:homepage-links');
-const heroSource = readRequiredFile(paths.heroProof, 'instrumentation:homepage-links');
+const heroSource = readRequiredFile(paths.hero, 'instrumentation:homepage-links');
 const finalCtaSource = readRequiredFile(paths.finalCta, 'instrumentation:homepage-links');
-const docsHandoffSource = readRequiredFile(paths.docsHandoff, 'instrumentation:homepage-links');
 const apiSource = readRequiredFile(paths.apiAnalytics, 'platform:analytics-relay');
-const packageSource = readRequiredFile(paths.packageJson, 'build-gate:story-5-5');
+const packageSource = readRequiredFile(paths.packageJson, 'build-gate:analytics-validator');
 
 if (
 	!analyticsSource ||
@@ -445,7 +481,6 @@ if (
 	!globalNavSource ||
 	!heroSource ||
 	!finalCtaSource ||
-	!docsHandoffSource ||
 	!apiSource ||
 	!packageSource
 ) {
@@ -454,7 +489,7 @@ if (
 
 validateAnalyticsContract(analyticsSource);
 validateInstallIntentBridge(installIntentSource);
-validateTaggedInstrumentation(globalNavSource, heroSource, finalCtaSource, docsHandoffSource);
+validateTaggedInstrumentation(globalNavSource, heroSource, finalCtaSource);
 validateInitializationOrdering(indexSource);
 validateRelayApi(apiSource);
 validatePackageScripts(packageSource);
@@ -463,7 +498,7 @@ if (failures.length > 0) {
 	printFailuresAndExit();
 }
 
-console.log('[story-5-5 analytics] Validation passed.');
+console.log('[analytics] Validation passed.');
 console.log(
-	'[story-5-5 analytics] Canonical event contract, instrumentation, relay, and build gate are intact.',
+	'[analytics] Canonical event contract, instrumentation, relay, and build gate are intact.',
 );

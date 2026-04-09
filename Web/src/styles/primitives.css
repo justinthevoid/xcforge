@@ -95,14 +95,9 @@
 .action-link:focus-visible,
 .cta-primary:focus-visible,
 .cta-secondary:focus-visible,
-.install-command code:focus-visible,
 .nav-link:focus-visible,
-.proof-toggle-button:focus-visible,
-.proof-marker-summary:focus-visible,
 .copy-command:focus-visible,
 .install-handoff-link:focus-visible,
-.handoff-link:focus-visible,
-.journey-artifact-link:focus-visible,
 .install-handoff-command:focus-visible {
 	outline: var(--xcf-border-focus) solid var(--xcf-color-focus);
 	outline-offset: var(--xcf-outline-offset);

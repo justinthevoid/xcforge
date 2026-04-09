@@ -7,7 +7,6 @@ export type AnalyticsSourceSurface =
 	| 'hero'
 	| 'final-cta'
 	| 'global-nav'
-	| 'docs-handoff'
 	| 'install-handoff';
 
 export type HomepageActionEventName =
@@ -135,7 +134,6 @@ function isAnalyticsSourceSurface(value: unknown): value is AnalyticsSourceSurfa
 		value === 'hero' ||
 		value === 'final-cta' ||
 		value === 'global-nav' ||
-		value === 'docs-handoff' ||
 		value === 'install-handoff'
 	);
 }

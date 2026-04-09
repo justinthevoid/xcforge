@@ -385,11 +385,8 @@ async function validateAstroComposition() {
 		);
 	}
 
-	if (!astroConfigSource.includes('@astrojs/svelte')) {
-		fail(
-			`${relativeToProject(astroConfigPath)} must reference @astrojs/svelte to preserve Astro + Svelte marketing composition.`,
-		);
-	}
+	// Svelte is no longer required for the new homepage — ProofToggle.svelte was removed.
+	// Retain the Starlight check to preserve docs route ownership.
 
 	let astroConfig = null;
 	try {
@@ -414,7 +411,7 @@ async function validateAstroComposition() {
 	const integrations = Array.isArray(astroConfig.integrations) ? astroConfig.integrations : [];
 	if (integrations.length === 0) {
 		fail(
-			`${relativeToProject(astroConfigPath)} must define integrations for Starlight and Svelte.`,
+			`${relativeToProject(astroConfigPath)} must define integrations including @astrojs/starlight.`,
 		);
 		return;
 	}
@@ -425,11 +422,7 @@ async function validateAstroComposition() {
 		);
 	}
 
-	if (!hasKnownIntegration(integrations, 'svelte')) {
-		fail(
-			`${relativeToProject(astroConfigPath)} integrations are missing @astrojs/svelte. Marketing composition checks require Svelte integration.`,
-		);
-	}
+	// @astrojs/svelte is not required for the redesigned homepage (no Svelte components remain).
 }
 
 function classifyHref(hrefValue) {
@@ -493,11 +486,11 @@ function collectHrefEntries(node, sourcePath = 'homepageContent') {
 
 function validateHomepageStaticHrefLiterals(marketingRoutes, docsRoutes) {
 	const homepageFiles = [
-		join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'Hero.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'TerminalDemo.astro'),
+		join(projectRoot, 'src', 'components', 'web', 'FeatureGrid.astro'),
 		join(projectRoot, 'src', 'components', 'web', 'GlobalNav.astro'),
-		join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
 		join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
-		join(projectRoot, 'src', 'components', 'web', 'DifferentiationProofSection.astro'),
 		join(projectRoot, 'src', 'pages', 'index.astro'),
 	];
 
@@ -571,6 +564,7 @@ function assertDocsRouteExists(sourceLabel, hrefValue, docsRoutes, requireDepth 
 }
 
 function validateHomepageRoutes(marketingRoutes, docsRoutes) {
+	// Collect and validate all href values in the homepage content data.
 	const hrefEntries = collectHrefEntries(homepageContent);
 	for (const entry of hrefEntries) {
 		const classification = classifyHref(entry.href);
@@ -607,6 +601,7 @@ function validateHomepageRoutes(marketingRoutes, docsRoutes) {
 		}
 	}
 
+	// Validate navigation metadata and nav item hrefs.
 	const navigationState = resolveNavigationMetadata(homepageContent.navigation);
 	if (!navigationState.isMetadataAvailable) {
 		fail(
@@ -626,90 +621,10 @@ function validateHomepageRoutes(marketingRoutes, docsRoutes) {
 		assertDocsRouteExists('navigation.workflow-guide', workflowNavItem.href, docsRoutes, true);
 	}
 
-	assertDocsRouteExists(
-		'finalCta.workflowHref',
-		homepageContent.finalCta.workflowHref,
-		docsRoutes,
-		true,
-	);
-	assertDocsRouteExists(
-		'hero.provenanceUnavailableDocsHref',
-		homepageContent.hero.provenanceUnavailableDocsHref,
-		docsRoutes,
-		false,
-	);
-
-	const differentiationSection = homepageContent.narrativeSections.find(
-		(section) => section.id === 'differentiation',
-	);
-	if (!differentiationSection || !('provenanceUnavailableDocsHref' in differentiationSection)) {
-		fail(
-			'Narrative section differentiation is missing provenance fallback metadata required for warning-state route handoff.',
-		);
-	} else {
-		assertDocsRouteExists(
-			'differentiation.provenanceUnavailableDocsHref',
-			differentiationSection.provenanceUnavailableDocsHref,
-			docsRoutes,
-			false,
-		);
-	}
-
-	const docsHandoffSection = homepageContent.narrativeSections.find(
-		(section) => section.id === 'docs-handoff',
-	);
-	if (!docsHandoffSection || !Array.isArray(docsHandoffSection.handoffLinks)) {
-		fail(
-			'Narrative section docs-handoff is missing. One-click depth transitions must remain present on the homepage.',
-		);
-		return;
-	}
-
-	const docsHandoffInternalRoutes = docsHandoffSection.handoffLinks
-		.map((link) => classifyHref(link.href))
-		.filter((classification) => classification.kind === 'route')
-		.map((classification) => classification.routePath);
-
-	if (!docsHandoffInternalRoutes.includes('/docs')) {
-		fail('docs-handoff links must include /docs as a one-click technical entry point.');
-	}
-
-	if (
-		!docsHandoffInternalRoutes.some((routePath) => isDocsRoute(routePath) && routePath !== '/docs')
-	) {
-		fail('docs-handoff links must include at least one docs depth route under /docs/.');
-	}
-
-	for (const [index, link] of docsHandoffSection.handoffLinks.entries()) {
-		const linkClassification = classifyHref(link.href);
-		if (linkClassification.kind !== 'route' || !isDocsRoute(linkClassification.routePath)) {
-			continue;
-		}
-
-		const sourceLabel = `docs-handoff.handoffLinks[${index}]`;
-		if (
-			typeof link.unavailableMessage !== 'string' ||
-			link.unavailableMessage.trim().length === 0
-		) {
-			fail(
-				`${sourceLabel}.unavailableMessage is required for internal docs handoff links so destination-unavailable fallbacks can be explicit.`,
-			);
-		}
-
-		if (link.destinationId !== 'docs' && link.destinationId !== 'workflow-guide') {
-			fail(
-				`${sourceLabel}.destinationId must be "docs" or "workflow-guide" for handoff orientation messaging.`,
-			);
-		}
-
-		if (typeof link.fallbackHref !== 'string' || link.fallbackHref.trim().length === 0) {
-			fail(
-				`${sourceLabel}.fallbackHref is required for internal docs handoff links and must target a valid docs fallback destination.`,
-			);
-			continue;
-		}
-
-		assertDocsRouteExists(`${sourceLabel}.fallbackHref`, link.fallbackHref, docsRoutes, false);
+	// Validate finalCta docs link (the new homepage exposes a docs link in FinalCTA).
+	const finalCtaDocsHref = homepageContent.finalCta.docsHref;
+	if (finalCtaDocsHref) {
+		assertDocsRouteExists('finalCta.docsHref', finalCtaDocsHref, docsRoutes, false);
 	}
 }
 

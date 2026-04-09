@@ -1,0 +1,71 @@
+---
+import type { HeroCopy } from '../../data/homepage';
+import ActionLink from '../primitives/ActionLink.astro';
+import SectionBlock from '../primitives/SectionBlock.astro';
+
+type Props = {
+	hero: HeroCopy;
+};
+
+const { hero } = Astro.props;
+---
+
+<SectionBlock id="product" className="hero" labelledBy="hero-title">
+	<div class="hero-content">
+		<h1 id="hero-title" class="hero-headline">{hero.headline}</h1>
+		<p class="hero-subtitle">{hero.subtitle}</p>
+
+		<div class="install-terminal" aria-label="Install commands">
+			<div class="install-terminal-line">
+				<span class="install-terminal-prompt" aria-hidden="true">$</span>
+				<code>{hero.tapCommand}</code>
+			</div>
+			<div class="install-terminal-line">
+				<span class="install-terminal-prompt" aria-hidden="true">$</span>
+				<code>{hero.installCommand}</code>
+			</div>
+		</div>
+
+		<div
+			id="install-section"
+			class="hero-actions"
+			role="group"
+			aria-label="Install action"
+		>
+			<ActionLink
+				tier="primary"
+				className="install-intent-trigger"
+				href={hero.installHref}
+				label="Install via Homebrew"
+				external={hero.installExternal}
+				installIntentTrigger={true}
+				installIntentSource="hero"
+				installCommand={hero.fullInstallCommand}
+				installTarget="homebrew"
+				data-analytics-event-name="homepage.install.cta.clicked"
+				data-analytics-intent-signal="install"
+				data-analytics-destination="install"
+				data-analytics-source-surface="hero"
+			/>
+			<ActionLink
+				tier="secondary"
+				href="/docs"
+				label="Docs"
+				data-analytics-event-name="homepage.docs.clicked"
+				data-analytics-intent-signal="depth-navigation"
+				data-analytics-destination="docs"
+				data-analytics-source-surface="hero"
+			/>
+			<ActionLink
+				tier="secondary"
+				href="https://github.com/justinthevoid/xcforge"
+				label="GitHub"
+				external={true}
+				data-analytics-event-name="homepage.github.outbound.clicked"
+				data-analytics-intent-signal="depth-navigation"
+				data-analytics-destination="github"
+				data-analytics-source-surface="hero"
+			/>
+		</div>
+	</div>
+</SectionBlock>

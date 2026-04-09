@@ -1,0 +1,46 @@
+---
+import type { TerminalDemoCopy } from '../../data/homepage';
+import SectionBlock from '../primitives/SectionBlock.astro';
+
+type Props = {
+	demo: TerminalDemoCopy;
+};
+
+const { demo } = Astro.props;
+---
+
+<SectionBlock id="demo" className="terminal-demo-section" labelledBy="demo-title">
+	<h2 id="demo-title" class="demo-heading">{demo.heading}</h2>
+	<p class="demo-subtitle">{demo.subtitle}</p>
+
+	<div class="terminal-window" role="img" aria-label="Terminal session showing xcforge diagnosing and fixing a build failure">
+		<div class="terminal-chrome">
+			<span class="terminal-dot"></span>
+			<span class="terminal-dot"></span>
+			<span class="terminal-dot"></span>
+			<span class="terminal-title">Terminal</span>
+		</div>
+		<div class="terminal-body">
+			{demo.steps.map((step) => {
+				if (step.prompt && step.command) {
+					return (
+						<div class="terminal-line">
+							<span class="terminal-prompt" aria-hidden="true">$</span>
+							<span class="terminal-command">{step.command}</span>
+						</div>
+					);
+				}
+				if (step.output) {
+					return (
+						<div class={`terminal-output terminal-output-${step.style || 'muted'}`}>
+							{step.output.split('\n').map((line, i) => (
+								<div>{line}</div>
+							))}
+						</div>
+					);
+				}
+				return null;
+			})}
+		</div>
+	</div>
+</SectionBlock>

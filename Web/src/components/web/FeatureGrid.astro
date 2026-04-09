@@ -1,0 +1,25 @@
+---
+import type { Feature } from '../../data/homepage';
+import SectionBlock from '../primitives/SectionBlock.astro';
+
+type Props = {
+	features: Feature[];
+};
+
+const { features } = Astro.props;
+---
+
+<SectionBlock id="features" className="feature-grid-section" labelledBy="features-title">
+	<h2 id="features-title" class="features-heading">Everything your agent needs</h2>
+	<p class="features-subtitle">Native Swift binary. No external runtime dependencies. One tool, full coverage.</p>
+
+	<div class="feature-grid" role="list" aria-label="Feature list">
+		{features.map((feature) => (
+			<article class="feature-card" role="listitem">
+				<span class="feature-marker" aria-hidden="true">{feature.marker}</span>
+				<h3 class="feature-title">{feature.title}</h3>
+				<p class="feature-description">{feature.description}</p>
+			</article>
+		))}
+	</div>
+</SectionBlock>

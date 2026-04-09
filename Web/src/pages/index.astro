@@ -1,82 +1,84 @@
 ---
-import DifferentiationProofSection from '../components/web/DifferentiationProofSection.astro';
-import DocsHandoffSection from '../components/web/DocsHandoffSection.astro';
-import FinalCTA from '../components/web/FinalCTA.astro';
-import GlobalNav from '../components/web/GlobalNav.astro';
-import HeroProof from '../components/web/HeroProof.astro';
-import ProblemSection from '../components/web/ProblemSection.astro';
-import SolutionSection from '../components/web/SolutionSection.astro';
-import WorkflowsJourneysSection from '../components/web/WorkflowsJourneysSection.astro';
+import FinalCTA from "../components/web/FinalCTA.astro";
+import FeatureGrid from "../components/web/FeatureGrid.astro";
+import GlobalNav from "../components/web/GlobalNav.astro";
+import Hero from "../components/web/Hero.astro";
+import TerminalDemo from "../components/web/TerminalDemo.astro";
 import {
 	homepageContent,
-	isProofMetadataAvailable,
-	resolveHomepageNarrativeSectionsForRender,
 	resolveNavigationMetadata,
-} from '../data/homepage';
-import { createHomepageStructuredData, homepageSeo } from '../data/seo';
-import '../styles/tokens.css';
-import '../styles/primitives.css';
-import '../styles/homepage.css';
+} from "../data/homepage";
+import { createHomepageStructuredData, homepageSeo } from "../data/seo";
+import "../styles/tokens.css";
+import "../styles/primitives.css";
+import "../styles/homepage.css";
 
 const navigationState = resolveNavigationMetadata(homepageContent.navigation);
-const useProofFallback =
-	!navigationState.isMetadataAvailable || !isProofMetadataAvailable(homepageContent.hero);
-const narrativeSections = resolveHomepageNarrativeSectionsForRender(homepageContent);
 const siteOrigin = Astro.site?.toString();
-if (!siteOrigin) throw new Error('Missing site config.');
+if (!siteOrigin) throw new Error("Missing site config.");
 const canonicalUrl = new URL(homepageSeo.canonicalPath, siteOrigin).toString();
-const socialImageUrl = new URL(homepageSeo.socialImagePath, siteOrigin).toString();
+const socialImageUrl = new URL(
+	homepageSeo.socialImagePath,
+	siteOrigin,
+).toString();
 const homepageStructuredData = createHomepageStructuredData(siteOrigin);
 ---
 
 <!doctype html>
 <html lang="en">
 	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width">
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
 		<title>{homepageSeo.title}</title>
-		<meta
-			name="description"
-			content={homepageSeo.description}
-		>
-		<link rel="canonical" href={canonicalUrl}>
-		<meta
-			name="robots"
-			content="index,follow"
-		>
-		<meta property="og:type" content="website">
-		<meta property="og:site_name" content="xcforge">
-		<meta property="og:url" content={canonicalUrl}>
-		<meta property="og:title" content={homepageSeo.title}>
-		<meta property="og:description" content={homepageSeo.description}>
-		<meta property="og:image" content={socialImageUrl}>
-		<meta name="twitter:card" content="summary_large_image">
-		<meta name="twitter:title" content={homepageSeo.title}>
-		<meta name="twitter:description" content={homepageSeo.description}>
-		<meta name="twitter:image" content={socialImageUrl}>
-		<script type="application/ld+json" set:html={JSON.stringify(homepageStructuredData)}></script>
+		<meta name="description" content={homepageSeo.description} />
+		<link rel="canonical" href={canonicalUrl} />
+		<meta name="robots" content="index,follow" />
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="xcforge" />
+		<meta property="og:url" content={canonicalUrl} />
+		<meta property="og:title" content={homepageSeo.title} />
+		<meta property="og:description" content={homepageSeo.description} />
+		<meta property="og:image" content={socialImageUrl} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={homepageSeo.title} />
+		<meta name="twitter:description" content={homepageSeo.description} />
+		<meta name="twitter:image" content={socialImageUrl} />
+		<script
+			type="application/ld+json"
+			set:html={JSON.stringify(homepageStructuredData)}
+		/>
 	</head>
 	<body>
 		<a class="skip-link" href="#main-content">Skip to main content</a>
 		<GlobalNav navItems={navigationState.items} />
 		<main id="main-content">
-			<HeroProof hero={homepageContent.hero} useFallback={useProofFallback} />
-			<ProblemSection section={narrativeSections.problem} />
-			<SolutionSection section={narrativeSections.solution} />
-			<WorkflowsJourneysSection section={narrativeSections.workflows} />
-			<DifferentiationProofSection section={narrativeSections.differentiation} />
-			<DocsHandoffSection section={narrativeSections.docsHandoff} />
+			<Hero hero={homepageContent.hero} />
+			<TerminalDemo demo={homepageContent.terminalDemo} />
+			<FeatureGrid features={homepageContent.features} />
 			<FinalCTA finalCta={homepageContent.finalCta} />
 		</main>
 
 		<script>
-		import { initializeHomepageAnalytics } from '../lib/analytics';
-		import { initializeDocsHandoff } from '../lib/docs-handoff';
-		import { initializeInstallIntentHandoff } from '../lib/install-intent';
+			import { initializeHomepageAnalytics } from "../lib/analytics";
+			import { initializeInstallIntentHandoff } from "../lib/install-intent";
 
-		initializeHomepageAnalytics();
-		initializeDocsHandoff();
-		initializeInstallIntentHandoff();
+			initializeHomepageAnalytics();
+			initializeInstallIntentHandoff();
+
+			document.querySelectorAll<HTMLButtonElement>('[data-copy-adjacent]').forEach((btn) => {
+				btn.addEventListener('click', async () => {
+					const source = btn.parentElement?.querySelector<HTMLElement>('[data-copy-source]');
+					const text = source?.textContent?.trim() ?? '';
+					if (!text) return;
+					try {
+						await navigator.clipboard.writeText(text);
+						btn.textContent = 'Copied!';
+						setTimeout(() => { btn.textContent = 'Copy command'; }, 2000);
+					} catch {
+						btn.textContent = 'Copy failed';
+					}
+				});
+			});
 		</script>
 	</body>
 </html>

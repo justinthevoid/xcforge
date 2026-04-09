@@ -8,9 +8,9 @@ const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const componentPaths = {
 	route: join(projectRoot, 'src', 'pages', 'index.astro'),
-	hero: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
-	proofToggle: join(projectRoot, 'src', 'components', 'web', 'ProofToggle.svelte'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'Hero.astro'),
+	terminalDemo: join(projectRoot, 'src', 'components', 'web', 'TerminalDemo.astro'),
+	featureGrid: join(projectRoot, 'src', 'components', 'web', 'FeatureGrid.astro'),
 	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
 	primitives: join(projectRoot, 'src', 'styles', 'primitives.css'),
 };
@@ -113,20 +113,29 @@ function validateRouteSemantics(routeSource) {
 
 	expectIncludes(
 		routeSource,
-		'<HeroProof',
+		'<Hero',
 		scope,
 		filePath,
-		'Hero proof module is missing from homepage composition.',
-		'Restore HeroProof composition so critical journey accessibility checks remain valid.',
+		'Hero component is missing from homepage composition.',
+		'Restore Hero composition so critical journey accessibility checks remain valid.',
 	);
 
 	expectIncludes(
 		routeSource,
-		'<DocsHandoffSection',
+		'<TerminalDemo',
 		scope,
 		filePath,
-		'Docs handoff module is missing from homepage composition.',
-		'Restore DocsHandoffSection composition for supporting-path accessibility coverage.',
+		'TerminalDemo component is missing from homepage composition.',
+		'Restore TerminalDemo composition for section ordering accessibility coverage.',
+	);
+
+	expectIncludes(
+		routeSource,
+		'<FeatureGrid',
+		scope,
+		filePath,
+		'FeatureGrid component is missing from homepage composition.',
+		'Restore FeatureGrid composition for feature list accessibility coverage.',
 	);
 
 	expectIncludes(
@@ -139,8 +148,8 @@ function validateRouteSemantics(routeSource) {
 	);
 }
 
-function validateHeroProof(heroSource) {
-	const scope = `component:HeroProof (${routeId})`;
+function validateHero(heroSource) {
+	const scope = `component:Hero (${routeId})`;
 	const filePath = componentPaths.hero;
 
 	expectIncludes(
@@ -172,102 +181,106 @@ function validateHeroProof(heroSource) {
 
 	expectIncludes(
 		heroSource,
-		'<ProofToggle',
+		'aria-label="Install commands"',
 		scope,
 		filePath,
-		'Proof toggle module is missing from HeroProof.',
-		'Restore proof toggle composition to preserve keyboard-operable proof controls.',
+		'Hero install terminal block is missing accessible label.',
+		'Keep aria-label on the install-terminal div for screen reader context.',
 	);
 }
 
-function validateProofToggle(toggleSource) {
-	const scope = `component:ProofToggle (${routeId})`;
-	const filePath = componentPaths.proofToggle;
+function validateTerminalDemo(demoSource) {
+	const scope = `component:TerminalDemo (${routeId})`;
+	const filePath = componentPaths.terminalDemo;
 
+	expectIncludes(
+		demoSource,
+		'labelledBy="demo-title"',
+		scope,
+		filePath,
+		'TerminalDemo section missing labelled heading contract.',
+		'Ensure SectionBlock is labelled by demo-title to keep heading/landmark semantics explicit.',
+	);
+
+	expectIncludes(
+		demoSource,
+		'id="demo-title"',
+		scope,
+		filePath,
+		'TerminalDemo section heading is missing id="demo-title".',
+		'Restore demo-title id for consistent heading/landmark association.',
+	);
+
+	// Terminal window uses role="img" with an aria-label for meaningful non-interactive content.
 	expectMatches(
-		toggleSource,
-		/<button[^>]*on:keydown={_handleToggleKeydown}/m,
+		demoSource,
+		/role="img"[^>]*aria-label=|aria-label=[^>]*role="img"/m,
 		scope,
 		filePath,
-		'Proof toggle controls are missing keyboard arrow-key handling.',
-		'Place on:keydown handler on proof toggle buttons and keep left/right selection logic.',
+		'Terminal window is missing role="img" and aria-label for assistive technologies.',
+		'Keep the terminal-window div labeled with role="img" and a descriptive aria-label.',
 	);
 
+	// Prompt characters are hidden from screen readers.
 	expectIncludes(
-		toggleSource,
-		'aria-pressed={snapshot.id === activeSnapshotId}',
+		demoSource,
+		'aria-hidden="true"',
 		scope,
 		filePath,
-		'Proof toggle buttons are missing pressed-state semantics.',
-		'Keep aria-pressed bound to active snapshot state for assistive technologies.',
-	);
-
-	expectIncludes(
-		toggleSource,
-		'moveFocus: true',
-		scope,
-		filePath,
-		'Arrow-key snapshot switching does not request focus follow behavior.',
-		'Move focus to the newly selected proof toggle option during arrow-key navigation.',
-	);
-
-	expectIncludes(
-		toggleSource,
-		'(selected)',
-		scope,
-		filePath,
-		'Selected-state text marker is missing, creating a color-only state risk.',
-		'Keep explicit selected-state text in toggle labels in addition to visual styling.',
-	);
-
-	expectIncludes(
-		toggleSource,
-		'role="status" aria-live="polite"',
-		scope,
-		filePath,
-		'Proof status live-region announcement is missing.',
-		'Keep polite status announcements for proof state changes.',
+		'Terminal prompt characters are missing aria-hidden to suppress decorative repetition.',
+		'Keep aria-hidden="true" on terminal prompt spans.',
 	);
 }
 
-function validateDocsHandoff(docsSource) {
-	const scope = `component:DocsHandoffSection (${routeId})`;
-	const filePath = componentPaths.docsHandoff;
+function validateFeatureGrid(gridSource) {
+	const scope = `component:FeatureGrid (${routeId})`;
+	const filePath = componentPaths.featureGrid;
 
 	expectIncludes(
-		docsSource,
-		'data-docs-handoff-status',
+		gridSource,
+		'labelledBy="features-title"',
 		scope,
 		filePath,
-		'Docs handoff status node is missing.',
-		'Restore handoff status node so fallback guidance is announced to assistive technologies.',
+		'FeatureGrid section missing labelled heading contract.',
+		'Ensure SectionBlock is labelled by features-title to keep heading/landmark semantics explicit.',
 	);
 
 	expectIncludes(
-		docsSource,
-		'role="status"',
+		gridSource,
+		'id="features-title"',
 		scope,
 		filePath,
-		'Docs handoff status role is missing.',
-		'Keep status role on docs handoff feedback output.',
+		'FeatureGrid section heading is missing id="features-title".',
+		'Restore features-title id for consistent heading/landmark association.',
+	);
+
+	// Feature grid uses role="list" with role="listitem" on articles.
+	expectIncludes(
+		gridSource,
+		'role="list"',
+		scope,
+		filePath,
+		'Feature grid is missing role="list" semantics.',
+		'Keep role="list" on the feature-grid div for list traversal by assistive technologies.',
 	);
 
 	expectIncludes(
-		docsSource,
-		'aria-atomic="true"',
+		gridSource,
+		'role="listitem"',
 		scope,
 		filePath,
-		'Docs handoff status announcements are missing aria-atomic.',
-		'Keep aria-atomic on status output so updates are announced coherently.',
+		'Feature cards are missing role="listitem" semantics.',
+		'Keep role="listitem" on feature-card articles.',
 	);
 
+	// Feature marker icons should be hidden from screen readers.
 	expectIncludes(
-		docsSource,
-		'aria-label="Docs and workflow handoff links"',
+		gridSource,
+		'aria-hidden="true"',
 		scope,
 		filePath,
-		'Docs handoff link region lacks explicit semantic label.',
-		'Restore descriptive label for docs/workflow handoff card region.',
+		'Feature marker icons are missing aria-hidden to suppress decorative content.',
+		'Keep aria-hidden="true" on feature-marker spans.',
 	);
 }
 
@@ -275,6 +288,25 @@ function validateFinalCta(finalSource) {
 	const scope = `component:FinalCTA (${routeId})`;
 	const filePath = componentPaths.finalCta;
 
+	expectIncludes(
+		finalSource,
+		'labelledBy="final-cta-title"',
+		scope,
+		filePath,
+		'FinalCTA section missing labelled heading contract.',
+		'Ensure SectionBlock is labelled by final-cta-title to keep heading/landmark semantics explicit.',
+	);
+
+	expectIncludes(
+		finalSource,
+		'id="final-cta-title"',
+		scope,
+		filePath,
+		'FinalCTA heading is missing id="final-cta-title".',
+		'Restore final-cta-title id for consistent heading/landmark association.',
+	);
+
+	// The standalone copy button in the install block must be a button, not a link.
 	expectNotMatches(
 		finalSource,
 		/<code\s+[^>]*tabindex\s*=\s*["']0["']/i,
@@ -284,6 +316,7 @@ function validateFinalCta(finalSource) {
 		'Use a properly labeled readonly command region and keep copy as the interactive control.',
 	);
 
+	// Install handoff semantic region.
 	expectIncludes(
 		finalSource,
 		'class="install-handoff-command"',
@@ -293,15 +326,7 @@ function validateFinalCta(finalSource) {
 		'Restore semantic install command region used by styling and keyboard focus checks.',
 	);
 
-	expectNotMatches(
-		finalSource,
-		/data-install-handoff-command[^>]*role="textbox"/m,
-		scope,
-		filePath,
-		'Install command region should not expose textbox role semantics.',
-		'Use semantic preformatted text with explicit label instead of textbox role.',
-	);
-
+	// The handoff install command must be a labeled, focusable preformatted region.
 	expectMatches(
 		finalSource,
 		/<pre[^>]*data-install-handoff-command[^>]*tabindex="0"[^>]*aria-label="Install command"[^>]*>/m,
@@ -311,6 +336,7 @@ function validateFinalCta(finalSource) {
 		'Keep install command region as labeled focusable preformatted text.',
 	);
 
+	// The handoff status message must have status role with aria-atomic.
 	expectMatches(
 		finalSource,
 		/<[^>]*data-install-handoff-message[^>]*role="status"[^>]*aria-atomic="true"[^>]*>/m,
@@ -320,6 +346,7 @@ function validateFinalCta(finalSource) {
 		'Keep status/atomic semantics on handoff message node.',
 	);
 
+	// Copy button must be a proper button element.
 	expectMatches(
 		finalSource,
 		/<button[^>]*type="button"[^>]*data-copy-install-command/m,
@@ -327,6 +354,16 @@ function validateFinalCta(finalSource) {
 		filePath,
 		'Copy command button contract is missing.',
 		'Restore explicit button-based copy control for keyboard operability.',
+	);
+
+	// Install handoff region uses aria-live for polite announcements.
+	expectIncludes(
+		finalSource,
+		'aria-live="polite"',
+		scope,
+		filePath,
+		'Install handoff region is missing aria-live="polite" for assistive technology updates.',
+		'Keep aria-live="polite" on the install-handoff section.',
 	);
 }
 
@@ -336,10 +373,9 @@ function validateFocusStyles(primitivesSource) {
 
 	const requiredFocusSelectors = [
 		'.action-link:focus-visible',
-		'.proof-toggle-button:focus-visible',
 		'.copy-command:focus-visible',
 		'.install-handoff-command:focus-visible',
-		'.handoff-link:focus-visible',
+		'.install-handoff-link:focus-visible',
 	];
 
 	for (const selector of requiredFocusSelectors) {
@@ -371,15 +407,9 @@ function printFailuresAndExit() {
 
 try {
 	const routeSource = readRequiredFile(componentPaths.route, `route:${routeId}`);
-	const heroSource = readRequiredFile(componentPaths.hero, `component:HeroProof (${routeId})`);
-	const toggleSource = readRequiredFile(
-		componentPaths.proofToggle,
-		`component:ProofToggle (${routeId})`,
-	);
-	const docsSource = readRequiredFile(
-		componentPaths.docsHandoff,
-		`component:DocsHandoffSection (${routeId})`,
-	);
+	const heroSource = readRequiredFile(componentPaths.hero, `component:Hero (${routeId})`);
+	const demoSource = readRequiredFile(componentPaths.terminalDemo, `component:TerminalDemo (${routeId})`);
+	const gridSource = readRequiredFile(componentPaths.featureGrid, `component:FeatureGrid (${routeId})`);
 	const finalSource = readRequiredFile(componentPaths.finalCta, `component:FinalCTA (${routeId})`);
 	const primitivesSource = readRequiredFile(
 		componentPaths.primitives,
@@ -387,9 +417,9 @@ try {
 	);
 
 	if (routeSource) validateRouteSemantics(routeSource);
-	if (heroSource) validateHeroProof(heroSource);
-	if (toggleSource) validateProofToggle(toggleSource);
-	if (docsSource) validateDocsHandoff(docsSource);
+	if (heroSource) validateHero(heroSource);
+	if (demoSource) validateTerminalDemo(demoSource);
+	if (gridSource) validateFeatureGrid(gridSource);
 	if (finalSource) validateFinalCta(finalSource);
 	if (primitivesSource) validateFocusStyles(primitivesSource);
 

@@ -9,9 +9,8 @@ const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const componentPaths = {
 	nav: join(projectRoot, 'src', 'components', 'web', 'GlobalNav.astro'),
-	hero: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'Hero.astro'),
 	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
 	homepageCss: join(projectRoot, 'src', 'styles', 'homepage.css'),
 	installIntent: join(projectRoot, 'src', 'lib', 'install-intent.ts'),
 };
@@ -56,17 +55,6 @@ function countTierBindings(source, tier) {
 	);
 }
 
-function countSupportingBindings(source) {
-	return (
-		countMatches(source, /data-supporting-path=["']true["']/g) +
-		countMatches(source, /<ActionLink\b[^>]*\bsupportingPath=\{true\}[^>]*\/?>/g)
-	);
-}
-
-function toSnapshotPath(filePath) {
-	return rel(filePath).replace(/[\\/]/g, '__');
-}
-
 function extractLinesContaining(source, token, limit = 6) {
 	const lines = source.split(/\r?\n/);
 	const matched = [];
@@ -90,7 +78,7 @@ function validateNavigationContract(navSource, snapshot) {
 
 	if (!navigationState.isMetadataAvailable) {
 		fail(
-			'Navigation metadata fell back to defaults. Story 4.3 requires explicit nav metadata for conversion hierarchy checks.',
+			'Navigation metadata fell back to defaults. Ensure homepageContent.navigation matches the required nav order.',
 		);
 		return;
 	}
@@ -114,15 +102,18 @@ function validateNavigationContract(navSource, snapshot) {
 	const navPrimaryCount = installNavItem ? 1 : 0;
 	const navSecondaryCount = navigationState.items.filter((item) => item.id !== 'install').length;
 	const navSupportingCount = supportingIds.length;
+
 	const hasTierBindingExpression =
-		/data-action-tier=\{\s*isInstall\s*\?\s*["']primary["']\s*:\s*["']secondary["']\s*\}/s.test(
+		/data-action-tier=\{isInstall\s*\?\s*["']primary["']\s*:\s*["']secondary["']\s*\}/.test(
 			navSource,
 		);
+
 	const hasSupportingBindingExpression =
 		/data-supporting-path=\{[\s\S]*isSupportingSecondary[\s\S]*["']true["'][\s\S]*:[\s\S]*undefined[\s\S]*\}/s.test(
 			navSource,
 		);
 
+	snapshot.desktop = snapshot.desktop || {};
 	snapshot.desktop.nav = {
 		primaryCount: navPrimaryCount,
 		secondaryCount: navSecondaryCount,
@@ -171,12 +162,11 @@ function validateNavigationContract(navSource, snapshot) {
 function validateHeroContract(heroSource, snapshot) {
 	const heroPrimaryCount = countTierBindings(heroSource, 'primary');
 	const heroSecondaryCount = countTierBindings(heroSource, 'secondary');
-	const heroSupportingCount = countSupportingBindings(heroSource);
 
+	snapshot.desktop = snapshot.desktop || {};
 	snapshot.desktop.hero = {
 		primaryCount: heroPrimaryCount,
 		secondaryCount: heroSecondaryCount,
-		supportingCount: heroSupportingCount,
 	};
 
 	if (heroPrimaryCount !== 1) {
@@ -185,40 +175,30 @@ function validateHeroContract(heroSource, snapshot) {
 		);
 	}
 
+	// Hero has Docs and GitHub as secondary links (2 minimum).
 	if (heroSecondaryCount < 2) {
 		fail(
-			`Hero actions must include Docs and Workflow secondary links; found ${heroSecondaryCount}.`,
-		);
-	}
-
-	if (heroSupportingCount < 2) {
-		fail(
-			`Hero secondary links must be marked as supporting paths; found ${heroSupportingCount} tagged links.`,
+			`Hero actions must include at least two secondary links (Docs, GitHub); found ${heroSecondaryCount}.`,
 		);
 	}
 
 	if (!heroSource.includes('href="/docs"')) {
-		fail('Hero actions are missing the Docs supporting path.');
+		fail('Hero actions are missing the Docs link.');
 	}
 
-	if (!heroSource.includes('href="/docs/getting-started/"')) {
-		fail('Hero actions are missing the Workflow Guide supporting path.');
-	}
-
-	if (!heroSource.includes('hero-supporting-path-note')) {
-		fail('Hero actions are missing supporting-path assistive text.');
+	if (!heroSource.includes('id="install-section"')) {
+		fail('Hero install action region is missing id="install-section".');
 	}
 }
 
 function validateFinalCtaContract(finalCtaSource, snapshot) {
 	const finalPrimaryCount = countTierBindings(finalCtaSource, 'primary');
 	const finalSecondaryCount = countTierBindings(finalCtaSource, 'secondary');
-	const finalSupportingCount = countSupportingBindings(finalCtaSource);
 
+	snapshot.desktop = snapshot.desktop || {};
 	snapshot.desktop.finalCta = {
 		primaryCount: finalPrimaryCount,
 		secondaryCount: finalSecondaryCount,
-		supportingCount: finalSupportingCount,
 	};
 
 	if (finalPrimaryCount !== 1) {
@@ -228,54 +208,16 @@ function validateFinalCtaContract(finalCtaSource, snapshot) {
 	}
 
 	if (finalSecondaryCount < 1) {
-		fail('Final CTA must include a secondary workflow supporting link.');
-	}
-
-	if (finalSupportingCount < 1) {
-		fail('Final CTA workflow link must be marked as a supporting path.');
-	}
-
-	if (!finalCtaSource.includes('final-supporting-path-note')) {
-		fail('Final CTA is missing supporting-path assistive text.');
-	}
-}
-
-function validateDocsHandoffContract(docsHandoffSource, snapshot) {
-	const handoffSecondaryCount = countMatches(
-		docsHandoffSource,
-		/class(?:Name)?=["'][^"']*handoff-link[^"']*["']/g,
-	);
-	const handoffTierCount = countTierBindings(docsHandoffSource, 'secondary');
-	const handoffSupportingCount = countSupportingBindings(docsHandoffSource);
-
-	snapshot.desktop.docsHandoff = {
-		handoffLinkCount: handoffSecondaryCount,
-		secondaryTierCount: handoffTierCount,
-		supportingCount: handoffSupportingCount,
-	};
-
-	if (handoffSecondaryCount === 0) {
-		fail('Docs handoff section is missing handoff links.');
-	}
-
-	if (handoffTierCount < 1 || handoffSupportingCount < 1) {
-		fail('Docs handoff links must be marked as secondary supporting conversion paths.');
-	}
-
-	if (!docsHandoffSource.includes('docs-handoff-support-note')) {
-		fail('Docs handoff section is missing supporting-path assistive text.');
+		fail('Final CTA must include at least one secondary docs link.');
 	}
 }
 
 function validateCssContract(cssSource, installIntentSource, snapshot) {
-	const hasNavSecondaryStyle = cssSource.includes(
-		'.nav-link[data-action-tier="secondary"][data-supporting-path="true"]',
-	);
 	const hasActionOrderRule =
 		cssSource.includes('.hero-actions .cta-primary[data-action-tier="primary"]') &&
-		cssSource.includes('.hero-actions [data-action-tier="secondary"]') &&
 		cssSource.includes('.final-cta-actions .cta-primary[data-action-tier="primary"]') &&
-		cssSource.includes('.final-cta-actions [data-action-tier="secondary"]');
+		cssSource.includes('.hero-actions .cta-secondary[data-action-tier="secondary"]') &&
+		cssSource.includes('.final-cta-actions .cta-secondary[data-action-tier="secondary"]');
 
 	const hasRegionDeEmphasisRule =
 		cssSource.includes('body[data-primary-cta-region="hero"] #final-cta .cta-primary') &&
@@ -292,33 +234,31 @@ function validateCssContract(cssSource, installIntentSource, snapshot) {
 		mobileBlock.includes('.hero-actions') &&
 		mobileBlock.includes('.final-cta-actions') &&
 		mobileBlock.includes('flex-direction: column;');
+
 	const hasMobileFullWidthRule =
 		mobileBlock.includes('.cta-primary') &&
 		mobileBlock.includes('.cta-secondary') &&
 		mobileBlock.includes('width: 100%');
 
+	// The install-intent module sets the primary CTA region on body.
 	const hasPrimaryRegionObserver =
 		installIntentSource.includes("document.body.dataset.primaryCtaRegion = 'hero';") &&
 		installIntentSource.includes("? 'final' : 'hero'");
 
+	snapshot.desktop = snapshot.desktop || {};
+	snapshot.tablet = snapshot.tablet || {};
+	snapshot.mobile = snapshot.mobile || {};
+
 	snapshot.desktop.css = {
-		hasNavSecondaryStyle,
 		hasActionOrderRule,
 		hasRegionDeEmphasisRule,
 	};
-	snapshot.tablet.css = {
-		hasRegionDeEmphasisRule,
-		hasActionOrderRule,
-	};
+	snapshot.tablet.css = { hasRegionDeEmphasisRule, hasActionOrderRule };
 	snapshot.mobile.css = {
 		hasMobileStackingRule,
 		hasMobileFullWidthRule,
 		hasPrimaryRegionObserver,
 	};
-
-	if (!hasNavSecondaryStyle) {
-		fail('Homepage CSS is missing explicit secondary nav styling for supporting paths.');
-	}
 
 	if (!hasActionOrderRule) {
 		fail('Homepage CSS is missing action-order rules that keep install before secondary links.');
@@ -357,7 +297,7 @@ function writeFailureSnapshots(snapshot, sourceMap) {
 			...extractLinesContaining(value.source, 'data-primary-cta-region'),
 		];
 
-		const snapshotPath = join(outputDir, `${key}.${toSnapshotPath(value.path)}.snapshot.txt`);
+		const snapshotPath = join(outputDir, `${key}.snapshot.txt`);
 		writeFileSync(snapshotPath, snippetLines.join('\n'));
 	}
 
@@ -368,24 +308,16 @@ function main() {
 	const navSource = readRequiredFile(componentPaths.nav);
 	const heroSource = readRequiredFile(componentPaths.hero);
 	const finalCtaSource = readRequiredFile(componentPaths.finalCta);
-	const docsHandoffSource = readRequiredFile(componentPaths.docsHandoff);
 	const cssSource = readRequiredFile(componentPaths.homepageCss);
 	const installIntentSource = readRequiredFile(componentPaths.installIntent);
 
-	if (
-		!navSource ||
-		!heroSource ||
-		!finalCtaSource ||
-		!docsHandoffSource ||
-		!cssSource ||
-		!installIntentSource
-	) {
+	if (!navSource || !heroSource || !finalCtaSource || !cssSource || !installIntentSource) {
 		process.exit(1);
 	}
 
 	const snapshot = {
 		checkedAt: new Date().toISOString(),
-		story: '4.3-supporting-path-hierarchy',
+		homepage: 'hero-terminal-features-finalcta',
 		desktop: {},
 		tablet: {},
 		mobile: {},
@@ -394,7 +326,6 @@ function main() {
 	validateNavigationContract(navSource, snapshot);
 	validateHeroContract(heroSource, snapshot);
 	validateFinalCtaContract(finalCtaSource, snapshot);
-	validateDocsHandoffContract(docsHandoffSource, snapshot);
 	validateCssContract(cssSource, installIntentSource, snapshot);
 
 	if (errors.length > 0) {
@@ -402,7 +333,6 @@ function main() {
 			nav: { path: componentPaths.nav, source: navSource },
 			hero: { path: componentPaths.hero, source: heroSource },
 			finalCta: { path: componentPaths.finalCta, source: finalCtaSource },
-			docsHandoff: { path: componentPaths.docsHandoff, source: docsHandoffSource },
 			css: { path: componentPaths.homepageCss, source: cssSource },
 			installIntent: { path: componentPaths.installIntent, source: installIntentSource },
 		});

@@ -12,18 +12,21 @@ const { finalCta } = Astro.props;
 
 <SectionBlock id="final-cta" className="final-cta" labelledBy="final-cta-title">
 	<div class="final-cta-shell">
-		<p class="final-cta-kicker">Install with confidence</p>
 		<h2 id="final-cta-title">{finalCta.heading}</h2>
 		<p class="final-cta-summary">{finalCta.summary}</p>
 
-		<section
+		<div class="final-cta-install-block">
+			<pre class="final-cta-command" data-copy-source tabindex="0" aria-label="Install command">{finalCta.installCommand}</pre>
+			<button class="copy-command" type="button" data-copy-adjacent>
+				{finalCta.handoffCopyButtonLabel}
+			</button>
+		</div>
+
+		<div
 			class="final-cta-actions"
 			role="group"
-			aria-label="Final install primary action with supporting workflow link"
+			aria-label="Final install action"
 		>
-			<p id="final-supporting-path-note" class="sr-only">
-				Workflow Guide is a supporting path for technical depth and does not replace install.
-			</p>
 			<ActionLink
 				tier="primary"
 				className="install-intent-trigger"
@@ -41,16 +44,14 @@ const { finalCta } = Astro.props;
 			/>
 			<ActionLink
 				tier="secondary"
-				supportingPath={true}
-				href={finalCta.workflowHref}
-				label={finalCta.workflowLabel}
-				describedBy="final-supporting-path-note"
-				data-analytics-event-name="homepage.workflow-guide.clicked"
+				href={finalCta.docsHref}
+				label={finalCta.docsLabel}
+				data-analytics-event-name="homepage.docs.clicked"
 				data-analytics-intent-signal="depth-navigation"
-				data-analytics-destination="workflow-guide"
+				data-analytics-destination="docs"
 				data-analytics-source-surface="final-cta"
 			/>
-		</section>
+		</div>
 
 		<section
 			class="install-handoff"

@@ -12,9 +12,10 @@ const paths = {
 	homepageCss: join(projectRoot, 'src', 'styles', 'homepage.css'),
 	tokensCss: join(projectRoot, 'src', 'styles', 'tokens.css'),
 	primitivesCss: join(projectRoot, 'src', 'styles', 'primitives.css'),
-	hero: join(projectRoot, 'src', 'components', 'web', 'HeroProof.astro'),
+	hero: join(projectRoot, 'src', 'components', 'web', 'Hero.astro'),
+	terminalDemo: join(projectRoot, 'src', 'components', 'web', 'TerminalDemo.astro'),
+	featureGrid: join(projectRoot, 'src', 'components', 'web', 'FeatureGrid.astro'),
 	finalCta: join(projectRoot, 'src', 'components', 'web', 'FinalCTA.astro'),
-	docsHandoff: join(projectRoot, 'src', 'components', 'web', 'DocsHandoffSection.astro'),
 };
 
 function rel(filePath) {
@@ -31,7 +32,7 @@ function readRequiredFile(filePath, scope) {
 			scope,
 			filePath,
 			'Required file is missing.',
-			'Restore the file before running Story 5.4 release checks.',
+			'Restore the file before running responsive/performance parity checks.',
 		);
 		return null;
 	}
@@ -73,16 +74,6 @@ function countTierBindings(source, tier) {
 	const actionLinkPropCount = countMatches(
 		source,
 		new RegExp(`<ActionLink\\b[^>]*\\btier=["']${tier}["'][^>]*\\/?>`, 'g'),
-	);
-
-	return Math.max(dataAttributeCount, actionLinkPropCount);
-}
-
-function countSupportingBindings(source) {
-	const dataAttributeCount = countMatches(source, /data-supporting-path=["']true["']/g);
-	const actionLinkPropCount = countMatches(
-		source,
-		/<ActionLink\b[^>]*\bsupportingPath=\{true\}[^>]*\/?>/g,
 	);
 
 	return Math.max(dataAttributeCount, actionLinkPropCount);
@@ -149,20 +140,17 @@ function extractLinesContaining(source, token, limit = 4) {
 	return matched;
 }
 
+/**
+ * Validates that index.astro composes the four new sections in order:
+ * Hero -> TerminalDemo -> FeatureGrid -> FinalCTA
+ */
 function validateNarrativeOrder(routeSource, snapshot) {
 	const scope = 'responsive-hierarchy:narrative-order';
 	const filePath = paths.route;
-	const orderedModules = [
-		'<HeroProof',
-		'<ProblemSection',
-		'<SolutionSection',
-		'<WorkflowsJourneysSection',
-		'<DifferentiationProofSection',
-		'<DocsHandoffSection',
-		'<FinalCTA',
-	];
 
+	const orderedModules = ['<Hero', '<TerminalDemo', '<FeatureGrid', '<FinalCTA'];
 	const positions = orderedModules.map((moduleToken) => routeSource.indexOf(moduleToken));
+
 	snapshot.routeOrder = orderedModules.map((moduleToken, index) => ({
 		module: moduleToken,
 		position: positions[index],
@@ -185,7 +173,7 @@ function validateNarrativeOrder(routeSource, snapshot) {
 			fail(
 				scope,
 				filePath,
-				'Homepage narrative section order no longer follows the required Hero -> Problem -> Solution -> Workflows -> Differentiation/Proof -> Docs Handoff -> Final CTA sequence.',
+				'Homepage narrative section order no longer follows the required Hero -> TerminalDemo -> FeatureGrid -> FinalCTA sequence.',
 				'Reorder homepage module composition to preserve required narrative hierarchy.',
 			);
 			return;
@@ -193,48 +181,60 @@ function validateNarrativeOrder(routeSource, snapshot) {
 	}
 }
 
+/**
+ * Validates the primary/secondary action-tier counts in Hero and FinalCTA.
+ * Hero: 1 primary install CTA + 2 secondary links (Docs, GitHub).
+ * FinalCTA: 1 primary install CTA + 1 secondary docs link.
+ */
 function validateCtaTierContracts(heroSource, finalSource, snapshot) {
 	const scope = 'responsive-hierarchy:cta-tier-contract';
 
 	const heroPrimary = countTierBindings(heroSource, 'primary');
 	const heroSecondary = countTierBindings(heroSource, 'secondary');
-	const heroSupporting = countSupportingBindings(heroSource);
 
 	const finalPrimary = countTierBindings(finalSource, 'primary');
 	const finalSecondary = countTierBindings(finalSource, 'secondary');
-	const finalSupporting = countSupportingBindings(finalSource);
 
 	snapshot.ctaContract = {
-		hero: { primary: heroPrimary, secondary: heroSecondary, supporting: heroSupporting },
-		final: { primary: finalPrimary, secondary: finalSecondary, supporting: finalSupporting },
+		hero: { primary: heroPrimary, secondary: heroSecondary },
+		final: { primary: finalPrimary, secondary: finalSecondary },
 	};
 
-	if (heroPrimary !== 1 || heroSecondary < 2 || heroSupporting < 2) {
+	if (heroPrimary !== 1 || heroSecondary < 2) {
 		fail(
 			scope,
 			paths.hero,
-			`Hero CTA contract drifted (primary=${heroPrimary}, secondary=${heroSecondary}, supporting=${heroSupporting}).`,
-			'Restore one primary install action plus Docs/Workflow secondary supporting actions in HeroProof.',
+			`Hero CTA contract drifted (primary=${heroPrimary}, secondary=${heroSecondary}).`,
+			'Restore one primary install action plus Docs/GitHub secondary actions in Hero.',
 		);
 	}
 
-	if (finalPrimary !== 1 || finalSecondary < 1 || finalSupporting < 1) {
+	if (finalPrimary !== 1 || finalSecondary < 1) {
 		fail(
 			scope,
 			paths.finalCta,
-			`Final CTA contract drifted (primary=${finalPrimary}, secondary=${finalSecondary}, supporting=${finalSupporting}).`,
-			'Restore one primary install action plus one supporting workflow secondary action in FinalCTA.',
+			`Final CTA contract drifted (primary=${finalPrimary}, secondary=${finalSecondary}).`,
+			'Restore one primary install action plus one secondary docs link in FinalCTA.',
 		);
 	}
 }
 
+/**
+ * Validates that homepage.css has the expected breakpoint contracts.
+ */
 function validateResponsiveCssContracts(homepageSource, snapshot) {
 	const scope = 'responsive-hierarchy:breakpoint-contracts';
 
-	const hasDesktopHeroGrid =
-		homepageSource.includes('.hero-proof {') &&
-		homepageSource.includes('display: flex;') &&
-		homepageSource.includes('flex-direction: column;');
+	// Desktop: hero should be a flex column layout.
+	const hasDesktopHeroLayout =
+		homepageSource.includes('.hero {') &&
+		homepageSource.includes('.hero-content {') &&
+		homepageSource.includes('.hero-actions {');
+
+	// Desktop: feature grid should be a multi-column grid.
+	const hasDesktopFeatureGrid =
+		homepageSource.includes('.feature-grid {') &&
+		homepageSource.includes('grid-template-columns: repeat(3,');
 
 	const tabletBlocks = extractMediaBlocks(
 		homepageSource,
@@ -246,23 +246,10 @@ function validateResponsiveCssContracts(homepageSource, snapshot) {
 
 	const tabletChecks = {
 		blockPresent: tabletBlocks.length > 0,
-		heroSingleColumn:
+		featureGridTwoColumn:
 			tabletBlocks.length > 0 &&
-			tabletContent.includes('.hero-copy') &&
-			tabletContent.includes('padding: 30px;'),
-		supportGridTwoColumn:
-			tabletBlocks.length > 0 &&
-			tabletContent.includes('.differentiation-grid,') &&
-			tabletContent.includes('.handoff-grid') &&
-			tabletContent.includes('grid-template-columns: repeat(2, minmax(0, 1fr));'),
-		proofSnapshotSingleColumn:
-			tabletBlocks.length > 0 &&
-			tabletContent.includes('.proof-snapshot-grid') &&
-			tabletContent.includes('grid-template-columns: 1fr;'),
-		proofPanelRefinement:
-			tabletBlocks.length > 0 &&
-			tabletContent.includes('.proof-panel') &&
-			tabletContent.includes('padding: 24px;'),
+			tabletContent.includes('.feature-grid') &&
+			tabletContent.includes('repeat(2, minmax(0, 1fr))'),
 	};
 
 	const mobileChecks = {
@@ -280,29 +267,37 @@ function validateResponsiveCssContracts(homepageSource, snapshot) {
 			mobileContent.includes('.final-cta-actions .cta-secondary[data-action-tier="secondary"]') &&
 			mobileContent.includes('width: 100%') &&
 			mobileContent.includes('justify-content: center;'),
-		supportGridSingleColumn:
+		featureGridSingleColumn:
 			mobileBlocks.length > 0 &&
-			mobileContent.includes('.differentiation-grid,') &&
-			mobileContent.includes('.handoff-grid') &&
+			mobileContent.includes('.feature-grid') &&
 			mobileContent.includes('grid-template-columns: 1fr;'),
-		proofSnapshotSingleColumn:
+		navStacks:
 			mobileBlocks.length > 0 &&
-			mobileContent.includes('.proof-snapshot-grid') &&
-			mobileContent.includes('grid-template-columns: 1fr;'),
+			mobileContent.includes('.global-nav') &&
+			mobileContent.includes('flex-direction: column;'),
 	};
 
 	snapshot.breakpoints = {
-		desktop: { hasDesktopHeroGrid },
+		desktop: { hasDesktopHeroLayout, hasDesktopFeatureGrid },
 		tablet: tabletChecks,
 		mobile: mobileChecks,
 	};
 
-	if (!hasDesktopHeroGrid) {
+	if (!hasDesktopHeroLayout) {
 		fail(
 			scope,
 			paths.homepageCss,
-			'Desktop hero layout contract is missing the expected flex column baseline.',
-			'Restore the desktop HeroProof flex-column layout so the hero renders logo, headline, and install steps stacked vertically.',
+			'Desktop hero layout contract is missing expected .hero, .hero-content, and .hero-actions rules.',
+			'Restore the desktop Hero layout rules so the hero renders headline and install steps correctly.',
+		);
+	}
+
+	if (!hasDesktopFeatureGrid) {
+		fail(
+			scope,
+			paths.homepageCss,
+			'Desktop feature grid contract is missing expected 3-column grid-template-columns rule.',
+			'Restore the desktop FeatureGrid 3-column layout rule.',
 		);
 	}
 
@@ -312,7 +307,7 @@ function validateResponsiveCssContracts(homepageSource, snapshot) {
 				scope,
 				paths.homepageCss,
 				`Tablet breakpoint contract failed: ${check}.`,
-				'Restore Story 5.4 tablet breakpoint hierarchy and proof legibility CSS contracts in @media (max-width: 1023px).',
+				'Restore tablet breakpoint hierarchy contracts in @media (max-width: 1023px).',
 			);
 		}
 	}
@@ -323,12 +318,15 @@ function validateResponsiveCssContracts(homepageSource, snapshot) {
 				scope,
 				paths.homepageCss,
 				`Mobile breakpoint contract failed: ${check}.`,
-				'Restore Story 5.4 mobile breakpoint hierarchy and CTA/proof parity contracts in @media (max-width: 767px).',
+				'Restore mobile breakpoint hierarchy and CTA parity contracts in @media (max-width: 767px).',
 			);
 		}
 	}
 }
 
+/**
+ * Validates that critical source files stay within size budgets.
+ */
 function validatePerformanceBudgets(sources, snapshot) {
 	const scope = 'performance-budget:critical-source-size';
 
@@ -338,8 +336,9 @@ function validatePerformanceBudgets(sources, snapshot) {
 		primitivesCss: Buffer.byteLength(sources.primitivesSource, 'utf8'),
 		indexRoute: Buffer.byteLength(sources.routeSource, 'utf8'),
 		heroComponent: Buffer.byteLength(sources.heroSource, 'utf8'),
+		terminalDemoComponent: Buffer.byteLength(sources.terminalDemoSource, 'utf8'),
+		featureGridComponent: Buffer.byteLength(sources.featureGridSource, 'utf8'),
 		finalCtaComponent: Buffer.byteLength(sources.finalSource, 'utf8'),
-		docsHandoffComponent: Buffer.byteLength(sources.docsSource, 'utf8'),
 	};
 
 	measured.totalCritical =
@@ -348,45 +347,43 @@ function validatePerformanceBudgets(sources, snapshot) {
 		measured.primitivesCss +
 		measured.indexRoute +
 		measured.heroComponent +
-		measured.finalCtaComponent +
-		measured.docsHandoffComponent;
+		measured.terminalDemoComponent +
+		measured.featureGridComponent +
+		measured.finalCtaComponent;
 
+	// Budgets (bytes): the new homepage is leaner — no proof panels, no workflow grids.
 	const budgets = {
 		homepageCss: 24000,
 		tokensCss: 4000,
 		primitivesCss: 5000,
-		indexRoute: 4000,
-		heroComponent: 6000,
-		finalCtaComponent: 3500,
-		docsHandoffComponent: 4000,
+		indexRoute: 3500,
+		heroComponent: 4000,
+		terminalDemoComponent: 3500,
+		featureGridComponent: 3000,
+		finalCtaComponent: 4000,
 		totalCritical: 45000,
 	};
 
-	snapshot.performance = {
-		measured,
-		budgets,
+	const pathByKey = {
+		homepageCss: paths.homepageCss,
+		tokensCss: paths.tokensCss,
+		primitivesCss: paths.primitivesCss,
+		indexRoute: paths.route,
+		heroComponent: paths.hero,
+		terminalDemoComponent: paths.terminalDemo,
+		featureGridComponent: paths.featureGrid,
+		finalCtaComponent: paths.finalCta,
+		totalCritical: paths.homepageCss,
 	};
+
+	snapshot.performance = { measured, budgets };
 
 	for (const [key, budget] of Object.entries(budgets)) {
 		const actual = measured[key];
 		if (actual > budget) {
 			fail(
 				scope,
-				key === 'homepageCss'
-					? paths.homepageCss
-					: key === 'tokensCss'
-						? paths.tokensCss
-						: key === 'primitivesCss'
-							? paths.primitivesCss
-							: key === 'indexRoute'
-								? paths.route
-								: key === 'heroComponent'
-									? paths.hero
-									: key === 'finalCtaComponent'
-										? paths.finalCta
-										: key === 'docsHandoffComponent'
-											? paths.docsHandoff
-											: paths.route,
+				pathByKey[key] ?? paths.route,
 				`Performance budget exceeded for ${key}: ${actual} bytes (budget ${budget} bytes).`,
 				'Reduce conversion-critical source size or simplify non-essential styles/content to preserve first-impression performance.',
 			);
@@ -403,51 +400,33 @@ function validatePerformanceBudgets(sources, snapshot) {
 	}
 }
 
-function validateDegradedModeContracts(routeSource, heroSource, finalSource, docsSource, snapshot) {
-	const scope = 'degraded-mode:operability-contract';
+/**
+ * Validates that the install handoff runtime contract is intact (data attributes
+ * and static-safe structure) so the conversion flow works after JS hydration.
+ */
+function validateInstallHandoffContracts(routeSource, finalSource, snapshot) {
+	const scope = 'degraded-mode:install-handoff-contract';
 
 	const checks = {
-		routeComputesFallback:
-			routeSource.includes('const useProofFallback =') &&
-			routeSource.includes('!isProofMetadataAvailable(homepageContent.hero)'),
-		routePassesFallbackProp: /<HeroProof\b[^>]*\buseFallback=\{useProofFallback\}/m.test(
-			routeSource,
-		),
-		heroFallbackBranch:
-			heroSource.includes('useFallback ? (') &&
-			heroSource.includes('hero.fallbackProofText') &&
-			heroSource.includes('safeFallbackDocsHref'),
-		heroInstallPrimaryAlwaysPresent:
-			heroSource.includes('tier="primary"') &&
-			heroSource.includes('install-intent-trigger') &&
-			heroSource.includes('installCommand={hero.installCommand}'),
-		finalInstallHandoffSemantic:
-			finalSource.includes('data-install-handoff-command') &&
-			finalSource.includes('data-copy-install-command') &&
-			finalSource.includes('data-install-handoff-message'),
-		docsLinksRemainRenderable:
-			docsSource.includes('href={link.href}') &&
-			docsSource.includes('data-handoff-fallback-href={') &&
-			docsSource.includes('data-handoff-unavailable-message={'),
+		finalHasHandoffDataAttr: finalSource.includes('data-install-handoff'),
+		finalHasCommandNode: finalSource.includes('data-install-handoff-command'),
+		finalHasCopyButton: finalSource.includes('data-copy-install-command'),
+		finalHasMessageNode: finalSource.includes('data-install-handoff-message'),
+		finalHasGuideLinkNode: finalSource.includes('data-install-handoff-guide-link'),
+		routeImportsInstallIntent: routeSource.includes('initializeInstallIntentHandoff'),
+		routeImportsAnalytics: routeSource.includes('initializeHomepageAnalytics'),
 	};
 
-	snapshot.degradedMode = checks;
+	snapshot.installHandoff = checks;
 
 	for (const [check, pass] of Object.entries(checks)) {
 		if (!pass) {
-			const filePath = check.startsWith('route')
-				? paths.route
-				: check.startsWith('hero')
-					? paths.hero
-					: check.startsWith('final')
-						? paths.finalCta
-						: paths.docsHandoff;
-
+			const filePath = check.startsWith('route') ? paths.route : paths.finalCta;
 			fail(
 				scope,
 				filePath,
-				`Degraded-mode contract failed: ${check}.`,
-				'Restore static-safe fallback and install/supporting action operability contracts so conversion flows remain usable when optional dependencies degrade.',
+				`Install handoff contract failed: ${check}.`,
+				'Restore install handoff data attributes and initialization calls so conversion flows remain usable.',
 			);
 		}
 	}
@@ -458,13 +437,13 @@ function writeFailureArtifacts(snapshot, sources) {
 	const outputDir = join(projectRoot, '.artifacts', 'responsive-performance-parity', timestamp);
 	mkdirSync(outputDir, { recursive: true });
 
-	const summaryPath = join(outputDir, 'story-5-4-summary.json');
+	const summaryPath = join(outputDir, 'summary.json');
 	writeFileSync(
 		summaryPath,
 		JSON.stringify(
 			{
 				checkedAt: new Date().toISOString(),
-				story: '5.4-responsive-performance-parity',
+				homepage: 'hero-terminal-features-finalcta',
 				findings,
 				snapshot,
 			},
@@ -478,7 +457,7 @@ function writeFailureArtifacts(snapshot, sources) {
 			label: 'route',
 			path: paths.route,
 			source: sources.routeSource,
-			tokens: ['<HeroProof', '<FinalCTA', 'useProofFallback', '<script'],
+			tokens: ['<Hero', '<FinalCTA', 'initializeInstallIntentHandoff', '<script'],
 		},
 		{
 			label: 'homepage-css',
@@ -487,27 +466,21 @@ function writeFailureArtifacts(snapshot, sources) {
 			tokens: [
 				'max-width: 1023px',
 				'max-width: 767px',
-				'.proof-snapshot-grid',
+				'.feature-grid',
 				'flex-direction: column',
 			],
 		},
 		{
-			label: 'hero-proof',
+			label: 'hero',
 			path: paths.hero,
 			source: sources.heroSource,
-			tokens: ['useFallback ?', 'fallbackProofText', 'tier="primary"', 'install-intent-trigger'],
+			tokens: ['tier="primary"', 'install-intent-trigger', 'id="install-section"'],
 		},
 		{
 			label: 'final-cta',
 			path: paths.finalCta,
 			source: sources.finalSource,
 			tokens: ['data-install-handoff-command', 'data-copy-install-command', 'tier="primary"'],
-		},
-		{
-			label: 'docs-handoff',
-			path: paths.docsHandoff,
-			source: sources.docsSource,
-			tokens: ['href={link.href}', 'fallbackHref', 'data-docs-handoff-link'],
 		},
 	];
 
@@ -529,8 +502,9 @@ function main() {
 	const tokensSource = readRequiredFile(paths.tokensCss, 'preflight');
 	const primitivesSource = readRequiredFile(paths.primitivesCss, 'preflight');
 	const heroSource = readRequiredFile(paths.hero, 'preflight');
+	const terminalDemoSource = readRequiredFile(paths.terminalDemo, 'preflight');
+	const featureGridSource = readRequiredFile(paths.featureGrid, 'preflight');
 	const finalSource = readRequiredFile(paths.finalCta, 'preflight');
-	const docsSource = readRequiredFile(paths.docsHandoff, 'preflight');
 
 	if (
 		!routeSource ||
@@ -538,12 +512,13 @@ function main() {
 		!tokensSource ||
 		!primitivesSource ||
 		!heroSource ||
-		!finalSource ||
-		!docsSource
+		!terminalDemoSource ||
+		!featureGridSource ||
+		!finalSource
 	) {
 		const snapshot = {
 			checkedAt: new Date().toISOString(),
-			story: '5.4-responsive-performance-parity',
+			homepage: 'hero-terminal-features-finalcta',
 			preflightFailed: true,
 		};
 
@@ -552,11 +527,10 @@ function main() {
 			homepageSource: homepageSource ?? '',
 			heroSource: heroSource ?? '',
 			finalSource: finalSource ?? '',
-			docsSource: docsSource ?? '',
 		});
 
 		console.error(
-			'\n[story-5-4] Responsive/performance parity validation failed during preflight.\n',
+			'\n[responsive-performance-parity] Validation failed during preflight.\n',
 		);
 		for (const [index, finding] of findings.entries()) {
 			console.error(`${index + 1}. [${finding.scope}] ${rel(finding.filePath)}`);
@@ -564,16 +538,16 @@ function main() {
 			console.error(`   Fix: ${finding.remediation}`);
 		}
 
-		console.error('\n[story-5-4] Release blocked.');
+		console.error('\n[responsive-performance-parity] Release blocked.');
 		console.error(
-			`[story-5-4] Failure artifacts written to ${rel(artifactDir)}. Attach these files to remediation tasks.`,
+			`[responsive-performance-parity] Failure artifacts written to ${rel(artifactDir)}. Attach these files to remediation tasks.`,
 		);
 		process.exit(1);
 	}
 
 	const snapshot = {
 		checkedAt: new Date().toISOString(),
-		story: '5.4-responsive-performance-parity',
+		homepage: 'hero-terminal-features-finalcta',
 	};
 
 	validateNarrativeOrder(routeSource, snapshot);
@@ -586,12 +560,13 @@ function main() {
 			tokensSource,
 			primitivesSource,
 			heroSource,
+			terminalDemoSource,
+			featureGridSource,
 			finalSource,
-			docsSource,
 		},
 		snapshot,
 	);
-	validateDegradedModeContracts(routeSource, heroSource, finalSource, docsSource, snapshot);
+	validateInstallHandoffContracts(routeSource, finalSource, snapshot);
 
 	if (findings.length > 0) {
 		const artifactDir = writeFailureArtifacts(snapshot, {
@@ -599,26 +574,25 @@ function main() {
 			homepageSource,
 			heroSource,
 			finalSource,
-			docsSource,
 		});
 
-		console.error('\n[story-5-4] Responsive/performance parity validation failed.\n');
+		console.error('\n[responsive-performance-parity] Validation failed.\n');
 		for (const [index, finding] of findings.entries()) {
 			console.error(`${index + 1}. [${finding.scope}] ${rel(finding.filePath)}`);
 			console.error(`   Issue: ${finding.message}`);
 			console.error(`   Fix: ${finding.remediation}`);
 		}
 
-		console.error('\n[story-5-4] Release blocked.');
+		console.error('\n[responsive-performance-parity] Release blocked.');
 		console.error(
-			`[story-5-4] Failure artifacts written to ${rel(artifactDir)}. Attach these files to remediation tasks.`,
+			`[responsive-performance-parity] Failure artifacts written to ${rel(artifactDir)}. Attach these files to remediation tasks.`,
 		);
 		process.exit(1);
 	}
 
 	const perf = snapshot.performance;
 	console.log(
-		`[story-5-4] Checks passed. totalCritical=${perf.measured.totalCritical}/${perf.budgets.totalCritical} bytes, homepageCss=${perf.measured.homepageCss}/${perf.budgets.homepageCss} bytes, hero=${perf.measured.heroComponent}/${perf.budgets.heroComponent} bytes.`,
+		`[responsive-performance-parity] Checks passed. totalCritical=${perf.measured.totalCritical}/${perf.budgets.totalCritical} bytes, homepageCss=${perf.measured.homepageCss}/${perf.budgets.homepageCss} bytes, hero=${perf.measured.heroComponent}/${perf.budgets.heroComponent} bytes.`,
 	);
 }
 
