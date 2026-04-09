@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-09
+
+### Added
+- `build run` full pipeline: build + boot + install + launch in a single command
+- Structured build diagnostics always extracted from xcresult bundles
+- Agent-friendly diagnose CLI output for automated workflows
+
+### Fixed
+- Consistent `BuildRunResult` shape for build-failure JSON paths
+- Hardened build run pipeline JSON output and persistence edge cases
+
+### Changed
+- Unified run-ID resolution; fixed false build regression on warning increase
+- Updated skill references and website docs for build-run pipeline and diagnose improvements
+
 ## [1.1.1] - 2026-04-08
 
 ### Fixed
