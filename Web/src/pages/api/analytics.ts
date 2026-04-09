@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { env } from 'cloudflare:workers';
 import { isAnalyticsRelayEnvelope } from '../../lib/analytics';
 
 export const prerender = false;
@@ -7,31 +8,11 @@ const JSON_HEADERS = {
 	'content-type': 'application/json; charset=utf-8',
 };
 
-type RuntimeEnv = {
-	XCFORGE_ANALYTICS_ENDPOINT?: string;
-	XCFORGE_ANALYTICS_DATASET?: string;
-};
-
-type LocalsWithRuntime = {
-	runtime?: {
-		env?: RuntimeEnv;
-	};
-};
-
 function asJsonResponse(status: number, body: Record<string, unknown>): Response {
 	return new Response(JSON.stringify(body), {
 		status,
 		headers: JSON_HEADERS,
 	});
-}
-
-function resolveRuntimeEnv(locals: unknown): RuntimeEnv {
-	const candidate = locals as LocalsWithRuntime;
-	if (!candidate.runtime?.env) {
-		return {};
-	}
-
-	return candidate.runtime.env;
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -47,7 +28,7 @@ function isValidAnalyticsEndpoint(endpoint: string): boolean {
 	}
 }
 
-export const POST: APIRoute = async ({ request, locals }) => {
+export const POST: APIRoute = async ({ request }) => {
 	let payload: unknown;
 	try {
 		payload = await request.json();
@@ -67,9 +48,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		});
 	}
 
-	const runtimeEnv = resolveRuntimeEnv(locals);
-	const endpoint = runtimeEnv.XCFORGE_ANALYTICS_ENDPOINT?.trim();
-	const dataset = runtimeEnv.XCFORGE_ANALYTICS_DATASET?.trim() || 'web-default';
+	const endpoint = (env as Record<string, string | undefined>).XCFORGE_ANALYTICS_ENDPOINT?.trim();
+	const dataset = ((env as Record<string, string | undefined>).XCFORGE_ANALYTICS_DATASET?.trim()) || 'web-default';
 
 	if (!endpoint || endpoint.includes('example.invalid') || !isValidAnalyticsEndpoint(endpoint)) {
 		return asJsonResponse(503, {
