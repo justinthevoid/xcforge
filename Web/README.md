@@ -70,8 +70,6 @@ Preview and deploy commands additionally validate generated `dist/server/wrangle
 
 Required binding names (must exist in both default `vars` and `env.preview.vars`):
 
-- `XCFORGE_ANALYTICS_DATASET`
-- `XCFORGE_ANALYTICS_ENDPOINT`
 - `XCFORGE_INSTALL_INTENT_TARGET`
 
 The preflight also validates:

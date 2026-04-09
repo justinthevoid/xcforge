@@ -4,21 +4,27 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"routes": [
+		{
+			"pattern": "xcforge.tech/*",
+			"zone_name": "xcforge.tech"
+		},
+		{
+			"pattern": "www.xcforge.tech/*",
+			"zone_name": "xcforge.tech"
+		}
+	],
 	"assets": {
 		"binding": "ASSETS",
 		"directory": "./dist/client"
 	},
 	"vars": {
-		"XCFORGE_ANALYTICS_DATASET": "web-prod",
-		"XCFORGE_ANALYTICS_ENDPOINT": "https://example.invalid/analytics",
 		"XCFORGE_INSTALL_INTENT_TARGET": "homebrew"
 	},
 	"env": {
 		"preview": {
 			"name": "xcforge-web-preview",
 			"vars": {
-				"XCFORGE_ANALYTICS_DATASET": "web-preview",
-				"XCFORGE_ANALYTICS_ENDPOINT": "https://example.invalid/analytics-preview",
 				"XCFORGE_INSTALL_INTENT_TARGET": "homebrew"
 			}
 		}

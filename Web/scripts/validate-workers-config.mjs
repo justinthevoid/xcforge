@@ -6,8 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseJsonc, printParseErrorCode } from 'jsonc-parser';
 
 const REQUIRED_VAR_BINDINGS = [
-	'XCFORGE_ANALYTICS_DATASET',
-	'XCFORGE_ANALYTICS_ENDPOINT',
 	'XCFORGE_INSTALL_INTENT_TARGET',
 ];
 

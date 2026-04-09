@@ -37,19 +37,11 @@ const { finalCta } = Astro.props;
 				installIntentSource="final-cta"
 				installCommand={finalCta.installCommand}
 				installTarget="homebrew"
-				data-analytics-event-name="homepage.install.cta.clicked"
-				data-analytics-intent-signal="install"
-				data-analytics-destination="install"
-				data-analytics-source-surface="final-cta"
 			/>
 			<ActionLink
 				tier="secondary"
 				href={finalCta.docsHref}
 				label={finalCta.docsLabel}
-				data-analytics-event-name="homepage.docs.clicked"
-				data-analytics-intent-signal="depth-navigation"
-				data-analytics-destination="docs"
-				data-analytics-source-surface="final-cta"
 			/>
 		</div>
 

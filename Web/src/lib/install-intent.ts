@@ -1,5 +1,3 @@
-import { enqueueInstallIntentCapturedEvent } from './analytics';
-
 export type InstallIntentSource = 'hero' | 'final-cta';
 export type InstallTarget = 'homebrew';
 export type DeviceClass = 'mobile' | 'tablet' | 'desktop';
@@ -143,10 +141,6 @@ export function persistInstallIntent(payload: InstallIntentPayload): boolean {
 	}
 
 	return safeWriteStorage(INSTALL_INTENT_STORAGE_KEY, payload);
-}
-
-export function enqueueInstallIntentRelay(payload: InstallIntentPayload): boolean {
-	return enqueueInstallIntentCapturedEvent(payload);
 }
 
 function buildInstallIntentPayload(trigger: HTMLAnchorElement): InstallIntentPayload {
@@ -335,7 +329,6 @@ function wireInstallTriggers(handoffRoot: HTMLElement): void {
 			event.preventDefault();
 			const payload = buildInstallIntentPayload(trigger);
 			const persisted = persistInstallIntent(payload);
-			enqueueInstallIntentRelay(payload);
 			const state = persisted ? 'ready' : 'failure';
 			revealHandoff(handoffRoot, payload, state);
 			handoffRoot.scrollIntoView({
