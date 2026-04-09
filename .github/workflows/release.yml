@@ -90,7 +90,7 @@ jobs:
 
             def install
               system "swift", "build", "-c", "release", "--disable-sandbox"
-              bin.install ".build/release/xcforge"
+              bin.install ".build/release/XCForgeCLI" => "xcforge"
             end
 
             test do
