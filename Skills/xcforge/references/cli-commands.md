@@ -1,7 +1,7 @@
 # xcforge CLI Commands
 
 xcforge operates in two modes:
-- **No arguments** → MCP server mode (stdio transport, 95 tools)
+- **No arguments** → MCP server mode (stdio transport, 102 tools)
 - **With arguments** → CLI mode (ArgumentParser-based terminal commands)
 
 ## Mode Detection

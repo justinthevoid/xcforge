@@ -36,7 +36,7 @@ swift run xcforge                 # MCP server mode (expects stdio JSON-RPC)
 
 ```
 Sources/
-  XCForgeKit/          # Shared library — all 95 tools live here
+  XCForgeKit/          # Shared library — all 102 tools live here
     Tools/             # Tool providers (BuildProvider, TestProvider, etc.)
     Clients/           # WDA client, AXPBridge, CoreSimulator, IndigoHID
     Support/           # ProcessRunner, ProjectResolver, extensions

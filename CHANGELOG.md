@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-04-08
+
+### Fixed
+- JSON encoders now use `.withoutEscapingSlashes` for cleaner output
+- Added missing `runAsyncJSON` helper and silenced unused-variable warnings
+
+### Changed
+- Overhauled website: redesigned homepage, improved SEO, accessibility hardening
+- Refreshed Starlight documentation site for CLI and MCP tools
+- Simplified web build pipeline with Playwright e2e test setup
+
 ## [1.1.0] - 2026-04-04
 
 ### Added
@@ -24,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [1.0.0] - 2026-04-04
 
 ### Added
-- 95 MCP tools across 15 categories
+- 102 MCP tools across 17 categories
 - 16 CLI command groups mirroring MCP tools
 - Build and test with structured xcresult parsing
 - UI automation via WebDriverAgent + native AX bridge (AXPBridge)

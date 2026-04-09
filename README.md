@@ -204,7 +204,7 @@ Once installed, Claude will automatically load the right reference files when yo
 ## Two Modes, Same Tools
 
 ```bash
-xcforge                          # MCP server (stdio JSON-RPC, 95 tools)
+xcforge                          # MCP server (stdio JSON-RPC, 102 tools)
 xcforge build --scheme MyApp     # CLI mode (16 command groups)
 ```
 
@@ -322,7 +322,7 @@ There are several iOS-focused MCP servers worth knowing about:
 
 | Server                                                               | Stars | Scope     | Build   | Test | UI Automation | Screenshots | Visual Regression | Accessibility | Physical Devices | SPM | Git | Logs |
 | -------------------------------------------------------------------- | ----- | --------- | ------- | ---- | ------------- | ----------- | ----------------- | ------------- | ---------------- | --- | --- | ---- |
-| **xcforge**                                                          | —     | 95 tools  | Yes     | Yes  | Yes           | Yes         | Yes               | Yes           | Yes              | Yes | Yes | Yes  |
+| **xcforge**                                                          | —     | 102 tools | Yes     | Yes  | Yes           | Yes         | Yes               | Yes           | Yes              | Yes | Yes | Yes  |
 | [XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP)          | ~5k   | ~15 tools | Yes     | Yes  | Partial       | No          | No                | No            | No               | No  | No  | No   |
 | [ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp) | ~1.8k | ~10 tools | No      | No   | Yes           | Yes         | No                | No            | No               | No  | No  | No   |
 | [xcode-mcp-server](https://github.com/r-huijts/xcode-mcp-server)     | ~370  | ~8 tools  | Partial | No   | No            | No          | No                | No            | No               | No  | No  | No   |
