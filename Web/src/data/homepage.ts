@@ -1,4 +1,4 @@
-export type NavItemId = 'product' | 'docs' | 'workflow-guide' | 'changelog' | 'github' | 'install';
+export type NavItemId = 'features' | 'docs' | 'workflow-guide' | 'changelog' | 'github' | 'install';
 
 export type NavItem = {
 	id: NavItemId;
@@ -63,7 +63,7 @@ export type HomepageContent = {
 };
 
 const requiredNavOrder: NavItemId[] = [
-	'product',
+	'features',
 	'docs',
 	'workflow-guide',
 	'changelog',
@@ -78,7 +78,7 @@ const installGuideHref = 'https://github.com/justinthevoid/xcforge#install';
 
 export const homepageContent: HomepageContent = {
 	navigation: [
-		{ id: 'product', label: 'Product', href: '#product' },
+		{ id: 'features', label: 'Features', href: '#features' },
 		{ id: 'docs', label: 'Docs', href: '/docs' },
 		{ id: 'workflow-guide', label: 'Workflow Guide', href: '/docs/getting-started/' },
 		{
