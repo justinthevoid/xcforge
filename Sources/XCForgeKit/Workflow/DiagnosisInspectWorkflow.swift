@@ -48,6 +48,7 @@ public struct DiagnosisInspectWorkflow: Sendable {
       let run = try resolveRun(for: request)
       try Self.validate(run)
 
+      let completeness = Self.evidenceCompleteness(for: run)
       return DiagnosisInspectResult(
         phase: run.phase,
         status: run.status,
@@ -57,7 +58,8 @@ public struct DiagnosisInspectWorkflow: Sendable {
         contextProvenance: run.contextProvenance,
         actionHistory: run.actionHistory,
         evidence: run.evidence,
-        evidenceCompleteness: Self.evidenceCompleteness(for: run),
+        evidenceCompleteness: completeness,
+        evidenceCompletenessReason: Self.evidenceCompletenessReason(for: run, completeness: completeness),
         failure: Self.terminalFailure(for: run),
         followOnAction: Self.followOnAction(for: run),
         persistedRunPath: runPath(run.runId).path
@@ -197,6 +199,42 @@ public struct DiagnosisInspectWorkflow: Sendable {
       return run.testDiagnosisSummary != nil ? .complete : .partial
     case .diagnosisRuntime:
       return run.runtimeSummary != nil ? .complete : .partial
+    }
+  }
+
+  // MARK: - Evidence Completeness Reason
+
+  static func evidenceCompletenessReason(
+    for run: WorkflowRunRecord,
+    completeness: DiagnosisInspectEvidenceCompleteness
+  ) -> String? {
+    switch completeness {
+    case .complete, .unknown:
+      return nil
+    case .empty:
+      return "No evidence has been collected yet for this run."
+    case .partial:
+      let unavailable = run.evidence.filter { $0.availability == .unavailable }
+      if !unavailable.isEmpty {
+        let kinds = unavailable.map { $0.kind.rawValue }
+        let uniqueKinds = Array(Set(kinds)).sorted()
+        return
+          "\(unavailable.count) evidence artifact(s) unavailable (\(uniqueKinds.joined(separator: ", "))). This is expected when a build fails before producing all outputs."
+      }
+
+      switch run.phase {
+      case .diagnosisBuild where run.diagnosisSummary == nil:
+        return
+          "Build diagnosis summary not yet available; the build phase may still be in progress or ended before producing a summary."
+      case .diagnosisTest where run.testDiagnosisSummary == nil:
+        return
+          "Test diagnosis summary not yet available; the test phase may still be in progress or ended before producing a summary."
+      case .diagnosisRuntime where run.runtimeSummary == nil:
+        return
+          "Runtime diagnosis summary not yet available; the runtime phase may still be in progress or ended before producing a summary."
+      default:
+        return nil
+      }
     }
   }
 

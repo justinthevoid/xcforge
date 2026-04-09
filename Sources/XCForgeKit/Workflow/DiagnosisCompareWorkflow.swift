@@ -631,6 +631,16 @@ public struct DiagnosisCompareWorkflow: Sendable {
       currentValue: currentSummary?.observedEvidence.warningCount,
       into: &changes
     )
+    // Annotate warning-count increases when the prior build failed early.
+    if let priorWarnings = priorSummary?.observedEvidence.warningCount,
+      let currentWarnings = currentSummary?.observedEvidence.warningCount,
+      currentWarnings > priorWarnings, priorStatus == .failed
+    {
+      if let idx = changes.lastIndex(where: { $0.field == "Warning count" }) {
+        changes[idx].annotation =
+          "Warning count increase is expected when a prior build failed before full compilation."
+      }
+    }
     appendChange(
       field: "Analyzer warning count",
       priorValue: priorSummary?.observedEvidence.analyzerWarningCount,

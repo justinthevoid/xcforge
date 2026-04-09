@@ -51,6 +51,9 @@ enum DiagnosisInspectRenderer {
 
     if let completeness = result.evidenceCompleteness {
       lines.append("Evidence completeness: \(completeness.rawValue)")
+      if let reason = result.evidenceCompletenessReason {
+        lines.append("  reason: \(sanitizeInlineField(reason))")
+      }
     }
 
     let available = result.availableEvidence

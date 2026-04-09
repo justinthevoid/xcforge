@@ -2,7 +2,37 @@ import Foundation
 import XCForgeKit
 
 enum DiagnosisCompareRenderer {
-  static func render(_ result: DiagnosisCompareResult) -> String {
+  static func render(_ result: DiagnosisCompareResult, compact: Bool = false) -> String {
+    if compact {
+      return renderCompact(result)
+    }
+    return renderFull(result)
+  }
+
+  private static func renderCompact(_ result: DiagnosisCompareResult) -> String {
+    var lines: [String] = []
+
+    if let outcome = result.outcome {
+      lines.append("Comparison outcome: \(outcome.rawValue)")
+    }
+    if let status = result.status {
+      lines.append("Status: \(status.rawValue)")
+    }
+    if let runId = result.runId {
+      lines.append("Run ID: \(runId)")
+    }
+
+    appendChangedEvidence(&lines, result.changedEvidence)
+    appendUnchangedBlockers(&lines, result.unchangedBlockers)
+
+    if let failure = result.failure {
+      lines.append("Failure: \(failure.classification.rawValue) — \(failure.message)")
+    }
+
+    return lines.joined(separator: "\n")
+  }
+
+  private static func renderFull(_ result: DiagnosisCompareResult) -> String {
     var lines: [String] = [
       "Workflow: \(result.workflow.rawValue)"
     ]
@@ -45,21 +75,8 @@ enum DiagnosisCompareRenderer {
       )
     }
 
-    lines.append("Changed evidence:")
-    if result.changedEvidence.isEmpty {
-      lines.append("  - No meaningful summary changes were recorded.")
-    } else {
-      lines += result.changedEvidence.map { change in
-        "  - \(change.field): \(change.priorValue) -> \(change.currentValue)"
-      }
-    }
-
-    lines.append("Unchanged blockers:")
-    if result.unchangedBlockers.isEmpty {
-      lines.append("  - None")
-    } else {
-      lines += result.unchangedBlockers.map { "  - \($0)" }
-    }
+    appendChangedEvidence(&lines, result.changedEvidence)
+    appendUnchangedBlockers(&lines, result.unchangedBlockers)
 
     if let prior = result.priorAttempt {
       appendEvidenceBundle(&lines, title: "Prior evidence bundle", attempt: prior)
@@ -79,6 +96,32 @@ enum DiagnosisCompareRenderer {
     }
 
     return lines.joined(separator: "\n")
+  }
+
+  private static func appendChangedEvidence(
+    _ lines: inout [String], _ changes: [DiagnosisComparisonChange]
+  ) {
+    lines.append("Changed evidence:")
+    if changes.isEmpty {
+      lines.append("  - No meaningful summary changes were recorded.")
+    } else {
+      for change in changes {
+        var line = "  - \(change.field): \(change.priorValue) -> \(change.currentValue)"
+        if let annotation = change.annotation {
+          line += " (\(annotation))"
+        }
+        lines.append(line)
+      }
+    }
+  }
+
+  private static func appendUnchangedBlockers(_ lines: inout [String], _ blockers: [String]) {
+    lines.append("Unchanged blockers:")
+    if blockers.isEmpty {
+      lines.append("  - None")
+    } else {
+      lines += blockers.map { "  - \($0)" }
+    }
   }
 
   private static func appendAttemptBlock(

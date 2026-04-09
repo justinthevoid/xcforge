@@ -47,16 +47,19 @@ enum DiagnoseTools {
       description: """
         Diagnose a build for an existing diagnosis run. Equivalent to \
         `xcforge diagnose build --json`. Returns a JSON object with build \
-        diagnosis summary, evidence, and failure details.
+        diagnosis summary, evidence, and failure details. If run_id is omitted, \
+        uses the newest active or recent run.
         """,
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
           "run_id": .object([
-            "type": .string("string"), "description": .string("Run ID returned by diagnose_start."),
+            "type": .string("string"),
+            "description": .string(
+              "Run ID returned by diagnose_start. If omitted, uses the newest active or recent run."
+            ),
           ])
         ]),
-        "required": .array([.string("run_id")]),
       ])
     ),
     Tool(
@@ -64,16 +67,19 @@ enum DiagnoseTools {
       description: """
         Diagnose a test run for an existing diagnosis run. Equivalent to \
         `xcforge diagnose test --json`. Returns a JSON object with test \
-        diagnosis summary and failure details.
+        diagnosis summary and failure details. If run_id is omitted, uses \
+        the newest active or recent run.
         """,
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
           "run_id": .object([
-            "type": .string("string"), "description": .string("Run ID returned by diagnose_start."),
+            "type": .string("string"),
+            "description": .string(
+              "Run ID returned by diagnose_start. If omitted, uses the newest active or recent run."
+            ),
           ])
         ]),
-        "required": .array([.string("run_id")]),
       ])
     ),
     Tool(
@@ -81,13 +87,17 @@ enum DiagnoseTools {
       description: """
         Launch the app for an existing diagnosis run and capture runtime signals. \
         Equivalent to `xcforge diagnose runtime --json`. Returns a JSON object with \
-        runtime diagnosis results.
+        runtime diagnosis results. If run_id is omitted, uses the newest active or \
+        recent run.
         """,
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
           "run_id": .object([
-            "type": .string("string"), "description": .string("Run ID returned by diagnose_start."),
+            "type": .string("string"),
+            "description": .string(
+              "Run ID returned by diagnose_start. If omitted, uses the newest active or recent run."
+            ),
           ]),
           "capture_screenshot": .object([
             "type": .string("boolean"),
@@ -95,7 +105,6 @@ enum DiagnoseTools {
               "Capture a simulator screenshot as part of runtime diagnosis. Default: false"),
           ]),
         ]),
-        "required": .array([.string("run_id")]),
       ])
     ),
     Tool(
@@ -139,13 +148,16 @@ enum DiagnoseTools {
       description: """
         Rerun validation for a prior diagnosis run. Equivalent to \
         `xcforge diagnose verify --json`. Accepts optional overrides for \
-        project, scheme, simulator, and configuration.
+        project, scheme, simulator, and configuration. If run_id is omitted, \
+        uses the newest active or recent run.
         """,
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
           "run_id": .object([
-            "type": .string("string"), "description": .string("Run ID to rerun validation for."),
+            "type": .string("string"),
+            "description": .string(
+              "Run ID to rerun validation for. If omitted, uses the newest active or recent run."),
           ]),
           "project": .object([
             "type": .string("string"),
@@ -164,7 +176,6 @@ enum DiagnoseTools {
             "description": .string("Override the build configuration for this rerun."),
           ]),
         ]),
-        "required": .array([.string("run_id")]),
       ])
     ),
     Tool(
@@ -235,25 +246,48 @@ enum DiagnoseTools {
     var configuration: String?
   }
 
-  struct RunIdInput: Decodable {
-    let run_id: String
-  }
-
-  struct RuntimeInput: Decodable {
-    let run_id: String
-    var capture_screenshot: Bool?
-  }
-
   struct OptionalRunIdInput: Decodable {
     var run_id: String?
   }
 
-  struct VerifyInput: Decodable {
-    let run_id: String
+  struct OptionalRuntimeInput: Decodable {
+    var run_id: String?
+    var capture_screenshot: Bool?
+  }
+
+  struct OptionalVerifyInput: Decodable {
+    var run_id: String?
     var project: String?
     var scheme: String?
     var simulator: String?
     var configuration: String?
+  }
+
+  /// Resolves an optional run_id to a concrete value by auto-detecting the newest active or recent run.
+  /// Returns the resolved run ID, or a `.fail` CallTool.Result if resolution fails.
+  private static func resolveOptionalRunId(_ runId: String?) -> (String?, CallTool.Result?) {
+    if let runId {
+      let trimmed = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else {
+        return (nil, .fail("run_id must not be empty."))
+      }
+      return (trimmed, nil)
+    }
+    do {
+      let store = RunStore()
+      if let active = try store.latestActiveDiagnosisRun() {
+        return (active.runId, nil)
+      }
+      if let recent = try store.latestDiagnosisRun() {
+        return (recent.runId, nil)
+      }
+      return (
+        nil,
+        .fail("No active or recent diagnosis runs found. Start one with diagnose_start first.")
+      )
+    } catch {
+      return (nil, .fail("Failed to resolve diagnosis run: \(error)"))
+    }
   }
 
   // MARK: - Handlers
@@ -279,46 +313,43 @@ enum DiagnoseTools {
   }
 
   static func diagnoseBuild(_ args: [String: Value]?) async -> CallTool.Result {
-    switch ToolInput.decode(RunIdInput.self, from: args) {
+    switch ToolInput.decode(OptionalRunIdInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
-      guard !input.run_id.isEmpty else {
-        return .fail("run_id must not be empty")
-      }
+      let (runId, resolveErr) = resolveOptionalRunId(input.run_id)
+      guard let runId else { return resolveErr! }
       let workflow = DiagnosisBuildWorkflow()
       let result = await workflow.diagnose(
-        request: DiagnosisBuildRequest(runId: input.run_id)
+        request: DiagnosisBuildRequest(runId: runId)
       )
       return encodeResult(result, isError: result.status == .failed)
     }
   }
 
   static func diagnoseTest(_ args: [String: Value]?) async -> CallTool.Result {
-    switch ToolInput.decode(RunIdInput.self, from: args) {
+    switch ToolInput.decode(OptionalRunIdInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
-      guard !input.run_id.isEmpty else {
-        return .fail("run_id must not be empty")
-      }
+      let (runId, resolveErr) = resolveOptionalRunId(input.run_id)
+      guard let runId else { return resolveErr! }
       let workflow = DiagnosisTestWorkflow()
       let result = await workflow.diagnose(
-        request: DiagnosisTestRequest(runId: input.run_id)
+        request: DiagnosisTestRequest(runId: runId)
       )
       return encodeResult(result, isError: result.status != .succeeded)
     }
   }
 
   static func diagnoseRuntime(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
-    switch ToolInput.decode(RuntimeInput.self, from: args) {
+    switch ToolInput.decode(OptionalRuntimeInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
-      guard !input.run_id.isEmpty else {
-        return .fail("run_id must not be empty")
-      }
+      let (runId, resolveErr) = resolveOptionalRunId(input.run_id)
+      guard let runId else { return resolveErr! }
       let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
       let result = await workflow.diagnose(
         request: DiagnosisRuntimeRequest(
-          runId: input.run_id,
+          runId: runId,
           captureScreenshot: input.capture_screenshot ?? false
         )
       )
@@ -351,16 +382,15 @@ enum DiagnoseTools {
   }
 
   static func diagnoseVerify(_ args: [String: Value]?) async -> CallTool.Result {
-    switch ToolInput.decode(VerifyInput.self, from: args) {
+    switch ToolInput.decode(OptionalVerifyInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
-      guard !input.run_id.isEmpty else {
-        return .fail("run_id must not be empty")
-      }
+      let (runId, resolveErr) = resolveOptionalRunId(input.run_id)
+      guard let runId else { return resolveErr! }
       let workflow = DiagnosisVerifyWorkflow()
       let result = await workflow.verify(
         request: DiagnosisVerifyRequest(
-          runId: input.run_id,
+          runId: runId,
           project: input.project,
           scheme: input.scheme,
           simulator: input.simulator,

@@ -1,6 +1,30 @@
 import ArgumentParser
 import XCForgeKit
 
+// MARK: - Run ID Resolution
+
+/// Resolves an optional CLI `--run-id` value to a concrete run ID.
+/// When `nil`, auto-resolves to the newest active diagnosis run, or the newest recent one.
+func resolveRunId(_ runId: String?) throws -> String {
+  if let runId {
+    let trimmed = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+      throw ValidationError("--run-id must not be empty.")
+    }
+    return trimmed
+  }
+  let store = RunStore()
+  if let active = try store.latestActiveDiagnosisRun() {
+    return active.runId
+  }
+  if let recent = try store.latestDiagnosisRun() {
+    return recent.runId
+  }
+  throw ValidationError(
+    "No active or recent diagnosis runs found. Start one with `xcforge diagnose start`."
+  )
+}
+
 // MARK: - diagnose (group)
 
 struct Diagnose: AsyncParsableCommand {
@@ -81,8 +105,11 @@ struct DiagnoseBuild: AsyncParsableCommand {
     abstract: "Diagnose a build for an existing diagnosis run."
   )
 
-  @Option(help: "Run ID returned by `xcforge diagnose start`.")
-  var runId: String
+  @Option(
+    help:
+      "Run ID returned by `xcforge diagnose start`. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
@@ -90,9 +117,10 @@ struct DiagnoseBuild: AsyncParsableCommand {
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     do {
+      let resolvedRunId = try resolveRunId(runId)
       let workflow = DiagnosisBuildWorkflow()
       let result = await workflow.diagnose(
-        request: DiagnosisBuildRequest(runId: runId)
+        request: DiagnosisBuildRequest(runId: resolvedRunId)
       )
 
       if useJSON {
@@ -118,8 +146,11 @@ struct DiagnoseTest: AsyncParsableCommand {
     abstract: "Diagnose a test run for an existing diagnosis run."
   )
 
-  @Option(help: "Run ID returned by `xcforge diagnose start`.")
-  var runId: String
+  @Option(
+    help:
+      "Run ID returned by `xcforge diagnose start`. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
@@ -127,9 +158,10 @@ struct DiagnoseTest: AsyncParsableCommand {
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     do {
+      let resolvedRunId = try resolveRunId(runId)
       let workflow = DiagnosisTestWorkflow()
       let result = await workflow.diagnose(
-        request: DiagnosisTestRequest(runId: runId)
+        request: DiagnosisTestRequest(runId: resolvedRunId)
       )
 
       if useJSON {
@@ -155,8 +187,11 @@ struct DiagnoseRuntime: AsyncParsableCommand {
     abstract: "Launch the app for an existing diagnosis run and capture supported runtime signals."
   )
 
-  @Option(help: "Run ID returned by `xcforge diagnose start`.")
-  var runId: String
+  @Option(
+    help:
+      "Run ID returned by `xcforge diagnose start`. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
   @Flag(help: "Capture a simulator screenshot as part of runtime diagnosis.")
   var captureScreenshot = false
@@ -167,11 +202,12 @@ struct DiagnoseRuntime: AsyncParsableCommand {
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     do {
+      let resolvedRunId = try resolveRunId(runId)
       let env = Environment.live
       let workflow = DiagnosisRuntimeWorkflow(wdaClient: env.wdaClient)
       let result = await workflow.diagnose(
         request: DiagnosisRuntimeRequest(
-          runId: runId,
+          runId: resolvedRunId,
           captureScreenshot: captureScreenshot
         )
       )
@@ -322,8 +358,11 @@ struct DiagnoseVerify: AsyncParsableCommand {
     abstract: "Rerun validation for a prior diagnosis run."
   )
 
-  @Option(help: "Run ID to rerun validation for.")
-  var runId: String
+  @Option(
+    help:
+      "Run ID to rerun validation for. If omitted, xcforge prefers the newest active diagnosis run, otherwise the newest recent one."
+  )
+  var runId: String?
 
   @Option(help: "Override the project path for this rerun.")
   var project: String?
@@ -343,10 +382,11 @@ struct DiagnoseVerify: AsyncParsableCommand {
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     do {
+      let resolvedRunId = try resolveRunId(runId)
       let workflow = DiagnosisVerifyWorkflow()
       let result = await workflow.verify(
         request: DiagnosisVerifyRequest(
-          runId: runId,
+          runId: resolvedRunId,
           project: project,
           scheme: scheme,
           simulator: simulator,
@@ -383,6 +423,12 @@ struct DiagnoseCompare: AsyncParsableCommand {
   )
   var runId: String?
 
+  @Flag(
+    help:
+      "Emit a compact summary with only outcome, changed evidence, and unchanged blockers. Omits full attempt snapshots and evidence bundles."
+  )
+  var compact = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -397,7 +443,7 @@ struct DiagnoseCompare: AsyncParsableCommand {
       if useJSON {
         print(try WorkflowJSONRenderer.renderJSON(result))
       } else {
-        print(DiagnosisCompareRenderer.render(result))
+        print(DiagnosisCompareRenderer.render(result, compact: compact))
       }
 
       if !result.isSuccessfulComparison {

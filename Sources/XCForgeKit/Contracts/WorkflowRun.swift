@@ -1371,11 +1371,13 @@ public struct DiagnosisComparisonChange: Codable, Sendable, Equatable {
   public let field: String
   public let priorValue: String
   public let currentValue: String
+  public var annotation: String?
 
-  public init(field: String, priorValue: String, currentValue: String) {
+  public init(field: String, priorValue: String, currentValue: String, annotation: String? = nil) {
     self.field = field
     self.priorValue = priorValue
     self.currentValue = currentValue
+    self.annotation = annotation
   }
 }
 
@@ -1694,6 +1696,7 @@ public struct DiagnosisInspectResult: Codable, Sendable, Equatable {
   public let actionHistory: [WorkflowActionRecord]
   public let evidence: [WorkflowEvidenceRecord]
   public let evidenceCompleteness: DiagnosisInspectEvidenceCompleteness?
+  public let evidenceCompletenessReason: String?
   public let failure: WorkflowFailure?
   public let followOnAction: WorkflowFollowOnAction?
   public let persistedRunPath: String?
@@ -1710,6 +1713,7 @@ public struct DiagnosisInspectResult: Codable, Sendable, Equatable {
     actionHistory: [WorkflowActionRecord] = [],
     evidence: [WorkflowEvidenceRecord] = [],
     evidenceCompleteness: DiagnosisInspectEvidenceCompleteness?,
+    evidenceCompletenessReason: String? = nil,
     failure: WorkflowFailure?,
     followOnAction: WorkflowFollowOnAction? = nil,
     persistedRunPath: String?
@@ -1725,6 +1729,7 @@ public struct DiagnosisInspectResult: Codable, Sendable, Equatable {
     self.actionHistory = actionHistory
     self.evidence = evidence
     self.evidenceCompleteness = evidenceCompleteness
+    self.evidenceCompletenessReason = evidenceCompletenessReason
     self.failure = failure
     self.followOnAction = followOnAction
     self.persistedRunPath = persistedRunPath
@@ -1742,6 +1747,7 @@ public struct DiagnosisInspectResult: Codable, Sendable, Equatable {
     case actionHistory
     case evidence
     case evidenceCompleteness
+    case evidenceCompletenessReason
     case failure
     case followOnAction
     case persistedRunPath
@@ -1765,6 +1771,8 @@ public struct DiagnosisInspectResult: Codable, Sendable, Equatable {
       try container.decodeIfPresent([WorkflowEvidenceRecord].self, forKey: .evidence) ?? []
     self.evidenceCompleteness = try container.decodeIfPresent(
       DiagnosisInspectEvidenceCompleteness.self, forKey: .evidenceCompleteness)
+    self.evidenceCompletenessReason = try container.decodeIfPresent(
+      String.self, forKey: .evidenceCompletenessReason)
     self.failure = try container.decodeIfPresent(WorkflowFailure.self, forKey: .failure)
     self.followOnAction = try container.decodeIfPresent(
       WorkflowFollowOnAction.self, forKey: .followOnAction)

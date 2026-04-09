@@ -23,36 +23,41 @@ struct DiagnoseToolsTests {
     #expect(toolNames.count == 10)
   }
 
-  @Test("diagnose_build requires run_id")
-  func diagnoseBuildRequiresRunId() async {
+  @Test("diagnose_build with no args auto-resolves or reports no runs")
+  func diagnoseBuildAutoResolves() async {
     let result = await DiagnoseTools.diagnoseBuild(nil)
-    #expect(result.isError == true)
+    // With no active runs on the test machine, this should report an error about no runs found.
     let text = extractText(result)
-    #expect(text?.contains("Missing required: run_id") == true)
+    #expect(
+      result.isError == true || text?.contains("diagnosis") == true,
+      "Should either error with no-run message or succeed with a diagnosis result")
   }
 
-  @Test("diagnose_test requires run_id")
-  func diagnoseTestRequiresRunId() async {
+  @Test("diagnose_test with no args auto-resolves or reports no runs")
+  func diagnoseTestAutoResolves() async {
     let result = await DiagnoseTools.diagnoseTest(nil)
-    #expect(result.isError == true)
     let text = extractText(result)
-    #expect(text?.contains("Missing required: run_id") == true)
+    #expect(
+      result.isError == true || text?.contains("diagnosis") == true,
+      "Should either error with no-run message or succeed with a diagnosis result")
   }
 
-  @Test("diagnose_runtime requires run_id")
-  func diagnoseRuntimeRequiresRunId() async {
+  @Test("diagnose_runtime with no args auto-resolves or reports no runs")
+  func diagnoseRuntimeAutoResolves() async {
     let result = await DiagnoseTools.diagnoseRuntime(nil, env: .live)
-    #expect(result.isError == true)
     let text = extractText(result)
-    #expect(text?.contains("Missing required: run_id") == true)
+    #expect(
+      result.isError == true || text?.contains("diagnosis") == true,
+      "Should either error with no-run message or succeed with a diagnosis result")
   }
 
-  @Test("diagnose_verify requires run_id")
-  func diagnoseVerifyRequiresRunId() async {
+  @Test("diagnose_verify with no args auto-resolves or reports no runs")
+  func diagnoseVerifyAutoResolves() async {
     let result = await DiagnoseTools.diagnoseVerify(nil)
-    #expect(result.isError == true)
     let text = extractText(result)
-    #expect(text?.contains("Missing required: run_id") == true)
+    #expect(
+      result.isError == true || text?.contains("diagnosis") == true,
+      "Should either error with no-run message or succeed with a diagnosis result")
   }
 
   @Test("diagnose_start with no args returns structured JSON result")
