@@ -25,10 +25,13 @@ const homepageStructuredData = createHomepageStructuredData(siteOrigin);
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" style="scroll-behavior: smooth;">
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@700&display=swap" rel="stylesheet" />
 		<title>{homepageSeo.title}</title>
 		<meta name="description" content={homepageSeo.description} />
 		<link rel="canonical" href={canonicalUrl} />
@@ -61,9 +64,11 @@ const homepageStructuredData = createHomepageStructuredData(siteOrigin);
 		<script>
 			import { initializeHomepageAnalytics } from "../lib/analytics";
 			import { initializeInstallIntentHandoff } from "../lib/install-intent";
+			import { initializeScrollReveal } from "../lib/scroll-reveal";
 
 			initializeHomepageAnalytics();
 			initializeInstallIntentHandoff();
+			initializeScrollReveal();
 
 			document.querySelectorAll<HTMLButtonElement>('[data-copy-adjacent]').forEach((btn) => {
 				btn.addEventListener('click', async () => {

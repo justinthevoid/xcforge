@@ -56,21 +56,27 @@ a {
 }
 
 .brand {
-	font-family: var(--xcf-font-display);
-	font-size: 1.15rem;
+	font-family: "Rajdhani", var(--xcf-font-display);
+	font-size: 1.3rem;
 	font-weight: 700;
-	letter-spacing: -0.01em;
+	letter-spacing: 0.04em;
+	text-transform: lowercase;
 	text-decoration: none;
-	background: linear-gradient(135deg, var(--xcf-color-text) 40%, var(--xcf-color-kicker) 100%);
-	-webkit-background-clip: text;
-	background-clip: text;
-	-webkit-text-fill-color: transparent;
-	filter: drop-shadow(0 0 6px rgba(159, 208, 250, 0.25));
 	transition: filter var(--xcf-motion-fast) var(--xcf-ease-standard);
 }
 
 .brand:hover {
-	filter: drop-shadow(0 0 10px rgba(159, 208, 250, 0.45));
+	filter: brightness(1.2);
+}
+
+.brand-xcf {
+	color: var(--xcf-color-conversion);
+	text-shadow: 0 0 8px rgba(var(--xcf-rgb-conversion), 0.5), 0 0 20px rgba(var(--xcf-rgb-conversion), 0.25);
+}
+
+.brand-orge {
+	color: var(--xcf-color-kicker);
+	text-shadow: 0 0 8px rgba(159, 208, 250, 0.5), 0 0 20px rgba(159, 208, 250, 0.25);
 }
 
 .nav-list {
@@ -699,10 +705,14 @@ body[data-primary-cta-region="final"] #install-section .cta-primary:hover {
 }
 
 @media (forced-colors: active) {
-	.brand,
+	.brand-xcf,
+	.brand-orge {
+		color: LinkText;
+		text-shadow: none;
+	}
+
 	.hero-headline {
 		-webkit-text-fill-color: unset;
 		background: none;
-		filter: none;
 	}
 }
