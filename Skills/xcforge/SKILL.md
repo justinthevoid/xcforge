@@ -1,11 +1,11 @@
 ---
 name: xcforge
-description: Complete reference for xcforge — 103 MCP tools + 107 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, and full CLI parity across 17 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, or any xcforge tool.
+description: Complete reference for xcforge — 102 MCP tools + 107 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, and full CLI parity across 17 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, or any xcforge tool.
 ---
 
 # xcforge — iOS Development MCP Server & CLI
 
-xcforge is a native Swift MCP server and CLI for iOS development. 103 MCP tools, 107 CLI commands across 17 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, and server-side plan execution for multi-step UI automation. Every MCP tool has a CLI equivalent.
+xcforge is a native Swift MCP server and CLI for iOS development. 102 MCP tools, 107 CLI commands across 17 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, and server-side plan execution for multi-step UI automation. Every MCP tool has a CLI equivalent.
 
 **Key advantages over alternatives:**
 - Screenshots in 0.3s (44x faster) via CoreSimulator IOSurface API
@@ -78,13 +78,14 @@ test_sim(filter: "MyClass/testFoo")           → run specific test (auto-resolv
 
 ### TDD Loop (CLI)
 ```bash
-xcforge build-test                            → build + test in one step (preferred)
+xcforge build run                             → Cmd+R equivalent: build + boot + install + launch
+xcforge build-test                            → build + test in one step (preferred for TDD)
 xcforge build-test --filter "testFoo"         → build + run specific test
 xcforge test list                             → list all test identifiers
 xcforge test --filter "MyTests/testFoo"       → run specific test (auto-resolves target)
 xcforge test failures --include-console       → drill into failures
 xcforge test coverage --file Foo.swift        → per-function coverage
-xcforge build --diagnose                      → structured build diagnostics
+xcforge build diagnose                        → structured diagnostics from last build's xcresult
 ```
 
 ### UI Automation Flow

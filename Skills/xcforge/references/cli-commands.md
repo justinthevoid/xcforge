@@ -28,18 +28,18 @@ xcforge plan ...           # CLI mode
 
 ## xcforge build
 
-Build, clean, and inspect Xcode projects. Four subcommands — `run` is the default.
+Build, clean, and inspect Xcode projects. Five subcommands — `run` is the default.
 
 ### build run (default subcommand)
 
-Build an iOS app for simulator. Same logic as the `build_sim` MCP tool.
+Build, install, and launch an iOS app on a simulator. Chains the full pipeline: build → boot sim → install → launch. This is the **Cmd+R equivalent**. With `--diagnose`, runs build-only with structured diagnostics (skips the pipeline).
 
 ```bash
 xcforge build                                    # Same as `xcforge build run`
 xcforge build --scheme MyApp --simulator "iPhone 16 Pro"
 xcforge build --configuration Release
-xcforge build --diagnose                         # Structured diagnostics (errors + warnings with file:line:col)
-xcforge build --json                             # Machine-readable JSON output
+xcforge build --diagnose                         # Build-only with structured diagnostics
+xcforge build --json                             # Machine-readable JSON output (includes pipeline phase statuses)
 ```
 
 | Flag | Description |
@@ -48,7 +48,28 @@ xcforge build --json                             # Machine-readable JSON output
 | `--scheme <name>` | Xcode scheme name. Auto-detected if omitted |
 | `--simulator <name\|udid>` | Simulator name or UDID. Auto-detected from booted simulator |
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
-| `--diagnose` | Extract structured diagnostics with file locations |
+| `--diagnose` | Build-only with structured diagnostics (skips boot/install/launch) |
+| `--json` | Machine-readable JSON output |
+
+**Pipeline behavior:** On build success, automatically boots the simulator (if not already booted), installs the app, and launches it. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
+
+**JSON output:** With `--json`, emits a `BuildRunResult` with `build`, `boot`, `install`, `launch` phase statuses plus `appPid` and `appRunning` fields.
+
+### build diagnose
+
+Show structured diagnostics from the last build's xcresult bundle. Useful for inspecting errors and warnings after a build without re-building.
+
+```bash
+xcforge build diagnose                           # Auto-detect most recent xcresult
+xcforge build diagnose --xcresult /path/to/result.xcresult
+xcforge build diagnose --errors-only             # Suppress warnings
+xcforge build diagnose --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--xcresult <path>` | Path to .xcresult bundle. Auto-detected from /tmp if omitted |
+| `--errors-only` | Show only errors, suppressing warnings |
 | `--json` | Machine-readable JSON output |
 
 ### build clean
@@ -462,30 +483,32 @@ xcforge diagnose start --json
 
 ### diagnose build
 
-Diagnose build for an active run.
+Diagnose build for an active run. If `--run-id` is omitted, auto-resolves to the newest active run (or newest recent one).
 
 ```bash
+xcforge diagnose build                           # Auto-resolve run ID
 xcforge diagnose build --run-id <id>
-xcforge diagnose build --run-id <id> --json
+xcforge diagnose build --json
 ```
 
 ### diagnose test
 
-Diagnose test run for an active run.
+Diagnose test run for an active run. If `--run-id` is omitted, auto-resolves to the newest active run.
 
 ```bash
+xcforge diagnose test                            # Auto-resolve run ID
 xcforge diagnose test --run-id <id>
-xcforge diagnose test --run-id <id> --json
+xcforge diagnose test --json
 ```
 
 ### diagnose runtime
 
-Launch app and capture runtime signals (crashes, memory pressure, logs).
+Launch app and capture runtime signals (crashes, memory pressure, logs). If `--run-id` is omitted, auto-resolves to the newest active run.
 
 ```bash
-xcforge diagnose runtime --run-id <id>
+xcforge diagnose runtime                         # Auto-resolve run ID
 xcforge diagnose runtime --run-id <id> --capture-screenshot
-xcforge diagnose runtime --run-id <id> --json
+xcforge diagnose runtime --json
 ```
 
 ### diagnose status
@@ -520,18 +543,19 @@ xcforge diagnose inspect --json
 
 ### diagnose verify
 
-Rerun validation with optional overrides.
+Rerun validation with optional overrides. If `--run-id` is omitted, auto-resolves to the newest active run.
 
 ```bash
+xcforge diagnose verify                          # Auto-resolve run ID
 xcforge diagnose verify --run-id <id>
 xcforge diagnose verify --run-id <id> --scheme MyAppFixed
 xcforge diagnose verify --run-id <id> --simulator "iPhone SE"
-xcforge diagnose verify --run-id <id> --json
+xcforge diagnose verify --json
 ```
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--run-id <id>` | **Yes** | Run to re-verify |
+| `--run-id <id>` | No | Run to re-verify. Auto-resolves to newest active/recent if omitted |
 | `--project <path>` | No | Override project |
 | `--scheme <name>` | No | Override scheme |
 | `--simulator <name\|udid>` | No | Override simulator |
@@ -540,11 +564,12 @@ xcforge diagnose verify --run-id <id> --json
 
 ### diagnose compare
 
-Compare original result vs latest rerun.
+Compare original result vs latest rerun. Use `--compact` for agent-friendly output with only outcome, changed evidence, and unchanged blockers.
 
 ```bash
 xcforge diagnose compare
 xcforge diagnose compare --run-id <id>
+xcforge diagnose compare --compact               # Agent-friendly: outcome + changed evidence only
 xcforge diagnose compare --json
 ```
 
@@ -680,10 +705,8 @@ xcforge test coverage --file LoginViewModel.swift
 xcforge sim list --filter iPhone
 xcforge sim boot "iPhone 16 Pro"
 
-# Build, install, launch
-xcforge build
-xcforge sim install
-xcforge sim launch
+# Build, install, launch (full pipeline)
+xcforge build run                                # Builds + boots + installs + launches
 
 # Capture logs while using app
 xcforge log start --mode app
@@ -698,10 +721,8 @@ xcforge screenshot capture --output ./screenshot.png
 
 ### UI Automation Workflow
 ```bash
-# Build and launch
-xcforge build
-xcforge sim install
-xcforge sim launch
+# Build and launch (full pipeline)
+xcforge build run
 
 # Handle permission dialogs
 xcforge ui alert --action accept_all
@@ -730,11 +751,11 @@ xcforge screenshot compare --name login-screen --threshold 1.0
 ### Structured Diagnosis
 ```bash
 xcforge diagnose start                           # → Run ID: abc123
-xcforge diagnose build --run-id abc123
-xcforge diagnose test --run-id abc123
-xcforge diagnose runtime --run-id abc123 --capture-screenshot
-xcforge diagnose inspect --run-id abc123
-xcforge diagnose verify --run-id abc123          # After fix
-xcforge diagnose compare --run-id abc123
-xcforge diagnose result --run-id abc123
+xcforge diagnose build                           # Auto-resolves to active run
+xcforge diagnose test
+xcforge diagnose runtime --capture-screenshot
+xcforge diagnose inspect
+xcforge diagnose verify                          # After fix
+xcforge diagnose compare --compact               # Agent-friendly summary
+xcforge diagnose result
 ```

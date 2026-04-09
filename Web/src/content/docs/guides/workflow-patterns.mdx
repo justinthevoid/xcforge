@@ -25,22 +25,22 @@ Why this pattern works:
 
 ## Pattern 2: Diagnosis Loop
 
-Use this loop when you need a proof-oriented diagnosis trail.
+Use this loop when you need a proof-oriented diagnosis trail. All action commands auto-resolve `--run-id` to the newest active run when omitted.
 
 ```bash
 xcforge diagnose start --json
-xcforge diagnose build --run-id <run-id> --json
-xcforge diagnose test --run-id <run-id> --json
-xcforge diagnose runtime --run-id <run-id> --capture-screenshot --json
-xcforge diagnose inspect --run-id <run-id> --json
-xcforge diagnose result --run-id <run-id> --json
+xcforge diagnose build --json
+xcforge diagnose test --json
+xcforge diagnose runtime --capture-screenshot --json
+xcforge diagnose inspect --json
+xcforge diagnose result --json
 ```
 
 After applying a fix:
 
 ```bash
-xcforge diagnose verify --run-id <run-id> --json
-xcforge diagnose compare --run-id <run-id> --json
+xcforge diagnose verify --json
+xcforge diagnose compare --compact --json
 ```
 
 ## Pattern 3: Simulator and UI Automation Loop
@@ -48,10 +48,7 @@ xcforge diagnose compare --run-id <run-id> --json
 Use this for flows that require app interaction and visual confirmation.
 
 ```bash
-xcforge sim boot "iPhone 16 Pro" --json
-xcforge build --json
-xcforge sim install --json
-xcforge sim launch --json
+xcforge build run --json
 xcforge ui alert --action accept_all --json
 xcforge ui find --using "accessibility id" --value "Login" --scroll --json
 xcforge screenshot capture --json

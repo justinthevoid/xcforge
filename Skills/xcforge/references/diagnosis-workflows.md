@@ -36,7 +36,7 @@ Diagnose build for an active run. Builds the project and parses xcresult for str
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `run_id` | **Yes** | — | Active run ID from `diagnose_start` |
+| `run_id` | No | Newest active/recent | Active run ID from `diagnose_start`. Auto-resolves if omitted |
 
 **Returns:** Build status, error count, warning count, structured issues with file:line, xcresult path.
 
@@ -48,7 +48,7 @@ Diagnose test run. Runs tests and parses xcresult for structured failures.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `run_id` | **Yes** | — | Active run ID |
+| `run_id` | No | Newest active/recent | Active run ID. Auto-resolves if omitted |
 
 **Returns:** Test status, pass/fail/skip counts, structured failures with file:line, xcresult path.
 
@@ -60,7 +60,7 @@ Launch app and capture runtime signals (crashes, memory pressure, logs).
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `run_id` | **Yes** | — | Active run ID |
+| `run_id` | No | Newest active/recent | Active run ID. Auto-resolves if omitted |
 | `capture_screenshot` | No | false | Take screenshot during runtime inspection |
 
 **Returns:** Runtime observations, crash signals, memory pressure, optional screenshot.
@@ -111,7 +111,7 @@ Rerun validation with optional overrides. Used after fixing an issue to verify t
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `run_id` | **Yes** | — | Run to re-verify |
+| `run_id` | No | Newest active/recent | Run to re-verify. Auto-resolves if omitted |
 | `project` | No | From original run | Override project |
 | `scheme` | No | From original run | Override scheme |
 | `simulator` | No | From original run | Override simulator |
