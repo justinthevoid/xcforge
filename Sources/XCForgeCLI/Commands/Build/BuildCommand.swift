@@ -73,7 +73,9 @@ struct BuildRun: AsyncParsableCommand {
 
       guard execution.succeeded else {
         if useJSON {
-          print(try WorkflowJSONRenderer.renderJSON(execution))
+          let result = BuildRunResult(
+            build: execution, boot: nil, install: nil, launch: nil)
+          print(try WorkflowJSONRenderer.renderJSON(result))
         } else {
           print(BuildRenderer.renderBuild(execution))
         }
