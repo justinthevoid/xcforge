@@ -103,6 +103,32 @@
 	outline-offset: var(--xcf-outline-offset);
 }
 
+/* ── Scroll Reveal ── */
+
+.xcf-reveal {
+	opacity: 0;
+	transform: translateY(24px);
+}
+
+.xcf-reveal.xcf-visible {
+	animation: xcf-fade-up var(--xcf-motion-reveal) var(--xcf-ease-out-expo) forwards;
+}
+
+.xcf-reveal-delay-1 { animation-delay: 120ms; }
+.xcf-reveal-delay-2 { animation-delay: 240ms; }
+.xcf-reveal-delay-3 { animation-delay: 360ms; }
+
+/* ── CTA Pulse ── */
+
+.cta-primary:not(:hover):not(:focus-visible) {
+	animation: xcf-pulse-glow 3s ease-in-out infinite;
+}
+
+.cta-primary:hover,
+.cta-primary:focus-visible {
+	animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.action-link,
 	.cta-primary,
@@ -114,5 +140,18 @@
 	.cta-primary:hover {
 		transform: none;
 		box-shadow: var(--xcf-shadow-soft);
+	}
+
+	.xcf-reveal {
+		opacity: 1;
+		transform: none;
+	}
+
+	.xcf-reveal.xcf-visible {
+		animation: none;
+	}
+
+	.cta-primary:not(:hover):not(:focus-visible) {
+		animation: none;
 	}
 }

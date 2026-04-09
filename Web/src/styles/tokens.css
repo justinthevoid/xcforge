@@ -74,10 +74,47 @@
 
 	--xcf-motion-fast: 160ms;
 	--xcf-motion-standard: 220ms;
+	--xcf-motion-slow: 600ms;
+	--xcf-motion-reveal: 700ms;
 	--xcf-ease-standard: ease;
+	--xcf-ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 
 	--xcf-breakpoint-mobile: 767px;
 	--xcf-breakpoint-tablet: 1023px;
 
 	--xcf-layout-max-width: 1160px;
+}
+
+/* ── Keyframes ── */
+
+@keyframes xcf-fade-up {
+	from {
+		opacity: 0;
+		transform: translateY(24px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes xcf-cursor-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0; }
+}
+
+@keyframes xcf-cursor-blink-border {
+	0%, 100% { border-right-color: var(--xcf-color-kicker); }
+	50% { border-right-color: transparent; }
+}
+
+@keyframes xcf-pulse-glow {
+	0%, 100% { box-shadow: 0 12px 24px rgba(var(--xcf-rgb-conversion), 0.35); }
+	50% { box-shadow: 0 12px 32px rgba(var(--xcf-rgb-conversion), 0.5); }
+}
+
+@keyframes xcf-border-shimmer {
+	0% { border-color: rgba(var(--xcf-rgb-border), 0.9); }
+	50% { border-color: rgba(var(--xcf-rgb-info), 0.35); }
+	100% { border-color: rgba(var(--xcf-rgb-border), 0.9); }
 }
