@@ -65,6 +65,30 @@ public struct DefaultsStore: Sendable {
     }
   }
 
+  /// Removes persisted build info (bundleId, appPath, buildScheme) from disk
+  /// while preserving user-managed defaults (project, scheme, simulator).
+  public func clearBuildInfo() {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+    withFileLock(.exclusive) { _ in
+      guard var existing = readFromDisk() else { return }
+      existing.bundleId = nil
+      existing.appPath = nil
+      existing.buildScheme = nil
+      if existing.isEmpty {
+        try? FileManager.default.removeItem(at: fileURL)
+      } else {
+        do {
+          let encoder = JSONEncoder()
+          encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+          let data = try encoder.encode(existing)
+          try data.write(to: fileURL, options: .atomic)
+        } catch {
+          Log.warn("Failed to clear build info from \(fileURL.path): \(error.localizedDescription)")
+        }
+      }
+    }
+  }
+
   public func clear() {
     guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
     withFileLock(.exclusive) { _ in
@@ -273,24 +297,28 @@ public struct PersistedDefaults: Codable, Sendable, Equatable {
   public var simulator: String?
   public var bundleId: String?
   public var appPath: String?
+  public var buildScheme: String?
 
   public init(
     project: String? = nil,
     scheme: String? = nil,
     simulator: String? = nil,
     bundleId: String? = nil,
-    appPath: String? = nil
+    appPath: String? = nil,
+    buildScheme: String? = nil
   ) {
     self.project = project
     self.scheme = scheme
     self.simulator = simulator
     self.bundleId = bundleId
     self.appPath = appPath
+    self.buildScheme = buildScheme
   }
 
   /// True when all fields are nil (nothing to persist).
   public var isEmpty: Bool {
     project == nil && scheme == nil && simulator == nil && bundleId == nil && appPath == nil
+      && buildScheme == nil
   }
 
   /// Returns a new value where non-nil fields from `other` overwrite `self`,
@@ -301,7 +329,8 @@ public struct PersistedDefaults: Codable, Sendable, Equatable {
       scheme: other.scheme ?? scheme,
       simulator: other.simulator ?? simulator,
       bundleId: other.bundleId ?? bundleId,
-      appPath: other.appPath ?? appPath
+      appPath: other.appPath ?? appPath,
+      buildScheme: other.buildScheme ?? buildScheme
     )
   }
 }

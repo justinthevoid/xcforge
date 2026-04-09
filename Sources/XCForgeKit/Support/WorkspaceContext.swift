@@ -28,6 +28,7 @@ public actor SessionState {
   private(set) var simulator: String?
   public private(set) var bundleId: String?
   public private(set) var appPath: String?
+  private var buildScheme: String?
 
   // Auto-promotion: consecutive explicit values become defaults
   private var projectStreak: (value: String, count: Int) = ("", 0)
@@ -60,6 +61,7 @@ public actor SessionState {
       self.simulator = persisted.simulator
       self.bundleId = persisted.bundleId
       self.appPath = persisted.appPath
+      self.buildScheme = persisted.buildScheme
       if persisted.project != nil { projectSource = .persisted }
       if persisted.scheme != nil { schemeSource = .persisted }
       if persisted.simulator != nil { simulatorSource = .persisted }
@@ -126,23 +128,31 @@ public actor SessionState {
 
   // MARK: - Build info (populated after successful build_sim)
 
-  func setBuildInfo(bundleId: String, appPath: String?) {
+  func setBuildInfo(bundleId: String, appPath: String?, scheme: String) {
     self.bundleId = bundleId
     self.appPath = appPath
-    defaultsStore.save(PersistedDefaults(bundleId: bundleId, appPath: appPath))
+    self.buildScheme = scheme
+    defaultsStore.save(
+      PersistedDefaults(bundleId: bundleId, appPath: appPath, buildScheme: scheme))
   }
 
   public func resolveBundleId(_ explicit: String?) -> String? {
-    explicit ?? bundleId
+    if let explicit { return explicit }
+    if let buildScheme, let scheme, buildScheme != scheme { return nil }
+    return bundleId
   }
 
   func resolveAppPath(_ explicit: String?) -> String? {
-    explicit ?? appPath
+    if let explicit { return explicit }
+    if let buildScheme, let scheme, buildScheme != scheme { return nil }
+    return appPath
   }
 
   func clearBuildInfo() {
     bundleId = nil
     appPath = nil
+    buildScheme = nil
+    defaultsStore.clearBuildInfo()
   }
 
   func workflowDefaultsSnapshot() -> WorkflowDefaultsSnapshot {

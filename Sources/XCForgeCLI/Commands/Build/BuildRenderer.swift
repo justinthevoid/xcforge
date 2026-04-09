@@ -1,6 +1,15 @@
 import Foundation
 import XCForgeKit
 
+/// JSON-encodable wrapper for the full `build run` pipeline result,
+/// including boot/install/launch phase statuses alongside the build execution.
+struct BuildRunResult: Codable {
+  let build: BuildTools.BuildExecution
+  let boot: String?
+  let install: String?
+  let launch: String?
+}
+
 enum BuildRenderer {
   static func renderBuild(_ execution: BuildTools.BuildExecution) -> String {
     var lines: [String] = []

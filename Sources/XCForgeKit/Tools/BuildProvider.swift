@@ -273,7 +273,8 @@ public enum BuildTools {
       )
 
       if let bid = buildInfo.bundleId {
-        await env.session.setBuildInfo(bundleId: bid, appPath: buildInfo.appPath)
+        await env.session.setBuildInfo(
+          bundleId: bid, appPath: buildInfo.appPath, scheme: resolvedScheme)
       }
 
       return BuildExecution(
@@ -608,7 +609,7 @@ public enum BuildTools {
         "Build succeeded in \(buildElapsed)s but could not read bundle ID from \(plistPath)")
     }
 
-    await env.session.setBuildInfo(bundleId: bundleId, appPath: finalAppPath)
+    await env.session.setBuildInfo(bundleId: bundleId, appPath: finalAppPath, scheme: scheme)
 
     // Await boot (non-critical — already booted is fine)
     let bootResult = try? await bootTask

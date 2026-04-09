@@ -13,7 +13,7 @@ struct BuildLogArgsTests {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: tempDir) }
     let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir))
-    await session.setBuildInfo(bundleId: "com.test.app", appPath: "/tmp/Test.app")
+    await session.setBuildInfo(bundleId: "com.test.app", appPath: "/tmp/Test.app", scheme: "Test")
     let env = Environment(shell: LiveShell(), session: session)
 
     let (args, note) = await LogTools.buildLogArgs(
@@ -39,7 +39,7 @@ struct BuildLogArgsTests {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: tempDir) }
     let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir))
-    await session.setBuildInfo(bundleId: "com.test.app", appPath: nil)
+    await session.setBuildInfo(bundleId: "com.test.app", appPath: nil, scheme: "Test")
     let env = Environment(shell: LiveShell(), session: session)
 
     let (args, note) = await LogTools.buildLogArgs(
@@ -128,7 +128,7 @@ struct BuildLogArgsTests {
     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: tempDir) }
     let session = SessionState(defaultsStore: DefaultsStore(baseDirectory: tempDir))
-    await session.setBuildInfo(bundleId: "com.test.app", appPath: nil)
+    await session.setBuildInfo(bundleId: "com.test.app", appPath: nil, scheme: "Test")
     let env = Environment(shell: LiveShell(), session: session)
 
     let (args, note) = await LogTools.buildLogArgs(
