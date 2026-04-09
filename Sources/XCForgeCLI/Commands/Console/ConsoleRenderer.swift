@@ -3,7 +3,7 @@ import Foundation
 enum ConsoleRenderer {
   static func renderJSON(_ result: ConsoleResult) throws -> String {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     let data = try encoder.encode(result)
     return String(data: data, encoding: .utf8) ?? "{}"
   }
