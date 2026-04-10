@@ -552,24 +552,35 @@ public enum TestTools {
 
     // 2+ unbracketed slashes means Target/Class/method — assume already complete
     if componentCount >= 3 {
+      // Swift Testing workaround: xcodebuild strips a trailing "()" from the last
+      // component of -only-testing identifiers. Swift Testing methods are internally
+      // identified with "()", so we must append "()" again to survive the stripping.
+      // e.g. "Target/Suite/testFoo()" → "Target/Suite/testFoo()()" so xcodebuild
+      // strips the outer "()" and the inner "()" matches the Swift Testing identifier.
+      if trimmedFilter.hasSuffix("()") && !trimmedFilter.hasSuffix("()()") {
+        return trimmedFilter + "()"
+      }
       return trimmedFilter
     }
 
-    // 0 or 1 unbracketed slash — needs target prefix
+    // Check if the first component already matches a known test target.
+    // This prevents double-prepending (e.g. "Target/Suite" → "Target/Target/Suite").
+    let firstComponent = extractFirstComponent(trimmedFilter)
+
+    // 0 or 1 unbracketed slash — may need target prefix
     guard let targets = try? await AutoDetect.testTargets(project: project, env: env),
       !targets.isEmpty
     else {
       return trimmedFilter
     }
 
-    if targets.count == 1 {
-      return "\(targets[0])/\(trimmedFilter)"
-    }
-
-    // Multiple targets — check if first component matches one
-    let firstComponent = extractFirstComponent(trimmedFilter)
+    // If the first component already IS a known test target, don't prepend
     if let firstComponent, targets.contains(firstComponent) {
       return trimmedFilter
+    }
+
+    if targets.count == 1 {
+      return "\(targets[0])/\(trimmedFilter)"
     }
 
     // Ambiguous — log available targets for diagnostics
@@ -1194,8 +1205,11 @@ public enum TestTools {
     let skippedTestCount = parsedSummary?.skippedTestCount ?? 0
     let expectedFailureCount = parsedSummary?.expectedFailureCount ?? 0
 
+    // Filter matched nothing → treat as failure so agents don't assume tests passed
+    let zeroMatchWithFilter = totalTestCount == 0 && filter != nil
+
     return TestExecution(
-      succeeded: buildResult.succeeded && failedTestCount == 0,
+      succeeded: buildResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter,
       elapsed: elapsed,
       xcresultPath: path,
       scheme: resolvedScheme,
@@ -1277,19 +1291,12 @@ public enum TestTools {
       // Reuse a recent xcresult that already has coverage data
       resolvedPath = recent
     } else {
-      // No recent coverage data — run tests with coverage enabled
-      let resolvedProject = try await env.session.resolveProject(project)
-      let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
-      let resolvedSimulator = try await env.session.resolveSimulator(simulator)
-      let destination = await AutoDetect.buildDestination(resolvedSimulator)
-      let path = Self.xcresultPath(prefix: "cov")
-      let (_, p) = try await runTests(
-        project: resolvedProject, scheme: resolvedScheme, destination: destination,
-        configuration: "Debug", testplan: nil, filter: nil,
-        coverage: true, resultPath: path,
-        env: env
+      // No coverage data available — fail fast instead of silently running the entire test suite
+      throw CoverageError(
+        "No coverage data available. Run tests with coverage enabled first:\n"
+          + "  xcforge test run --coverage\n"
+          + "Then run xcforge test coverage to view the report."
       )
-      resolvedPath = p
     }
 
     guard let coverageJSON = await parseCoverage(resolvedPath, env: env),
@@ -1575,10 +1582,31 @@ public enum TestTools {
     // Parse the enumerate-tests output.
     // xcodebuild format (indented): "Target X" / "\tClass Y" / "\t\tTest z()"
     // swift test list format: "Target.Class/method()"
+    //
+    // IMPORTANT: xcodebuild stdout includes build log before the test listing.
+    // We must skip the build phase to avoid matching noise (SPM URLs, command fragments).
+    let lines = enumerateResult.stdout.split(separator: "\n").map(String.init)
+
+    // Find the start of the test listing section.
+    // xcodebuild emits "Listing tests:" or the first "Target " line after build output.
+    // We skip everything before "** BUILD SUCCEEDED **" or "Listing tests" if present.
+    var startIndex = 0
+    for (i, line) in lines.enumerated() {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.contains("** BUILD SUCCEEDED **") || trimmed.hasPrefix("Listing tests") {
+        startIndex = i + 1
+      }
+    }
+
+    // Known test targets — used to validate the swift test list format parser
+    let knownTestTargets =
+      (try? await AutoDetect.testTargets(project: resolvedProject, env: env)) ?? []
+    let knownTargetSet = Set(knownTestTargets)
+
     var currentTarget = ""
     var currentClass = ""
 
-    for line in enumerateResult.stdout.split(separator: "\n") {
+    for line in lines[startIndex...] {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
 
       // xcodebuild indented format
@@ -1611,36 +1639,44 @@ public enum TestTools {
       // - Must not contain spaces (test identifiers are single tokens)
       // - Must not contain "://" (URLs)
       // - Must not start with "-" (flags) or "/" (absolute paths)
-      // - Target part (before ".") must be a valid Swift identifier
-      if trimmed.contains(".") && trimmed.contains("/")
-        && !trimmed.contains(" ") && !trimmed.contains("://")
-        && !trimmed.hasPrefix("-") && !trimmed.hasPrefix("/")
-      {
-        let dotParts = trimmed.split(separator: ".", maxSplits: 1).map(String.init)
-        guard dotParts.count == 2 else { continue }
-        let target = dotParts[0]
-        // Target must look like a Swift identifier (alphanumeric + underscore)
-        guard target.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
-        let rest = dotParts[1].split(separator: "/", maxSplits: 1).map(String.init)
-        guard rest.count == 2 else { continue }
-        let className = rest[0]
-        // Class must also look like a Swift identifier
-        guard className.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
-        var methodName = rest[1]
-        if methodName.hasSuffix("()") {
-          methodName = String(methodName.dropLast(2))
-        }
-        // Method must not contain "/" (would indicate URL path segments)
-        guard !methodName.contains("/") else { continue }
-        let fullId = "\(target)/\(className)/\(methodName)"
-        tests.append(
-          TestIdentifier(
-            target: target, className: className,
-            methodName: methodName, fullIdentifier: fullId
-          ))
-        targets.insert(target)
-        classes.insert("\(target)/\(className)")
+      // - Must not contain "=" (build settings), ":" (log lines), or "#" (comments)
+      // - Target part (before ".") must be a known test target OR valid Swift identifier
+      guard
+        trimmed.contains(".") && trimmed.contains("/")
+          && !trimmed.contains(" ") && !trimmed.contains("://")
+          && !trimmed.hasPrefix("-") && !trimmed.hasPrefix("/")
+          && !trimmed.contains("=") && !trimmed.contains(":")
+          && !trimmed.contains("#")
+      else { continue }
+
+      let dotParts = trimmed.split(separator: ".", maxSplits: 1).map(String.init)
+      guard dotParts.count == 2 else { continue }
+      let target = dotParts[0]
+      // Target must look like a Swift identifier (alphanumeric + underscore)
+      guard target.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
+      // If we know the test targets, reject unknown ones to filter noise
+      if !knownTargetSet.isEmpty && !knownTargetSet.contains(target) { continue }
+      let rest = dotParts[1].split(separator: "/", maxSplits: 1).map(String.init)
+      guard rest.count == 2 else { continue }
+      let className = rest[0]
+      // Class must also look like a Swift identifier
+      guard className.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
+      var methodName = rest[1]
+      if methodName.hasSuffix("()") {
+        methodName = String(methodName.dropLast(2))
       }
+      // Method must not contain "/" (would indicate URL path segments)
+      guard !methodName.contains("/") else { continue }
+      // Method must also look like a Swift identifier
+      guard methodName.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { continue }
+      let fullId = "\(target)/\(className)/\(methodName)"
+      tests.append(
+        TestIdentifier(
+          target: target, className: className,
+          methodName: methodName, fullIdentifier: fullId
+        ))
+      targets.insert(target)
+      classes.insert("\(target)/\(className)")
     }
 
     // Fallback: if -enumerate-tests didn't produce parseable output,
@@ -1839,23 +1875,12 @@ public enum TestTools {
         // Reuse a recent xcresult that already has coverage data
         xcresultPath = recent
       } else {
-        // No recent coverage data — run tests with coverage enabled
-        do {
-          let project = try await env.session.resolveProject(input.project)
-          let scheme = try await env.session.resolveScheme(input.scheme, project: project)
-          let simulator = try await env.session.resolveSimulator(input.simulator)
-          let destination = await AutoDetect.buildDestination(simulator)
-          let path = Self.xcresultPath(prefix: "cov")
-          let (_, p) = try await runTests(
-            project: project, scheme: scheme, destination: destination,
-            configuration: "Debug", testplan: nil, filter: nil,
-            coverage: true, resultPath: path,
-            env: env
-          )
-          xcresultPath = p
-        } catch {
-          return .fail("\(error)")
-        }
+        // No coverage data available — fail fast instead of silently running the entire test suite
+        return .fail(
+          "No coverage data available. Run tests with coverage enabled first:\n"
+            + "  test_sim(coverage: true)  — or —  xcforge test run --coverage\n"
+            + "Then call test_coverage again to view the report."
+        )
       }
 
       // File drill-down: per-function coverage for a specific file

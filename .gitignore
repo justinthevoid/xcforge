@@ -29,6 +29,7 @@ Web/.vite/
 .netrc
 .mcpregistry_github_token
 .mcpregistry_registry_token
+.mcp.json
 
 # === OS clutter ===
 .DS_Store

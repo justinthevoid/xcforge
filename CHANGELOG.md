@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-09
+
+### Fixed
+- Swift Testing filter workaround: append `()` to preserve method identifiers stripped by xcodebuild
+- Test filter returning zero matches now correctly treated as failure instead of false success
+- Prevent double-prepending test target prefix when first component already matches a known target
+
 ## [1.2.0] - 2026-04-09
 
 ### Added
