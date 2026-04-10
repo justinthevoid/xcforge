@@ -9,13 +9,13 @@
   },
   "version": "1.3.0",
   "version_detail": {
-    "version": "1.3.0"
+    "version": "1.3.1"
   },
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/justinthevoid/xcforge/releases/download/v1.3.0/xcforge-v1.3.0.mcpb",
-      "fileSha256": "d7c629155600b77bc2b36628c72900c7474e90f05bca3f2b299391e7f35176d8",
+      "identifier": "https://github.com/justinthevoid/xcforge/releases/download/v1.3.1/xcforge-v1.3.1.mcpb",
+      "fileSha256": "f4b6bf2a2fb97968c89bfce18718c2eab99b1ef5ecb28d4795d9fe786c3165f5",
       "transport": {
         "type": "stdio"
       }
