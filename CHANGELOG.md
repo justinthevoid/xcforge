@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-04-10
+
+### Fixed
+- Surface test-target build errors in test pipeline responses instead of silently returning zero-count empty results
+- `buildFailed` flag and `buildDiagnostics` added to `TestExecution` to distinguish "build failed" from "no tests matched"
+- `test_sim` MCP handler now detects and reports test-target compilation failures with structured diagnostics
+
 ## [1.3.0] - 2026-04-09
 
 ### Fixed
