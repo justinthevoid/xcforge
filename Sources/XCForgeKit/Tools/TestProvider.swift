@@ -130,6 +130,8 @@ public enum TestTools {
     public let osVersion: String?
     public let screenshotPaths: [ScreenshotAttachment]
     public let hasStructuredSummary: Bool
+    public let buildFailed: Bool
+    public let buildDiagnostics: [BuildIssueObservation]?
   }
 
   public struct ScreenshotAttachment: Codable, Sendable {
@@ -1167,8 +1169,28 @@ public enum TestTools {
       screenshots = attachments.map { ScreenshotAttachment(testName: $0.test, path: $0.path) }
     }
 
-    // Fallback error extraction
-    if !buildResult.succeeded && failures.isEmpty && parsedSummary == nil {
+    // Parse build diagnostics from xcresult when the build failed
+    var buildDiagnostics: [BuildIssueObservation]?
+    let buildFailed = !buildResult.succeeded
+    if buildFailed {
+      if let buildJSON = await parseBuildResults(path, env: env),
+        let data = buildJSON.data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      {
+        let parsed = parseBuildIssues(json)
+        if !parsed.issues.isEmpty {
+          buildDiagnostics = parsed.issues
+        }
+      }
+      // If xcresulttool didn't yield diagnostics, fall back to stderr
+      if buildDiagnostics == nil {
+        buildDiagnostics = fallbackBuildIssues(stderr: buildResult.stderr)
+        if buildDiagnostics?.isEmpty == true { buildDiagnostics = nil }
+      }
+    }
+
+    // Fallback error extraction for test failures list
+    if buildFailed && failures.isEmpty {
       let errorLines = buildResult.stderr.split(separator: "\n")
         .filter { $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED") }
         .prefix(20)
@@ -1223,7 +1245,9 @@ public enum TestTools {
       deviceName: parsedSummary?.destinationDeviceName,
       osVersion: parsedSummary?.destinationOSVersion,
       screenshotPaths: screenshots,
-      hasStructuredSummary: parsedSummary != nil
+      hasStructuredSummary: parsedSummary != nil,
+      buildFailed: buildFailed,
+      buildDiagnostics: buildDiagnostics
     )
   }
 
@@ -1513,7 +1537,9 @@ public enum TestTools {
           deviceName: nil,
           osVersion: nil,
           screenshotPaths: [],
-          hasStructuredSummary: false
+          hasStructuredSummary: false,
+          buildFailed: false,
+          buildDiagnostics: nil
         )
       )
     }
@@ -1762,6 +1788,43 @@ public enum TestTools {
           let data = summaryJSON.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         {
+          // Check for test-target build failure: xcodebuild failed but xcresult has a summary
+          let totalTests = json["totalTestCount"] as? Int ?? 0
+          if !buildResult.succeeded && totalTests == 0 {
+            // Build failed with zero tests — surface build diagnostics
+            var buildDiagOutput = ""
+            if let buildJSON = await parseBuildResults(path, env: env),
+              let bData = buildJSON.data(using: .utf8),
+              let bJson = try? JSONSerialization.jsonObject(with: bData) as? [String: Any]
+            {
+              let parsed = parseBuildIssues(bJson)
+              let errors = parsed.issues.filter { $0.severity == .error }
+              if !errors.isEmpty {
+                buildDiagOutput =
+                  "\nBuild errors (\(errors.count)):\n"
+                  + errors.map { issue in
+                    if let loc = issue.location {
+                      return "  \(loc.filePath):\(loc.line ?? 0): \(issue.message)"
+                    }
+                    return "  \(issue.message)"
+                  }.joined(separator: "\n")
+              }
+            }
+            if buildDiagOutput.isEmpty {
+              let errorLines = buildResult.stderr.split(separator: "\n")
+                .filter {
+                  $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED")
+                }
+                .prefix(20)
+              if !errorLines.isEmpty {
+                buildDiagOutput = "\n" + errorLines.joined(separator: "\n")
+              }
+            }
+            return .fail(
+              preamble + "TEST TARGET BUILD FAILED in \(elapsed)s"
+                + buildDiagOutput + "\nxcresult: \(path)")
+          }
+
           var summary = preamble + formatTestSummary(json, elapsed: elapsed, xcresultPath: path)
 
           // If tests failed, export failure screenshots
@@ -1777,7 +1840,6 @@ public enum TestTools {
           }
 
           // Zero-match diagnostic: if filter was set and 0 tests ran
-          let totalTests = json["totalTestCount"] as? Int ?? 0
           if totalTests == 0, let f = input.filter {
             summary += await zeroMatchHint(
               filter: f, project: input.project, scheme: input.scheme,
@@ -1791,7 +1853,7 @@ public enum TestTools {
           return (hasFailures || zeroMatchWithFilter) ? .fail(summary) : .ok(summary)
         }
 
-        // Fallback: no xcresult parseable
+        // Fallback: no xcresult test summary parseable
         if buildResult.succeeded {
           var msg =
             preamble + "Tests passed in \(elapsed)s (xcresult parse failed)\nxcresult: \(path)"
@@ -1803,11 +1865,37 @@ public enum TestTools {
           }
           return .ok(msg)
         } else {
-          let errorLines = buildResult.stderr.split(separator: "\n")
-            .filter { $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED") }
-            .prefix(20)
-            .joined(separator: "\n")
-          return .fail(preamble + "Tests FAILED in \(elapsed)s\n\(errorLines)\nxcresult: \(path)")
+          // Build failed — try structured build diagnostics first
+          var diagnosticOutput = ""
+          if let buildJSON = await parseBuildResults(path, env: env),
+            let data = buildJSON.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+          {
+            let parsed = parseBuildIssues(json)
+            let errors = parsed.issues.filter { $0.severity == .error }
+            if !errors.isEmpty {
+              diagnosticOutput =
+                "Build errors (\(errors.count)):\n"
+                + errors.map { issue in
+                  if let loc = issue.location {
+                    return "  \(loc.filePath):\(loc.line ?? 0): \(issue.message)"
+                  }
+                  return "  \(issue.message)"
+                }.joined(separator: "\n")
+            }
+          }
+          if diagnosticOutput.isEmpty {
+            let errorLines = buildResult.stderr.split(separator: "\n")
+              .filter {
+                $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED")
+              }
+              .prefix(20)
+              .joined(separator: "\n")
+            diagnosticOutput = errorLines
+          }
+          return .fail(
+            preamble
+              + "TEST TARGET BUILD FAILED in \(elapsed)s\n\(diagnosticOutput)\nxcresult: \(path)")
         }
       } catch {
         return .fail("Test error: \(error)")
@@ -2157,6 +2245,46 @@ public enum TestTools {
 
     // Build succeeded, show test results
     if let test = result.testResult {
+      if test.buildFailed {
+        lines.append("Build: OK (\(result.buildElapsed)s)")
+        lines.append("TEST TARGET BUILD FAILED in \(test.elapsed)s")
+        lines.append("Phase: test target compilation (tests were NOT run)")
+        if let diagnostics = test.buildDiagnostics, !diagnostics.isEmpty {
+          lines.append("")
+          let errors = diagnostics.filter { $0.severity == .error }
+          let warnings = diagnostics.filter { $0.severity == .warning }
+          if !errors.isEmpty {
+            lines.append("Errors (\(errors.count)):")
+            for issue in errors {
+              if let loc = issue.location {
+                lines.append("  \(loc.filePath):\(loc.line ?? 0): \(issue.message)")
+              } else {
+                lines.append("  \(issue.message)")
+              }
+            }
+          }
+          if !warnings.isEmpty {
+            lines.append("Warnings (\(warnings.count)):")
+            for issue in warnings.prefix(5) {
+              if let loc = issue.location {
+                lines.append("  \(loc.filePath):\(loc.line ?? 0): \(issue.message)")
+              } else {
+                lines.append("  \(issue.message)")
+              }
+            }
+          }
+        }
+        if test.buildDiagnostics == nil && !test.failures.isEmpty {
+          lines.append("")
+          lines.append("Build errors (stderr):")
+          for failure in test.failures {
+            lines.append("  \(failure.message)")
+          }
+        }
+        lines.append("")
+        lines.append("xcresult: \(test.xcresultPath)")
+        return .fail(lines.joined(separator: "\n") + suffix)
+      }
       lines.append("Build: OK (\(result.buildElapsed)s)")
       if test.totalTestCount == 0 {
         lines.append("No tests matched in \(test.elapsed)s")

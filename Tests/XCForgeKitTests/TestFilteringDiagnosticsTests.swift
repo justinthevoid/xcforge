@@ -106,7 +106,9 @@ struct TestFilteringDiagnosticsTests {
         deviceName: nil,
         osVersion: nil,
         screenshotPaths: [],
-        hasStructuredSummary: true
+        hasStructuredSummary: true,
+        buildFailed: false,
+        buildDiagnostics: nil
       )
     )
   }
@@ -175,5 +177,93 @@ struct TestFilteringDiagnosticsTests {
     let text = resultText(result)
     #expect(text.contains("BUILD FAILED"))
     #expect(!text.contains("Testplan:"))
+  }
+
+  // MARK: - Test target build failure surfaces diagnostics
+
+  @Test("formatBuildAndTest surfaces test-target build diagnostics when buildFailed is true")
+  func testTargetBuildFailureSurfacesDiagnostics() {
+    let diagnostics = [
+      TestTools.BuildIssueObservation(
+        severity: .error,
+        message: "Cannot find type 'UIImage' in scope",
+        location: SourceLocation(filePath: "Tests/AppTests/ImageTests.swift", line: 12),
+        source: "xcresult"
+      ),
+      TestTools.BuildIssueObservation(
+        severity: .warning,
+        message: "Variable 'x' was never used",
+        location: SourceLocation(filePath: "Tests/AppTests/ImageTests.swift", line: 8),
+        source: "xcresult"
+      ),
+    ]
+    let result = TestTools.formatBuildAndTest(
+      TestTools.BuildAndTestResult(
+        phase: "test",
+        buildSucceeded: true,
+        buildElapsed: "5.0",
+        buildDiagnostics: nil,
+        testResult: TestTools.TestExecution(
+          succeeded: false,
+          elapsed: "3.0",
+          xcresultPath: "/tmp/test.xcresult",
+          scheme: "App",
+          simulator: "iPhone 16",
+          totalTestCount: 0,
+          passedTestCount: 0,
+          failedTestCount: 0,
+          skippedTestCount: 0,
+          expectedFailureCount: 0,
+          failures: [],
+          deviceName: nil,
+          osVersion: nil,
+          screenshotPaths: [],
+          hasStructuredSummary: false,
+          buildFailed: true,
+          buildDiagnostics: diagnostics
+        )
+      )
+    )
+    let text = resultText(result)
+    #expect(text.contains("TEST TARGET BUILD FAILED"))
+    #expect(text.contains("Cannot find type 'UIImage' in scope"))
+    #expect(text.contains("Tests/AppTests/ImageTests.swift:12"))
+    #expect(text.contains("Errors (1):"))
+    #expect(result.isError == true)
+  }
+
+  @Test("formatBuildAndTest with buildFailed false shows normal test output")
+  func buildNotFailedShowsNormalOutput() {
+    let result = TestTools.formatBuildAndTest(
+      TestTools.BuildAndTestResult(
+        phase: "test",
+        buildSucceeded: true,
+        buildElapsed: "5.0",
+        buildDiagnostics: nil,
+        testResult: TestTools.TestExecution(
+          succeeded: true,
+          elapsed: "2.0",
+          xcresultPath: "/tmp/test.xcresult",
+          scheme: "App",
+          simulator: "iPhone 16",
+          totalTestCount: 3,
+          passedTestCount: 3,
+          failedTestCount: 0,
+          skippedTestCount: 0,
+          expectedFailureCount: 0,
+          failures: [],
+          deviceName: nil,
+          osVersion: nil,
+          screenshotPaths: [],
+          hasStructuredSummary: true,
+          buildFailed: false,
+          buildDiagnostics: nil
+        )
+      )
+    )
+    let text = resultText(result)
+    #expect(!text.contains("TEST TARGET BUILD FAILED"))
+    #expect(text.contains("Tests PASSED"))
+    #expect(result.isError != true)
   }
 }
