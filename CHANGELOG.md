@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-04-12
+
+### Fixed
+- `indigo_tap` and `indigo_swipe` no longer crash the MCP server when called — unsafe `UnsafeMutablePointer<NSError?>` arguments were being passed as `AnyObject` through `NSObject.perform()`, causing memory corruption in CoreSimulator's private API
+- Same crash fixed in `CoreSimCapture` (used by screenshot/capture tools) which shared the identical pattern
+
 ## [1.3.1] - 2026-04-10
 
 ### Fixed

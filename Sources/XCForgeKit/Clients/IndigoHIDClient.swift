@@ -444,23 +444,19 @@ actor IndigoHIDClient {
     }
 
     let devDir = developerDir as NSString
-    var error: NSError?
-    let ctx: NSObject? = withUnsafeMutablePointer(to: &error) { errPtr in
-      let result = (ctxClass as AnyObject).perform(
-        Selector(("sharedServiceContextForDeveloperDir:error:")), with: devDir, with: errPtr)
-      return result?.takeUnretainedValue() as? NSObject
-    }
+    let ctx: NSObject? =
+      (ctxClass as AnyObject)
+      .perform(
+        Selector(("sharedServiceContextForDeveloperDir:error:")), with: devDir, with: nil)?
+      .takeUnretainedValue() as? NSObject
 
     guard let serviceContext = ctx else {
-      throw IndigoHIDError.portLookupFailed(
-        "SimServiceContext creation failed: \(error?.localizedDescription ?? "unknown")")
+      throw IndigoHIDError.portLookupFailed("SimServiceContext creation failed")
     }
 
-    var devSetError: NSError?
-    let deviceSet: NSObject? = withUnsafeMutablePointer(to: &devSetError) { errPtr in
-      let result = serviceContext.perform(Selector(("defaultDeviceSetWithError:")), with: errPtr)
-      return result?.takeUnretainedValue() as? NSObject
-    }
+    let deviceSet: NSObject? =
+      serviceContext.perform(Selector(("defaultDeviceSetWithError:")), with: nil)?
+      .takeUnretainedValue() as? NSObject
 
     guard let devSet = deviceSet,
       let devices = devSet.perform(Selector(("devices")))?.takeUnretainedValue() as? [NSObject]
@@ -474,15 +470,12 @@ actor IndigoHIDClient {
       else { continue }
 
       // Get the device's HID port via lookup: service
-      var lookupError: NSError?
-      let portObj: NSObject? = withUnsafeMutablePointer(to: &lookupError) { errPtr in
-        let result = device.perform(
+      let portObj: NSObject? =
+        device.perform(
           Selector(("lookup:error:")),
           with: "PurpleWorkspacePort" as NSString,
-          with: errPtr
-        )
-        return result?.takeUnretainedValue() as? NSObject
-      }
+          with: nil)?
+        .takeUnretainedValue() as? NSObject
 
       if let portObj = portObj {
         // The result should be an NSMachPort or similar — extract the port number
@@ -502,7 +495,7 @@ actor IndigoHIDClient {
       }
 
       throw IndigoHIDError.portLookupFailed(
-        "PurpleWorkspacePort lookup failed for \(udid): \(lookupError?.localizedDescription ?? "port object not usable")"
+        "PurpleWorkspacePort lookup failed for \(udid): port object not usable"
       )
     }
 

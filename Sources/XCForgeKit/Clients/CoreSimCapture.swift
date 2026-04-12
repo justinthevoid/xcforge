@@ -179,16 +179,13 @@ enum CoreSimCapture {
     }
 
     let devDir = developerDir as NSString
-    var error: NSError?
-    let ctx: NSObject? = withUnsafeMutablePointer(to: &error) { errPtr in
-      let result = (ctxClass as AnyObject).perform(
-        sel("sharedServiceContextForDeveloperDir:error:"), with: devDir, with: errPtr)
-      return result?.takeUnretainedValue() as? NSObject
-    }
+    let ctx: NSObject? =
+      (ctxClass as AnyObject)
+      .perform(sel("sharedServiceContextForDeveloperDir:error:"), with: devDir, with: nil)?
+      .takeUnretainedValue() as? NSObject
 
     guard let serviceContext = ctx else {
-      throw CaptureError.noDevice(
-        "SimServiceContext creation failed: \(error?.localizedDescription ?? "unknown")")
+      throw CaptureError.noDevice("SimServiceContext creation failed")
     }
 
     os_unfair_lock_lock(&_cacheLock)
@@ -206,16 +203,12 @@ enum CoreSimCapture {
   private static func findDevice(simulator: String) throws -> NSObject {
     let serviceContext = try getServiceContext()
 
-    var error: NSError?
-    let deviceSet: NSObject? = withUnsafeMutablePointer(to: &error) { errPtr in
-      let result = serviceContext.perform(
-        sel("defaultDeviceSetWithError:"), with: errPtr)
-      return result?.takeUnretainedValue() as? NSObject
-    }
+    let deviceSet: NSObject? =
+      serviceContext.perform(sel("defaultDeviceSetWithError:"), with: nil)?
+      .takeUnretainedValue() as? NSObject
 
     guard let devSet = deviceSet else {
-      throw CaptureError.noDevice(
-        "Cannot get device set: \(error?.localizedDescription ?? "unknown")")
+      throw CaptureError.noDevice("Cannot get device set")
     }
 
     guard let devices = devSet.perform(sel("devices"))?.takeUnretainedValue() as? [NSObject]
