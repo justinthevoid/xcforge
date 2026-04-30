@@ -28,6 +28,44 @@ public enum BuildTools {
     public let issues: [TestTools.BuildIssueObservation]?
     public let errorCount: Int?
     public let warningCount: Int?
+    public let hangDiagnosticPath: String?
+    public let hangDiagnosticSummary: String?
+
+    init(
+      succeeded: Bool,
+      elapsed: String,
+      scheme: String,
+      simulator: String,
+      configuration: String,
+      bundleId: String?,
+      appPath: String?,
+      errors: [String],
+      failureReason: String?,
+      structuredErrors: [String]?,
+      xcresultPath: String?,
+      issues: [TestTools.BuildIssueObservation]?,
+      errorCount: Int?,
+      warningCount: Int?,
+      hangDiagnosticPath: String? = nil,
+      hangDiagnosticSummary: String? = nil
+    ) {
+      self.succeeded = succeeded
+      self.elapsed = elapsed
+      self.scheme = scheme
+      self.simulator = simulator
+      self.configuration = configuration
+      self.bundleId = bundleId
+      self.appPath = appPath
+      self.errors = errors
+      self.failureReason = failureReason
+      self.structuredErrors = structuredErrors
+      self.xcresultPath = xcresultPath
+      self.issues = issues
+      self.errorCount = errorCount
+      self.warningCount = warningCount
+      self.hangDiagnosticPath = hangDiagnosticPath
+      self.hangDiagnosticSummary = hangDiagnosticSummary
+    }
   }
 
   /// Returns true if `text` contains a known infrastructure failure pattern.
@@ -127,6 +165,18 @@ public enum BuildTools {
             "type": .string("string"),
             "description": .string("Build configuration (Debug/Release). Default: Debug"),
           ]),
+          "long": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Use 1800s timeout instead of the default 180s for large projects."
+            ),
+          ]),
+          "diagnose": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Capture a diagnostic snapshot on completion even without a hang."
+            ),
+          ]),
         ]),
       ])
     ),
@@ -160,6 +210,18 @@ public enum BuildTools {
           "configuration": .object([
             "type": .string("string"),
             "description": .string("Build configuration (Debug/Release). Default: Debug"),
+          ]),
+          "long": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Use 1800s timeout instead of the default 180s for large projects that take longer to build."
+            ),
+          ]),
+          "diagnose": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Capture a diagnostic snapshot on completion even without a hang, for baseline inspection."
+            ),
           ]),
         ]),
       ])
@@ -222,6 +284,8 @@ public enum BuildTools {
     let scheme: String?
     let simulator: String?
     let configuration: String?
+    let long: Bool?
+    let diagnose: Bool?
   }
 
   struct CleanInput: Decodable {
@@ -244,6 +308,8 @@ public enum BuildTools {
     scheme: String? = nil,
     simulator: String? = nil,
     configuration: String = "Debug",
+    long: Bool = false,
+    diagnose: Bool = false,
     env: Environment = .live
   ) async throws -> BuildExecution {
     let resolvedProject = try await env.session.resolveProject(project)
@@ -271,7 +337,32 @@ public enum BuildTools {
     buildArgs += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
 
     let start = CFAbsoluteTimeGetCurrent()
-    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: 1800)
+    let buildTimeout = TestTools.resolveTestTimeout(long: long)
+    let snapshotPath = TestTools.diagnosticSnapshotPath()
+    let watchdog = HangWatchdog(
+      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
+    let result = try await env.shell.run(
+      "/usr/bin/xcodebuild", arguments: buildArgs, timeout: buildTimeout)
+    watchdog.cancel()
+    let watchdogCapture = await watchdog.latestResult
+    let diagResult: DiagnosticSnapshot.Result?
+    if result.exitCode == -1 {
+      if let captured = watchdogCapture {
+        diagResult = captured
+      } else {
+        diagResult = await DiagnosticSnapshot.capture(
+          udid: resolvedSimulator, snapshotPath: snapshotPath, env: env)
+      }
+    } else if diagnose {
+      if let captured = watchdogCapture {
+        diagResult = captured
+      } else {
+        diagResult = await DiagnosticSnapshot.capture(
+          udid: resolvedSimulator, snapshotPath: snapshotPath, env: env)
+      }
+    } else {
+      diagResult = watchdogCapture
+    }
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
 
     // Extract structured issues from xcresult (best source of diagnostics)
@@ -303,7 +394,9 @@ public enum BuildTools {
         xcresultPath: resultPath,
         issues: xcresultIssues.issues.isEmpty ? nil : xcresultIssues.issues,
         errorCount: xcresultIssues.errorCount,
-        warningCount: xcresultIssues.warningCount
+        warningCount: xcresultIssues.warningCount,
+        hangDiagnosticPath: diagResult?.filePath,
+        hangDiagnosticSummary: diagResult?.summaryLine
       )
     } else {
       // Use xcresult issues if available, fall back to stderr parsing
@@ -342,7 +435,9 @@ public enum BuildTools {
         xcresultPath: resultPath,
         issues: issues.isEmpty ? nil : issues,
         errorCount: errorCount,
-        warningCount: warningCount
+        warningCount: warningCount,
+        hangDiagnosticPath: diagResult?.filePath,
+        hangDiagnosticSummary: diagResult?.summaryLine
       )
     }
   }
@@ -396,6 +491,8 @@ public enum BuildTools {
           scheme: input.scheme,
           simulator: input.simulator,
           configuration: input.configuration ?? "Debug",
+          long: input.long ?? false,
+          diagnose: input.diagnose ?? false,
           env: env
         )
 
@@ -420,9 +517,22 @@ public enum BuildTools {
               }
             }
           }
+          if let diagPath = execution.hangDiagnosticPath {
+            output += "\nDiagnostic snapshot: \(diagPath)"
+            if let summary = execution.hangDiagnosticSummary {
+              output += "\nSummary: \(summary)"
+            }
+          }
           return .ok(output)
         } else {
-          return .fail(formatBuildFailure(execution))
+          var failMsg = formatBuildFailure(execution)
+          if let diagPath = execution.hangDiagnosticPath {
+            failMsg += "\nDiagnostic snapshot: \(diagPath)"
+            if let summary = execution.hangDiagnosticSummary {
+              failMsg += "\nSummary: \(summary)"
+            }
+          }
+          return .fail(failMsg)
         }
       } catch {
         return .fail("Build error: \(error)")
@@ -657,7 +767,11 @@ public enum BuildTools {
     // Build is the critical path (~10-60s). Settings extraction, simulator boot,
     // and Simulator.app launch run concurrently — they complete while the build
     // is still compiling, adding zero wall-clock overhead.
-    async let buildTask = env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: 1800)
+    let buildTimeout = TestTools.resolveTestTimeout(long: input.long ?? false)
+    let buildSnapshotPath = TestTools.diagnosticSnapshotPath()
+    let buildWatchdog = HangWatchdog(
+      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], env: env)
+    async let buildTask = env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: buildTimeout)
     async let settingsTask = env.shell.run(
       "/usr/bin/xcodebuild", arguments: settingsArgs, timeout: 30)
     async let bootTask = env.shell.run(
@@ -670,7 +784,18 @@ public enum BuildTools {
     do {
       buildResult = try await buildTask
     } catch {
+      buildWatchdog.cancel()
       return .fail("Build error: \(error)")
+    }
+    buildWatchdog.cancel()
+    let buildDiagResult: DiagnosticSnapshot.Result?
+    if let captured = await buildWatchdog.latestResult {
+      buildDiagResult = captured
+    } else if input.diagnose ?? false {
+      buildDiagResult = await DiagnosticSnapshot.capture(
+        udid: udid, snapshotPath: buildSnapshotPath, env: env)
+    } else {
+      buildDiagResult = nil
     }
 
     let buildElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - totalStart)
@@ -709,7 +834,11 @@ public enum BuildTools {
         errorCount: errorCount,
         warningCount: warningCount
       )
-      return .fail(formatBuildFailure(execution))
+      var failMsg = formatBuildFailure(execution)
+      if let diag = buildDiagResult {
+        failMsg += "\nDiagnostic snapshot: \(diag.filePath)\nSummary: \(diag.summaryLine)"
+      }
+      return .fail(failMsg)
     }
 
     // Await settings — 3-tier fallback for app path + bundle ID:
@@ -877,6 +1006,10 @@ public enum BuildTools {
       for w in buildWarnings.prefix(5) {
         output += "\n  \(formatIssue(w))"
       }
+    }
+
+    if let diag = buildDiagResult {
+      output += "\nDiagnostic snapshot: \(diag.filePath)\nSummary: \(diag.summaryLine)"
     }
 
     return .ok(output)

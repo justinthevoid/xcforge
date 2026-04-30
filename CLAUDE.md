@@ -13,6 +13,12 @@ swift run xcforge             # Start MCP server (stdio JSON-RPC)
 swift run xcforge build --help # CLI mode
 ```
 
+**Test timeout defaults** (`build-test`, `test run`, `test_sim`, `build_and_test`):
+- Default timeout: **180s**. Pass `--long` (CLI) or `long: true` (MCP) to use 1800s.
+- Pass `--diagnose` / `diagnose: true` to capture a diagnostic snapshot even on success.
+- On timeout, the result includes a `/tmp/xcf-diag-<pid>-<ts>.txt` path and a summary line.
+- `build_sim` and `build_run_sim` share the same watchdog design; `build` (build-only) remains at 1800s.
+
 **Formatting** (CI enforces strict lint):
 ```bash
 swift-format format --in-place --recursive Sources/ Tests/  # Fix

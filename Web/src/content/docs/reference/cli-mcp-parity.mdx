@@ -53,7 +53,11 @@ MCP calls are structured by default. CLI output is human-readable unless `--json
 
 MCP LLDB workflows are session-based. CLI debug commands are commonly run as one-shot operations.
 
-### 5) Mode selection behavior
+### 5) Default timeout for test commands
+
+`build-test`, `test run`, `test_sim`, and `build_and_test` default to **180s** (not the old 1800s). Pass `--long` (CLI) or `long: true` (MCP) to restore 1800s for suites that legitimately take longer.
+
+### 6) Mode selection behavior
 
 `xcforge` with no arguments enters MCP server mode. Any subcommand enters CLI mode.
 

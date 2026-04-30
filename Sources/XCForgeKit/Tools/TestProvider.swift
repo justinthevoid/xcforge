@@ -39,6 +39,8 @@ public enum TestTools {
     public let analyzerWarningCount: Int
     public let destinationDeviceName: String?
     public let destinationOSVersion: String?
+    public let hangDiagnosticPath: String?
+    public let hangDiagnosticSummary: String?
 
     init(
       succeeded: Bool,
@@ -50,7 +52,9 @@ public enum TestTools {
       warningCount: Int,
       analyzerWarningCount: Int,
       destinationDeviceName: String?,
-      destinationOSVersion: String?
+      destinationOSVersion: String?,
+      hangDiagnosticPath: String? = nil,
+      hangDiagnosticSummary: String? = nil
     ) {
       self.succeeded = succeeded
       self.elapsed = elapsed
@@ -62,6 +66,8 @@ public enum TestTools {
       self.analyzerWarningCount = analyzerWarningCount
       self.destinationDeviceName = destinationDeviceName
       self.destinationOSVersion = destinationOSVersion
+      self.hangDiagnosticPath = hangDiagnosticPath
+      self.hangDiagnosticSummary = hangDiagnosticSummary
     }
   }
 
@@ -132,6 +138,50 @@ public enum TestTools {
     public let hasStructuredSummary: Bool
     public let buildFailed: Bool
     public let buildDiagnostics: [BuildIssueObservation]?
+    public let hangDiagnosticPath: String?
+    public let hangDiagnosticSummary: String?
+
+    init(
+      succeeded: Bool,
+      elapsed: String,
+      xcresultPath: String,
+      scheme: String,
+      simulator: String,
+      totalTestCount: Int,
+      passedTestCount: Int,
+      failedTestCount: Int,
+      skippedTestCount: Int,
+      expectedFailureCount: Int,
+      failures: [TestFailureObservation],
+      deviceName: String?,
+      osVersion: String?,
+      screenshotPaths: [ScreenshotAttachment],
+      hasStructuredSummary: Bool,
+      buildFailed: Bool,
+      buildDiagnostics: [BuildIssueObservation]?,
+      hangDiagnosticPath: String? = nil,
+      hangDiagnosticSummary: String? = nil
+    ) {
+      self.succeeded = succeeded
+      self.elapsed = elapsed
+      self.xcresultPath = xcresultPath
+      self.scheme = scheme
+      self.simulator = simulator
+      self.totalTestCount = totalTestCount
+      self.passedTestCount = passedTestCount
+      self.failedTestCount = failedTestCount
+      self.skippedTestCount = skippedTestCount
+      self.expectedFailureCount = expectedFailureCount
+      self.failures = failures
+      self.deviceName = deviceName
+      self.osVersion = osVersion
+      self.screenshotPaths = screenshotPaths
+      self.hasStructuredSummary = hasStructuredSummary
+      self.buildFailed = buildFailed
+      self.buildDiagnostics = buildDiagnostics
+      self.hangDiagnosticPath = hangDiagnosticPath
+      self.hangDiagnosticSummary = hangDiagnosticSummary
+    }
   }
 
   public struct ScreenshotAttachment: Codable, Sendable {
@@ -202,6 +252,8 @@ public enum TestTools {
     var testplan: String?
     var filter: String?
     var coverage: Bool?
+    var long: Bool?
+    var diagnose: Bool?
   }
 
   struct TestFailuresInput: Decodable {
@@ -236,6 +288,8 @@ public enum TestTools {
     var testplan: String?
     var filter: String?
     var coverage: Bool?
+    var long: Bool?
+    var diagnose: Bool?
   }
 
   struct ListTestsInput: Decodable {
@@ -253,6 +307,23 @@ public enum TestTools {
     public let buildElapsed: String
     public let buildDiagnostics: [BuildIssueObservation]?
     public let testResult: TestExecution?
+    public let hangDiagnosticPath: String?
+
+    init(
+      phase: String,
+      buildSucceeded: Bool,
+      buildElapsed: String,
+      buildDiagnostics: [BuildIssueObservation]?,
+      testResult: TestExecution?,
+      hangDiagnosticPath: String? = nil
+    ) {
+      self.phase = phase
+      self.buildSucceeded = buildSucceeded
+      self.buildElapsed = buildElapsed
+      self.buildDiagnostics = buildDiagnostics
+      self.testResult = testResult
+      self.hangDiagnosticPath = hangDiagnosticPath
+    }
   }
 
   public struct TestIdentifier: Codable, Sendable {
@@ -312,6 +383,18 @@ public enum TestTools {
           "coverage": .object([
             "type": .string("boolean"),
             "description": .string("Enable code coverage collection. Default: false"),
+          ]),
+          "long": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Use 1800s timeout instead of the default 180s for suites known to run longer than 3 minutes."
+            ),
+          ]),
+          "diagnose": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Capture a diagnostic snapshot on completion even without a hang, for baseline inspection."
+            ),
           ]),
         ]),
       ])
@@ -468,6 +551,18 @@ public enum TestTools {
             "type": .string("boolean"),
             "description": .string("Enable code coverage collection. Default: false"),
           ]),
+          "long": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Use 1800s timeout instead of the default 180s for suites known to run longer than 3 minutes."
+            ),
+          ]),
+          "diagnose": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Capture a diagnostic snapshot on completion even without a hang, for baseline inspection."
+            ),
+          ]),
         ]),
       ])
     ),
@@ -511,6 +606,37 @@ public enum TestTools {
   static func xcresultPath(prefix: String) -> String {
     let ts = Int(Date().timeIntervalSince1970)
     return "/tmp/xcf-\(prefix)-\(ts).xcresult"
+  }
+
+  static func resolveTestTimeout(long: Bool) -> TimeInterval {
+    long ? 1800 : 180
+  }
+
+  static func diagnosticSnapshotPath() -> String {
+    let pid = ProcessInfo.processInfo.processIdentifier
+    let ts = Int(Date().timeIntervalSince1970)
+    return "/tmp/xcf-diag-\(pid)-\(ts).txt"
+  }
+
+  private static func resolvedDiagResult(
+    result: ShellResult, diagnose: Bool, watchdog: HangWatchdog,
+    udid: String?, snapshotPath: String, env: Environment
+  ) async -> DiagnosticSnapshot.Result? {
+    let watchdogCapture = await watchdog.latestResult
+    if result.exitCode == -1 {
+      if let captured = watchdogCapture { return captured }
+      return await DiagnosticSnapshot.capture(udid: udid, snapshotPath: snapshotPath, env: env)
+    } else if diagnose {
+      if let captured = watchdogCapture { return captured }
+      return await DiagnosticSnapshot.capture(udid: udid, snapshotPath: snapshotPath, env: env)
+    } else {
+      return watchdogCapture
+    }
+  }
+
+  private static func formatDiagnosticSuffix(_ result: DiagnosticSnapshot.Result?) -> String {
+    guard let result else { return "" }
+    return "\nDiagnostic snapshot: \(result.filePath)\nSummary: \(result.summaryLine)"
   }
 
   /// Find the most recent xcresult bundle in /tmp that has coverage data.
@@ -701,13 +827,14 @@ public enum TestTools {
     ]
   }
 
-  /// Run xcodebuild test and return the xcresult path
+  /// Run xcodebuild test and return the xcresult path plus any diagnostic snapshot.
   private static func runTests(
     project: String, scheme: String, destination: String,
     configuration: String, testplan: String?, filter: String?,
     coverage: Bool, resultPath: String,
+    long: Bool = false, diagnose: Bool = false, udid: String? = nil,
     env: Environment
-  ) async throws -> (ShellResult, String) {
+  ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
     // Remove old xcresult if exists
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
 
@@ -731,18 +858,24 @@ public enum TestTools {
 
     args += ["test"]
 
-    let result = try await env.shell.run(
-      "/usr/bin/xcodebuild", arguments: args, timeout: 1800
-    )
-    return (result, resultPath)
+    let timeout = resolveTestTimeout(long: long)
+    let snapshotPath = diagnosticSnapshotPath()
+    let watchdog = HangWatchdog(udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
+    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
+    watchdog.cancel()
+    let diagResult = await resolvedDiagResult(
+      result: result, diagnose: diagnose, watchdog: watchdog,
+      udid: udid, snapshotPath: snapshotPath, env: env)
+    return (result, resultPath, diagResult)
   }
 
-  /// Run xcodebuild build and return the xcresult path
+  /// Run xcodebuild build and return the xcresult path plus any diagnostic snapshot.
   private static func runBuild(
     project: String, scheme: String, destination: String,
     configuration: String, resultPath: String,
+    long: Bool = false, diagnose: Bool = false, udid: String? = nil,
     env: Environment
-  ) async throws -> (ShellResult, String) {
+  ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
 
     var args = xcodebuildBaseArgs(
@@ -756,10 +889,15 @@ public enum TestTools {
     ]
     args += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
 
-    let result = try await env.shell.run(
-      "/usr/bin/xcodebuild", arguments: args, timeout: 1800
-    )
-    return (result, resultPath)
+    let timeout = resolveTestTimeout(long: long)
+    let snapshotPath = diagnosticSnapshotPath()
+    let watchdog = HangWatchdog(udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
+    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
+    watchdog.cancel()
+    let diagResult = await resolvedDiagResult(
+      result: result, diagnose: diagnose, watchdog: watchdog,
+      udid: udid, snapshotPath: snapshotPath, env: env)
+    return (result, resultPath, diagResult)
   }
 
   /// Parse xcresult test summary JSON
@@ -824,18 +962,23 @@ public enum TestTools {
     scheme: String,
     simulator: String,
     configuration: String,
+    long: Bool = false,
+    diagnose: Bool = false,
     env: Environment = .live
   ) async throws -> BuildDiagnosisExecution {
     let resultPath = xcresultPath(prefix: "build")
     let destination = await AutoDetect.buildDestination(simulator)
 
     let start = CFAbsoluteTimeGetCurrent()
-    let (buildResult, path) = try await runBuild(
+    let (buildResult, path, diagResult) = try await runBuild(
       project: project,
       scheme: scheme,
       destination: destination,
       configuration: configuration,
       resultPath: resultPath,
+      long: long,
+      diagnose: diagnose,
+      udid: simulator,
       env: env
     )
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
@@ -881,7 +1024,9 @@ public enum TestTools {
       warningCount: warningCount,
       analyzerWarningCount: analyzerWarningCount,
       destinationDeviceName: destinationDeviceName,
-      destinationOSVersion: destinationOSVersion
+      destinationOSVersion: destinationOSVersion,
+      hangDiagnosticPath: diagResult?.filePath,
+      hangDiagnosticSummary: diagResult?.summaryLine
     )
   }
 
@@ -896,7 +1041,7 @@ public enum TestTools {
     let destination = await AutoDetect.buildDestination(simulator)
 
     let start = CFAbsoluteTimeGetCurrent()
-    let (testResult, path) = try await runTests(
+    let (testResult, path, _) = try await runTests(
       project: project,
       scheme: scheme,
       destination: destination,
@@ -1117,6 +1262,8 @@ public enum TestTools {
     testplan: String? = nil,
     filter: String? = nil,
     coverage: Bool = false,
+    long: Bool = false,
+    diagnose: Bool = false,
     env: Environment = .live
   ) async throws -> TestExecution {
     let resolvedProject = try await env.session.resolveProject(project)
@@ -1132,10 +1279,11 @@ public enum TestTools {
     let destination = await AutoDetect.buildDestination(resolvedSimulator)
 
     let start = CFAbsoluteTimeGetCurrent()
-    let (buildResult, path) = try await runTests(
+    let (buildResult, path, diagResult) = try await runTests(
       project: resolvedProject, scheme: resolvedScheme, destination: destination,
       configuration: configuration, testplan: testplan,
       filter: resolvedFilter, coverage: coverage, resultPath: resultPath,
+      long: long, diagnose: diagnose, udid: resolvedSimulator,
       env: env
     )
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
@@ -1247,7 +1395,9 @@ public enum TestTools {
       screenshotPaths: screenshots,
       hasStructuredSummary: parsedSummary != nil,
       buildFailed: buildFailed,
-      buildDiagnostics: buildDiagnostics
+      buildDiagnostics: buildDiagnostics,
+      hangDiagnosticPath: diagResult?.filePath,
+      hangDiagnosticSummary: diagResult?.summaryLine
     )
   }
 
@@ -1268,7 +1418,7 @@ public enum TestTools {
       let resolvedSimulator = try await env.session.resolveSimulator(simulator)
       let destination = await AutoDetect.buildDestination(resolvedSimulator)
       let path = Self.xcresultPath(prefix: "fail")
-      let (_, p) = try await runTests(
+      let (_, p, _) = try await runTests(
         project: resolvedProject, scheme: resolvedScheme, destination: destination,
         configuration: "Debug", testplan: nil, filter: nil,
         coverage: false, resultPath: path,
@@ -1455,6 +1605,8 @@ public enum TestTools {
     testplan: String? = nil,
     filter: String? = nil,
     coverage: Bool = false,
+    long: Bool = false,
+    diagnose: Bool = false,
     env: Environment = .live
   ) async throws -> BuildAndTestResult {
     let resolvedProject = try await env.session.resolveProject(project)
@@ -1467,6 +1619,8 @@ public enum TestTools {
       scheme: resolvedScheme,
       simulator: resolvedSimulator,
       configuration: configuration,
+      long: long,
+      diagnose: diagnose,
       env: env
     )
 
@@ -1476,7 +1630,8 @@ public enum TestTools {
         buildSucceeded: false,
         buildElapsed: buildExecution.elapsed,
         buildDiagnostics: buildExecution.issues,
-        testResult: nil
+        testResult: nil,
+        hangDiagnosticPath: buildExecution.hangDiagnosticPath
       )
     }
 
@@ -1497,6 +1652,8 @@ public enum TestTools {
         testplan: testplan,
         filter: resolvedFilter,
         coverage: coverage,
+        long: long,
+        diagnose: diagnose,
         env: env
       )
 
@@ -1505,7 +1662,8 @@ public enum TestTools {
         buildSucceeded: true,
         buildElapsed: buildExecution.elapsed,
         buildDiagnostics: nil,
-        testResult: testExecution
+        testResult: testExecution,
+        hangDiagnosticPath: testExecution.hangDiagnosticPath
       )
     } catch {
       // Test infrastructure failure (simulator crash, timeout, xcresult parse error).
@@ -1540,7 +1698,8 @@ public enum TestTools {
           hasStructuredSummary: false,
           buildFailed: false,
           buildDiagnostics: nil
-        )
+        ),
+        hangDiagnosticPath: nil
       )
     }
   }
@@ -1773,12 +1932,15 @@ public enum TestTools {
           "Note: filter and testplan are both set. -only-testing overrides the testplan's test selection. Tests not matching the filter will be skipped regardless of testplan.\n"
       }
 
+      let long = input.long ?? false
+      let diagnose = input.diagnose ?? false
       let start = CFAbsoluteTimeGetCurrent()
       do {
-        let (buildResult, path) = try await runTests(
+        let (buildResult, path, diagResult) = try await runTests(
           project: project, scheme: scheme, destination: destination,
           configuration: configuration, testplan: testplan,
           filter: filter, coverage: coverage, resultPath: resultPath,
+          long: long, diagnose: diagnose, udid: simulator,
           env: env
         )
         let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
@@ -1822,7 +1984,7 @@ public enum TestTools {
             }
             return .fail(
               preamble + "TEST TARGET BUILD FAILED in \(elapsed)s"
-                + buildDiagOutput + "\nxcresult: \(path)")
+                + buildDiagOutput + "\nxcresult: \(path)" + formatDiagnosticSuffix(diagResult))
           }
 
           var summary = preamble + formatTestSummary(json, elapsed: elapsed, xcresultPath: path)
@@ -1847,6 +2009,7 @@ public enum TestTools {
             )
           }
 
+          summary += formatDiagnosticSuffix(diagResult)
           let hasFailures = (json["failedTests"] as? Int ?? 0) > 0
           // Filter matched nothing → treat as failure so agents don't assume tests passed
           let zeroMatchWithFilter = totalTests == 0 && input.filter != nil
@@ -1863,6 +2026,7 @@ public enum TestTools {
               simulator: input.simulator, testplan: testplan, env: env
             )
           }
+          msg += formatDiagnosticSuffix(diagResult)
           return .ok(msg)
         } else {
           // Build failed — try structured build diagnostics first
@@ -1895,7 +2059,8 @@ public enum TestTools {
           }
           return .fail(
             preamble
-              + "TEST TARGET BUILD FAILED in \(elapsed)s\n\(diagnosticOutput)\nxcresult: \(path)")
+              + "TEST TARGET BUILD FAILED in \(elapsed)s\n\(diagnosticOutput)\nxcresult: \(path)"
+              + formatDiagnosticSuffix(diagResult))
         }
       } catch {
         return .fail("Test error: \(error)")
@@ -1918,7 +2083,7 @@ public enum TestTools {
           let simulator = try await env.session.resolveSimulator(input.simulator)
           let destination = await AutoDetect.buildDestination(simulator)
           let path = Self.xcresultPath(prefix: "fail")
-          let (_, p) = try await runTests(
+          let (_, p, _) = try await runTests(
             project: project, scheme: scheme, destination: destination,
             configuration: "Debug", testplan: nil, filter: nil,
             coverage: false, resultPath: path,
@@ -2150,6 +2315,8 @@ public enum TestTools {
           testplan: input.testplan,
           filter: input.filter,
           coverage: input.coverage ?? false,
+          long: input.long ?? false,
+          diagnose: input.diagnose ?? false,
           env: env
         )
         // Generate zero-match hint before formatting (avoids Content extraction)
@@ -2240,6 +2407,9 @@ public enum TestTools {
           }
         }
       }
+      if let diagPath = result.hangDiagnosticPath {
+        lines.append("Diagnostic snapshot: \(diagPath)")
+      }
       return .fail(lines.joined(separator: "\n") + suffix)
     }
 
@@ -2283,6 +2453,9 @@ public enum TestTools {
         }
         lines.append("")
         lines.append("xcresult: \(test.xcresultPath)")
+        if let diagPath = result.hangDiagnosticPath {
+          lines.append("Diagnostic snapshot: \(diagPath)")
+        }
         return .fail(lines.joined(separator: "\n") + suffix)
       }
       lines.append("Build: OK (\(result.buildElapsed)s)")
@@ -2307,6 +2480,12 @@ public enum TestTools {
       }
       lines.append("")
       lines.append("xcresult: \(test.xcresultPath)")
+      if let diagPath = result.hangDiagnosticPath {
+        lines.append("Diagnostic snapshot: \(diagPath)")
+        if let summary = test.hangDiagnosticSummary {
+          lines.append("Summary: \(summary)")
+        }
+      }
       let text = lines.joined(separator: "\n") + suffix
       // Filter matched nothing → treat as failure so agents don't assume tests passed
       let zeroMatchWithFilter = test.totalTestCount == 0 && filter != nil

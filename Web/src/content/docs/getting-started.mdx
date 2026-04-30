@@ -90,6 +90,8 @@ If your first loop fails:
 2. Re-run `xcforge build --diagnose --json` for structured build errors.
 3. Use `xcforge diagnose start` then `xcforge diagnose inspect` for correlated evidence.
 
+If the run times out silently, xcforge captures a diagnostic snapshot automatically. The result message includes a `/tmp/xcf-diag-*.txt` path and a one-line summary of what xcodebuild was doing. For test suites that take longer than 3 minutes, pass `--long` to extend the timeout to 1800s.
+
 ## Return to Install Handoff
 
 - Ready to install now? [Go to install section](/#install-section)

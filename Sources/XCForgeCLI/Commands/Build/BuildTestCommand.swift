@@ -33,6 +33,12 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Enable code coverage collection.")
   var coverage = false
 
+  @Flag(help: "Use 1800s timeout instead of the default 180s (for long integration suites).")
+  var long = false
+
+  @Flag(help: "Capture a diagnostic snapshot even when the build/test succeeds.")
+  var diagnose = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -47,7 +53,9 @@ struct BuildTest: AsyncParsableCommand {
       configuration: configuration,
       testplan: testplan,
       filter: filter,
-      coverage: coverage
+      coverage: coverage,
+      long: long,
+      diagnose: diagnose
     )
 
     if useJSON {

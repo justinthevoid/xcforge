@@ -68,6 +68,32 @@ xcforge screenshot compare --name before-fix --json
 xcforge log stop --json
 ```
 
+## Pattern 5: Hang Diagnostics
+
+Use this when a build or test run is taking too long or timing out with no useful output.
+
+**Default timeout is 180s.** On timeout, xcforge writes a diagnostic snapshot to `/tmp/xcf-diag-<pid>-<ts>.txt` containing a CPU sample, open file handles, and booted simulator state.
+
+```bash
+# Default — times out at 180s and surfaces a snapshot path + summary
+xcforge build-test --json
+
+# Long suites that legitimately take more than 3 minutes
+xcforge build-test --long --json
+
+# Capture a snapshot even on success, for performance baselining
+xcforge build-test --diagnose --json
+```
+
+MCP equivalents:
+
+```json
+{ "long": true }
+{ "diagnose": true }
+```
+
+Reading the snapshot: the `=== sample ===` section shows what the compiler or test runner was doing. The inline `Summary:` line in the tool result is the top 5 call frames.
+
 ## MCP Equivalents
 
 Every workflow above has MCP equivalents. For parity details and caveats, see [CLI and MCP Parity](/docs/reference/cli-mcp-parity/).
