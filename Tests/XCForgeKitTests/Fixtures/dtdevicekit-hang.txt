@@ -1,0 +1,31 @@
+=== xcforge diagnostic snapshot ===
+Timestamp: 2026-04-30T10:00:00Z
+xcodebuild PID: 22222
+
+=== sample ===
+Process: xcodebuild [22222]
+Path: /usr/bin/xcodebuild
+Load Address: 0x100000000
+Identifier: xcodebuild
+
+Thread 0x1000 DispatchQueue "com.apple.main-thread"(serial)
+  0  libsystem_kernel.dylib              mach_msg_trap
+  1  CoreFoundation                       CFRunLoopRunSpecific
+  2  DVTFoundation                        DVTDeviceManager
+  3  DTDeviceKitBase                      DTDKRemoteDeviceConnection.startServiceBrowsers
+  4  xcodebuild                           main
+
+=== lsof ===
+COMMAND   PID USER   FD   TYPE DEVICE
+xcodebuild 22222 user  cwd    DIR    1,4
+
+=== simctl list devices booted ===
+-- iOS 26.0 --
+    iPhone 17 (BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB) (Booted)
+
+=== child process samples ===
+=== child 22223 (idb_companion) ===
+Process: idb_companion [22223]
+Thread 0x3000
+  0  libsystem_kernel.dylib  mach_msg_trap
+  1  idb_companion            waitForDevice

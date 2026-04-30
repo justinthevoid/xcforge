@@ -254,6 +254,7 @@ public enum TestTools {
     var coverage: Bool?
     var long: Bool?
     var diagnose: Bool?
+    var simRecovery: String?
   }
 
   struct TestFailuresInput: Decodable {
@@ -290,6 +291,7 @@ public enum TestTools {
     var coverage: Bool?
     var long: Bool?
     var diagnose: Bool?
+    var simRecovery: String?
   }
 
   struct ListTestsInput: Decodable {
@@ -308,6 +310,12 @@ public enum TestTools {
     public let buildDiagnostics: [BuildIssueObservation]?
     public let testResult: TestExecution?
     public let hangDiagnosticPath: String?
+    /// Number of auto-recovery attempts made (0 when no recovery was needed or triggered).
+    public let recoveryAttempts: Int
+    /// Human-readable reason the last recovery fired (e.g. "sim_unhealthy", "swbbuildservice_deadlock").
+    public let recoveryReason: String?
+    /// Non-nil when recovery was attempted but ultimately failed.
+    public let recoveryFailureReason: String?
 
     init(
       phase: String,
@@ -315,7 +323,10 @@ public enum TestTools {
       buildElapsed: String,
       buildDiagnostics: [BuildIssueObservation]?,
       testResult: TestExecution?,
-      hangDiagnosticPath: String? = nil
+      hangDiagnosticPath: String? = nil,
+      recoveryAttempts: Int = 0,
+      recoveryReason: String? = nil,
+      recoveryFailureReason: String? = nil
     ) {
       self.phase = phase
       self.buildSucceeded = buildSucceeded
@@ -323,6 +334,9 @@ public enum TestTools {
       self.buildDiagnostics = buildDiagnostics
       self.testResult = testResult
       self.hangDiagnosticPath = hangDiagnosticPath
+      self.recoveryAttempts = recoveryAttempts
+      self.recoveryReason = recoveryReason
+      self.recoveryFailureReason = recoveryFailureReason
     }
   }
 
@@ -395,6 +409,13 @@ public enum TestTools {
             "description": .string(
               "Capture a diagnostic snapshot on completion even without a hang, for baseline inspection."
             ),
+          ]),
+          "simRecovery": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Simulator recovery mode: 'off' (default) skips probe; 'auto' probes bootstatus before run and erases+reboots if unhealthy."
+            ),
+            "enum": .array([.string("auto"), .string("off")]),
           ]),
         ]),
       ])
@@ -562,6 +583,14 @@ public enum TestTools {
             "description": .string(
               "Capture a diagnostic snapshot on completion even without a hang, for baseline inspection."
             ),
+          ]),
+          "simRecovery": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Simulator recovery mode: 'auto' (default) probes bootstatus before run and erases+reboots if unhealthy; 'off' skips probe."
+                + " Result includes recoveryAttempts: Int and recoveryReason: String? fields."
+            ),
+            "enum": .array([.string("auto"), .string("off")]),
           ]),
         ]),
       ])
@@ -892,6 +921,75 @@ public enum TestTools {
     let timeout = resolveTestTimeout(long: long)
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
+    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
+    watchdog.cancel()
+    let diagResult = await resolvedDiagResult(
+      result: result, diagnose: diagnose, watchdog: watchdog,
+      udid: udid, snapshotPath: snapshotPath, env: env)
+    return (result, resultPath, diagResult)
+  }
+
+  /// Run `xcodebuild build-for-testing` and return the xcresult path plus any diagnostic snapshot.
+  static func runBuildForTesting(
+    project: String, scheme: String, destination: String,
+    configuration: String, coverage: Bool, resultPath: String,
+    long: Bool = false, diagnose: Bool = false, udid: String? = nil,
+    env: Environment
+  ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
+    _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
+
+    var args = xcodebuildBaseArgs(
+      project: project, scheme: scheme,
+      destination: destination, configuration: configuration
+    )
+    args += ["-resultBundlePath", resultPath]
+    if coverage {
+      args += ["-enableCodeCoverage", "YES"]
+    }
+    args += ["build-for-testing"]
+
+    let timeout = resolveTestTimeout(long: long)
+    let snapshotPath = diagnosticSnapshotPath()
+    let watchdog = HangWatchdog(
+      udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
+    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
+    watchdog.cancel()
+    let diagResult = await resolvedDiagResult(
+      result: result, diagnose: diagnose, watchdog: watchdog,
+      udid: udid, snapshotPath: snapshotPath, env: env)
+    return (result, resultPath, diagResult)
+  }
+
+  /// Run `xcodebuild test-without-building` and return the xcresult path plus any diagnostic snapshot.
+  static func runTestWithoutBuilding(
+    project: String, scheme: String, destination: String,
+    configuration: String, testplan: String?, filter: String?,
+    coverage: Bool, resultPath: String,
+    long: Bool = false, diagnose: Bool = false, udid: String? = nil,
+    env: Environment
+  ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
+    _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
+
+    var args = xcodebuildBaseArgs(
+      project: project, scheme: scheme,
+      destination: destination, configuration: configuration
+    )
+    args += ["-resultBundlePath", resultPath]
+    if coverage {
+      args += ["-enableCodeCoverage", "YES"]
+    }
+    if let plan = testplan {
+      args += ["-testPlan", plan]
+    }
+    if let f = filter {
+      args += ["-only-testing", f]
+    }
+    args += ["test-without-building"]
+
+    let timeout = resolveTestTimeout(long: long)
+    let snapshotPath = diagnosticSnapshotPath()
+    let watchdog = HangWatchdog(
+      udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
     let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
     watchdog.cancel()
     let diagResult = await resolvedDiagResult(
@@ -1264,6 +1362,7 @@ public enum TestTools {
     coverage: Bool = false,
     long: Bool = false,
     diagnose: Bool = false,
+    simRecovery: SimRecoveryMode = .off,
     env: Environment = .live
   ) async throws -> TestExecution {
     let resolvedProject = try await env.session.resolveProject(project)
@@ -1275,15 +1374,107 @@ public enum TestTools {
     } else {
       resolvedFilter = nil
     }
-    let resultPath = xcresultPath(prefix: "test")
-    let destination = await AutoDetect.buildDestination(resolvedSimulator)
 
+    // Resolve simulator to UDID for precise id= destination
+    let udidForDest: String
+    if let resolved = try? await AutoDetect.resolveSimulatorNameAndUDID(resolvedSimulator) {
+      udidForDest = resolved.udid
+    } else {
+      udidForDest = resolvedSimulator
+    }
+
+    // Run sim recovery if requested
+    if simRecovery == .auto {
+      let outcome = await SimulatorRecovery.probeAndRecover(udid: udidForDest, env: env)
+      if outcome.fired {
+        Log.warn("Simulator recovery fired: \(outcome.reason ?? "unknown")")
+        if let failure = outcome.failureReason {
+          Log.warn("Simulator recovery failed: \(failure)")
+        }
+      }
+    }
+
+    let buildResultPath = xcresultPath(prefix: "build-for-testing")
+    let testResultPath = xcresultPath(prefix: "test")
+    let destination = await AutoDetect.buildDestination(udidForDest)
+
+    // Phase 1: build-for-testing
     let start = CFAbsoluteTimeGetCurrent()
-    let (buildResult, path, diagResult) = try await runTests(
+    let (buildShellResult, _, buildDiagResult) = try await runBuildForTesting(
+      project: resolvedProject, scheme: resolvedScheme, destination: destination,
+      configuration: configuration, coverage: coverage, resultPath: buildResultPath,
+      long: long, diagnose: diagnose, udid: udidForDest, env: env
+    )
+
+    // If build failed, surface it as a test failure
+    if !buildShellResult.succeeded && buildShellResult.exitCode != -1 {
+      let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
+      var buildDiagnostics: [BuildIssueObservation]?
+      if let buildJSON = await parseBuildResults(buildResultPath, env: env),
+        let data = buildJSON.data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      {
+        let parsed = parseBuildIssues(json)
+        if !parsed.issues.isEmpty { buildDiagnostics = parsed.issues }
+      }
+      if buildDiagnostics == nil {
+        buildDiagnostics = fallbackBuildIssues(stderr: buildShellResult.stderr)
+        if buildDiagnostics?.isEmpty == true { buildDiagnostics = nil }
+      }
+      let failures: [TestFailureObservation]
+      if let diag = buildDiagnostics {
+        failures = diag.filter { $0.severity == .error }.map {
+          TestFailureObservation(
+            testName: "xcodebuild",
+            testIdentifier: "xcodebuild",
+            message: $0.message,
+            source: "build-for-testing.stderr"
+          )
+        }
+      } else {
+        let tail = String(buildShellResult.stderr.suffix(2000)).trimmingCharacters(
+          in: .whitespacesAndNewlines)
+        failures =
+          tail.isEmpty
+          ? []
+          : [
+            TestFailureObservation(
+              testName: "xcodebuild",
+              testIdentifier: "xcodebuild",
+              message: tail,
+              source: "build-for-testing.stderr"
+            )
+          ]
+      }
+      return TestExecution(
+        succeeded: false,
+        elapsed: elapsed,
+        xcresultPath: buildResultPath,
+        scheme: resolvedScheme,
+        simulator: resolvedSimulator,
+        totalTestCount: max(failures.count, 1),
+        passedTestCount: 0,
+        failedTestCount: failures.count,
+        skippedTestCount: 0,
+        expectedFailureCount: 0,
+        failures: failures,
+        deviceName: nil,
+        osVersion: nil,
+        screenshotPaths: [],
+        hasStructuredSummary: false,
+        buildFailed: true,
+        buildDiagnostics: buildDiagnostics,
+        hangDiagnosticPath: buildDiagResult?.filePath,
+        hangDiagnosticSummary: buildDiagResult?.summaryLine
+      )
+    }
+
+    // Phase 2: test-without-building
+    let (testShellResult, path, diagResult) = try await runTestWithoutBuilding(
       project: resolvedProject, scheme: resolvedScheme, destination: destination,
       configuration: configuration, testplan: testplan,
-      filter: resolvedFilter, coverage: coverage, resultPath: resultPath,
-      long: long, diagnose: diagnose, udid: resolvedSimulator,
+      filter: resolvedFilter, coverage: coverage, resultPath: testResultPath,
+      long: long, diagnose: diagnose, udid: udidForDest,
       env: env
     )
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
@@ -1317,9 +1508,9 @@ public enum TestTools {
       screenshots = attachments.map { ScreenshotAttachment(testName: $0.test, path: $0.path) }
     }
 
-    // Parse build diagnostics from xcresult when the build failed
+    // Parse build diagnostics from xcresult when the test run failed
     var buildDiagnostics: [BuildIssueObservation]?
-    let buildFailed = !buildResult.succeeded
+    let buildFailed = !testShellResult.succeeded
     if buildFailed {
       if let buildJSON = await parseBuildResults(path, env: env),
         let data = buildJSON.data(using: .utf8),
@@ -1330,21 +1521,19 @@ public enum TestTools {
           buildDiagnostics = parsed.issues
         }
       }
-      // If xcresulttool didn't yield diagnostics, fall back to stderr
       if buildDiagnostics == nil {
-        buildDiagnostics = fallbackBuildIssues(stderr: buildResult.stderr)
+        buildDiagnostics = fallbackBuildIssues(stderr: testShellResult.stderr)
         if buildDiagnostics?.isEmpty == true { buildDiagnostics = nil }
       }
     }
 
     // Fallback error extraction for test failures list
     if buildFailed && failures.isEmpty {
-      let errorLines = buildResult.stderr.split(separator: "\n")
+      let errorLines = testShellResult.stderr.split(separator: "\n")
         .filter { $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED") }
         .prefix(20)
       if errorLines.isEmpty {
-        // No parseable errors — surface the stderr tail so the user sees something
-        let tail = String(buildResult.stderr.suffix(2000)).trimmingCharacters(
+        let tail = String(testShellResult.stderr.suffix(2000)).trimmingCharacters(
           in: .whitespacesAndNewlines)
         if !tail.isEmpty {
           failures = [
@@ -1369,7 +1558,7 @@ public enum TestTools {
     }
 
     let totalTestCount =
-      parsedSummary?.totalTestCount ?? max(failures.count, buildResult.succeeded ? 0 : 1)
+      parsedSummary?.totalTestCount ?? max(failures.count, testShellResult.succeeded ? 0 : 1)
     let failedTestCount = parsedSummary?.failedTestCount ?? failures.count
     let passedTestCount = parsedSummary?.passedTestCount ?? 0
     let skippedTestCount = parsedSummary?.skippedTestCount ?? 0
@@ -1379,7 +1568,7 @@ public enum TestTools {
     let zeroMatchWithFilter = totalTestCount == 0 && filter != nil
 
     return TestExecution(
-      succeeded: buildResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter,
+      succeeded: testShellResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter,
       elapsed: elapsed,
       xcresultPath: path,
       scheme: resolvedScheme,
@@ -1607,35 +1796,39 @@ public enum TestTools {
     coverage: Bool = false,
     long: Bool = false,
     diagnose: Bool = false,
+    simRecovery: SimRecoveryMode = .auto,
     env: Environment = .live
   ) async throws -> BuildAndTestResult {
     let resolvedProject = try await env.session.resolveProject(project)
     let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
     let resolvedSimulator = try await env.session.resolveSimulator(simulator)
 
-    // Phase 1: Build with diagnostics
-    let buildExecution = try await executeBuildDiagnosis(
-      project: resolvedProject,
-      scheme: resolvedScheme,
-      simulator: resolvedSimulator,
-      configuration: configuration,
-      long: long,
-      diagnose: diagnose,
-      env: env
-    )
-
-    if !buildExecution.succeeded {
-      return BuildAndTestResult(
-        phase: "build",
-        buildSucceeded: false,
-        buildElapsed: buildExecution.elapsed,
-        buildDiagnostics: buildExecution.issues,
-        testResult: nil,
-        hangDiagnosticPath: buildExecution.hangDiagnosticPath
-      )
+    // Resolve simulator to UDID for precise id= destination
+    let udidForDest: String
+    if let resolved = try? await AutoDetect.resolveSimulatorNameAndUDID(resolvedSimulator) {
+      udidForDest = resolved.udid
+    } else {
+      udidForDest = resolvedSimulator
     }
 
-    // Phase 2: Run tests
+    var recoveryAttempts = 0
+    var recoveryReason: String?
+    var recoveryFailureReason: String?
+
+    // Pre-build simulator health probe (only when auto)
+    if simRecovery == .auto {
+      let outcome = await SimulatorRecovery.probeAndRecover(udid: udidForDest, env: env)
+      if outcome.fired {
+        recoveryAttempts += 1
+        recoveryReason = outcome.reason
+        recoveryFailureReason = outcome.failureReason
+        Log.warn("Pre-build sim recovery fired: \(outcome.reason ?? "unknown")")
+        if let failure = outcome.failureReason {
+          Log.warn("Sim recovery failed: \(failure)")
+        }
+      }
+    }
+
     let resolvedFilter: String?
     if let filter {
       resolvedFilter = await resolveFilter(filter, project: resolvedProject, env: env)
@@ -1643,35 +1836,110 @@ public enum TestTools {
       resolvedFilter = nil
     }
 
-    do {
-      let testExecution = try await executeTest(
-        project: resolvedProject,
-        scheme: resolvedScheme,
-        simulator: resolvedSimulator,
-        configuration: configuration,
-        testplan: testplan,
-        filter: resolvedFilter,
-        coverage: coverage,
-        long: long,
-        diagnose: diagnose,
-        env: env
+    let destination = await AutoDetect.buildDestination(udidForDest)
+
+    // --- Inner helper: run the build-for-testing phase ---
+    func runBuildPhase(diagnose: Bool) async throws -> (
+      ShellResult, String, DiagnosticSnapshot.Result?
+    ) {
+      let resultPath = xcresultPath(prefix: "build-for-testing")
+      return try await runBuildForTesting(
+        project: resolvedProject, scheme: resolvedScheme, destination: destination,
+        configuration: configuration, coverage: coverage, resultPath: resultPath,
+        long: long, diagnose: diagnose, udid: udidForDest, env: env
       )
+    }
+
+    // --- Inner helper: run the test-without-building phase ---
+    func runTestPhase(diagnose: Bool) async throws -> (
+      ShellResult, String, DiagnosticSnapshot.Result?
+    ) {
+      let resultPath = xcresultPath(prefix: "test")
+      return try await runTestWithoutBuilding(
+        project: resolvedProject, scheme: resolvedScheme, destination: destination,
+        configuration: configuration, testplan: testplan, filter: resolvedFilter,
+        coverage: coverage, resultPath: resultPath,
+        long: long, diagnose: diagnose, udid: udidForDest, env: env
+      )
+    }
+
+    // --- Build phase ---
+    var buildStart = CFAbsoluteTimeGetCurrent()
+    var (buildShellResult, buildResultPath, buildDiagResult) = try await runBuildPhase(
+      diagnose: diagnose)
+    var buildElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - buildStart)
+
+    // Auto-retry on deadlock: only when watchdog fired (diagResult != nil) AND shell timeout (-1)
+    if buildDiagResult != nil && buildShellResult.exitCode == -1 && recoveryAttempts < 1 {
+      let buildVerdict = buildDiagResult.map {
+        DiagnosticSnapshot.classifyVerdict(snapshotPath: $0.filePath)
+      }
+      let verdict = buildVerdict == .timeout ? nil : buildVerdict
+      if verdict != nil {
+        // Kill the stuck xcodebuild tree by PID before retrying
+        let xcodebuildPid = extractXcodebuildPid(from: buildDiagResult)
+        await killXcodebuildTree(pid: xcodebuildPid, env: env)
+
+        // Run sim recovery before retry
+        let retryOutcome = await SimulatorRecovery.probeAndRecover(udid: udidForDest, env: env)
+        recoveryAttempts += 1
+        recoveryReason = verdict?.rawValue ?? retryOutcome.reason
+        recoveryFailureReason = retryOutcome.failureReason
+
+        buildStart = CFAbsoluteTimeGetCurrent()
+        let retried = try await runBuildPhase(diagnose: true)
+        buildShellResult = retried.0
+        buildResultPath = retried.1
+        buildDiagResult = retried.2
+        buildElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - buildStart)
+      }
+    }
+
+    // Build failure (real, not a timeout hang)
+    if !buildShellResult.succeeded {
+      var issues: [BuildIssueObservation] = []
+
+      if let buildJSON = await parseBuildResults(buildResultPath, env: env),
+        let data = buildJSON.data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      {
+        let parsed = parseBuildIssues(json)
+        issues = parsed.issues
+      }
+
+      if issues.isEmpty {
+        issues = fallbackBuildIssues(stderr: buildShellResult.stderr)
+      }
 
       return BuildAndTestResult(
-        phase: "test",
-        buildSucceeded: true,
-        buildElapsed: buildExecution.elapsed,
-        buildDiagnostics: nil,
-        testResult: testExecution,
-        hangDiagnosticPath: testExecution.hangDiagnosticPath
+        phase: "build",
+        buildSucceeded: false,
+        buildElapsed: buildElapsed,
+        buildDiagnostics: issues.isEmpty ? nil : issues,
+        testResult: nil,
+        hangDiagnosticPath: buildDiagResult?.filePath,
+        recoveryAttempts: recoveryAttempts,
+        recoveryReason: recoveryReason,
+        recoveryFailureReason: recoveryFailureReason
       )
+    }
+
+    // --- Test phase ---
+    var testStart = CFAbsoluteTimeGetCurrent()
+    var (testShellResult, testResultPath, testDiagResult):
+      (
+        ShellResult, String, DiagnosticSnapshot.Result?
+      )
+    do {
+      let result = try await runTestPhase(diagnose: diagnose)
+      testShellResult = result.0
+      testResultPath = result.1
+      testDiagResult = result.2
     } catch {
-      // Test infrastructure failure (simulator crash, timeout, xcresult parse error).
-      // Preserve the build success signal rather than losing it in a thrown error.
       return BuildAndTestResult(
         phase: "test",
         buildSucceeded: true,
-        buildElapsed: buildExecution.elapsed,
+        buildElapsed: buildElapsed,
         buildDiagnostics: nil,
         testResult: TestExecution(
           succeeded: false,
@@ -1699,9 +1967,240 @@ public enum TestTools {
           buildFailed: false,
           buildDiagnostics: nil
         ),
-        hangDiagnosticPath: nil
+        hangDiagnosticPath: nil,
+        recoveryAttempts: recoveryAttempts,
+        recoveryReason: recoveryReason,
+        recoveryFailureReason: recoveryFailureReason
       )
     }
+
+    // Auto-retry on test-phase deadlock: only when watchdog fired AND shell timeout (-1) AND no prior retry
+    if testDiagResult != nil && testShellResult.exitCode == -1 && recoveryAttempts < 1 {
+      let testVerdict = testDiagResult.map {
+        DiagnosticSnapshot.classifyVerdict(snapshotPath: $0.filePath)
+      }
+      let verdict = testVerdict == .timeout ? nil : testVerdict
+      if verdict != nil {
+        let xcodebuildPid = extractXcodebuildPid(from: testDiagResult)
+        await killXcodebuildTree(pid: xcodebuildPid, env: env)
+
+        let retryOutcome = await SimulatorRecovery.probeAndRecover(udid: udidForDest, env: env)
+        if recoveryReason == nil { recoveryReason = verdict?.rawValue ?? retryOutcome.reason }
+        if recoveryFailureReason == nil { recoveryFailureReason = retryOutcome.failureReason }
+        recoveryAttempts += 1
+
+        testStart = CFAbsoluteTimeGetCurrent()
+        if let retried = try? await runTestPhase(diagnose: true) {
+          testShellResult = retried.0
+          testResultPath = retried.1
+          testDiagResult = retried.2
+        }
+      }
+    }
+
+    let testElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - testStart)
+
+    do {
+      let testExecution = try await buildTestExecutionResult(
+        shellResult: testShellResult,
+        resultPath: testResultPath,
+        diagResult: testDiagResult,
+        resolvedScheme: resolvedScheme,
+        resolvedSimulator: resolvedSimulator,
+        elapsed: testElapsed,
+        filter: filter,
+        env: env
+      )
+      return BuildAndTestResult(
+        phase: "test",
+        buildSucceeded: true,
+        buildElapsed: buildElapsed,
+        buildDiagnostics: nil,
+        testResult: testExecution,
+        hangDiagnosticPath: testExecution.hangDiagnosticPath,
+        recoveryAttempts: recoveryAttempts,
+        recoveryReason: recoveryReason,
+        recoveryFailureReason: recoveryFailureReason
+      )
+    } catch {
+      return BuildAndTestResult(
+        phase: "test",
+        buildSucceeded: true,
+        buildElapsed: buildElapsed,
+        buildDiagnostics: nil,
+        testResult: TestExecution(
+          succeeded: false,
+          elapsed: testElapsed,
+          xcresultPath: testResultPath,
+          scheme: resolvedScheme,
+          simulator: resolvedSimulator,
+          totalTestCount: 0,
+          passedTestCount: 0,
+          failedTestCount: 0,
+          skippedTestCount: 0,
+          expectedFailureCount: 0,
+          failures: [
+            TestFailureObservation(
+              testName: "test_infrastructure",
+              testIdentifier: "test_infrastructure",
+              message: "Test result parsing failed: \(error)",
+              source: "xcforge"
+            )
+          ],
+          deviceName: nil,
+          osVersion: nil,
+          screenshotPaths: [],
+          hasStructuredSummary: false,
+          buildFailed: false,
+          buildDiagnostics: nil,
+          hangDiagnosticPath: testDiagResult?.filePath,
+          hangDiagnosticSummary: testDiagResult?.summaryLine
+        ),
+        hangDiagnosticPath: testDiagResult?.filePath,
+        recoveryAttempts: recoveryAttempts,
+        recoveryReason: recoveryReason,
+        recoveryFailureReason: recoveryFailureReason
+      )
+    }
+  }
+
+  /// Extract the xcodebuild PID from a diagnostic snapshot result (reads the snapshot file).
+  private static func extractXcodebuildPid(from diagResult: DiagnosticSnapshot.Result?) -> String? {
+    guard let diagResult else { return nil }
+    let content = (try? String(contentsOfFile: diagResult.filePath, encoding: .utf8)) ?? ""
+    for line in content.split(separator: "\n") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("xcodebuild PID: ") {
+        let pid = trimmed.dropFirst("xcodebuild PID: ".count)
+        return pid == "not found" ? nil : String(pid)
+      }
+    }
+    return nil
+  }
+
+  /// Kill the xcodebuild process tree by PID.
+  private static func killXcodebuildTree(pid: String?, env: Environment) async {
+    if let pid {
+      _ = try? await env.shell.run("/bin/kill", arguments: ["-9", pid], timeout: 5)
+      _ = try? await env.shell.run("/usr/bin/pkill", arguments: ["-P", pid], timeout: 5)
+    } else {
+      // Fallback: kill exact process name match (safe, does not match substrings)
+      _ = try? await env.shell.run(
+        "/usr/bin/pkill", arguments: ["-x", "xcodebuild"], timeout: 5)
+    }
+  }
+
+  /// Parse xcresult and build a `TestExecution` from shell result + parsed data.
+  private static func buildTestExecutionResult(
+    shellResult: ShellResult,
+    resultPath: String,
+    diagResult: DiagnosticSnapshot.Result?,
+    resolvedScheme: String,
+    resolvedSimulator: String,
+    elapsed: String,
+    filter: String?,
+    env: Environment
+  ) async throws -> TestExecution {
+    var parsedSummary: ParsedTestSummary?
+    if let summaryJSON = await parseTestSummary(resultPath, env: env),
+      let data = summaryJSON.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    {
+      parsedSummary = Self.parseTestSummary(json)
+    }
+
+    var failures: [TestFailureObservation] = []
+    if let detailsJSON = await parseTestDetails(resultPath, env: env),
+      let data = detailsJSON.data(using: .utf8),
+      let parsedFailures = parseTestFailures(data)
+    {
+      failures = parsedFailures
+    }
+    if failures.isEmpty {
+      failures = parsedSummary?.failures ?? []
+    }
+
+    let hasFailures = (parsedSummary?.failedTestCount ?? failures.count) > 0
+    var screenshots: [ScreenshotAttachment] = []
+    if hasFailures {
+      let attachments = await exportFailureAttachments(resultPath, env: env)
+      screenshots = attachments.map { ScreenshotAttachment(testName: $0.test, path: $0.path) }
+    }
+
+    var buildDiagnostics: [BuildIssueObservation]?
+    let buildFailed = !shellResult.succeeded
+    if buildFailed {
+      if let buildJSON = await parseBuildResults(resultPath, env: env),
+        let data = buildJSON.data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      {
+        let parsed = parseBuildIssues(json)
+        if !parsed.issues.isEmpty { buildDiagnostics = parsed.issues }
+      }
+      if buildDiagnostics == nil {
+        buildDiagnostics = fallbackBuildIssues(stderr: shellResult.stderr)
+        if buildDiagnostics?.isEmpty == true { buildDiagnostics = nil }
+      }
+    }
+
+    if buildFailed && failures.isEmpty {
+      let errorLines = shellResult.stderr.split(separator: "\n")
+        .filter { $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED") }
+        .prefix(20)
+      if errorLines.isEmpty {
+        let tail = String(shellResult.stderr.suffix(2000)).trimmingCharacters(
+          in: .whitespacesAndNewlines)
+        if !tail.isEmpty {
+          failures = [
+            TestFailureObservation(
+              testName: "xcodebuild",
+              testIdentifier: "xcodebuild",
+              message: tail,
+              source: "stderr"
+            )
+          ]
+        }
+      } else {
+        failures = errorLines.map {
+          TestFailureObservation(
+            testName: "xcodebuild",
+            testIdentifier: "xcodebuild",
+            message: String($0),
+            source: "stderr"
+          )
+        }
+      }
+    }
+
+    let totalTestCount =
+      parsedSummary?.totalTestCount ?? max(failures.count, shellResult.succeeded ? 0 : 1)
+    let failedTestCount = parsedSummary?.failedTestCount ?? failures.count
+    let passedTestCount = parsedSummary?.passedTestCount ?? 0
+    let skippedTestCount = parsedSummary?.skippedTestCount ?? 0
+    let expectedFailureCount = parsedSummary?.expectedFailureCount ?? 0
+    let zeroMatchWithFilter = totalTestCount == 0 && filter != nil
+
+    return TestExecution(
+      succeeded: shellResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter,
+      elapsed: elapsed,
+      xcresultPath: resultPath,
+      scheme: resolvedScheme,
+      simulator: resolvedSimulator,
+      totalTestCount: totalTestCount,
+      passedTestCount: passedTestCount,
+      failedTestCount: failedTestCount,
+      skippedTestCount: skippedTestCount,
+      expectedFailureCount: expectedFailureCount,
+      failures: failures,
+      deviceName: parsedSummary?.destinationDeviceName,
+      osVersion: parsedSummary?.destinationOSVersion,
+      screenshotPaths: screenshots,
+      hasStructuredSummary: parsedSummary != nil,
+      buildFailed: buildFailed,
+      buildDiagnostics: buildDiagnostics,
+      hangDiagnosticPath: diagResult?.filePath,
+      hangDiagnosticSummary: diagResult?.summaryLine
+    )
   }
 
   // MARK: - list_tests Execution
@@ -1897,30 +2396,16 @@ public enum TestTools {
     switch ToolInput.decode(TestSimInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
-      let project: String
-      let scheme: String
-      let simulator: String
-      do {
-        project = try await env.session.resolveProject(input.project)
-        scheme = try await env.session.resolveScheme(input.scheme, project: project)
-        simulator = try await env.session.resolveSimulator(input.simulator)
-      } catch {
-        return .fail("\(error)")
-      }
-
-      let configuration = input.configuration ?? "Debug"
-      let testplan = input.testplan
-      let filter: String?
-      if let rawFilter = input.filter {
-        filter = await resolveFilter(rawFilter, project: project, env: env)
+      // Resolve simRecovery mode (default: off for test_sim)
+      let recoveryMode: SimRecoveryMode
+      if let raw = input.simRecovery, let mode = SimRecoveryMode(rawValue: raw) {
+        recoveryMode = mode
       } else {
-        filter = nil
+        recoveryMode = .off
       }
-      let coverage = input.coverage ?? false
-      let resultPath = xcresultPath(prefix: "test")
-      let destination = await AutoDetect.buildDestination(simulator)
 
       // Build preamble: testplan visibility + filter/testplan conflict warning
+      let testplan = input.testplan
       var preamble = ""
       if let tp = testplan {
         preamble += "Testplan: \(tp)\n"
@@ -1929,139 +2414,104 @@ public enum TestTools {
       }
       if testplan != nil && input.filter != nil {
         preamble +=
-          "Note: filter and testplan are both set. -only-testing overrides the testplan's test selection. Tests not matching the filter will be skipped regardless of testplan.\n"
+          "Note: filter and testplan are both set. -only-testing overrides the testplan's test selection."
+          + " Tests not matching the filter will be skipped regardless of testplan.\n"
       }
 
-      let long = input.long ?? false
-      let diagnose = input.diagnose ?? false
-      let start = CFAbsoluteTimeGetCurrent()
       do {
-        let (buildResult, path, diagResult) = try await runTests(
-          project: project, scheme: scheme, destination: destination,
-          configuration: configuration, testplan: testplan,
-          filter: filter, coverage: coverage, resultPath: resultPath,
-          long: long, diagnose: diagnose, udid: simulator,
+        let execution = try await executeTest(
+          project: input.project,
+          scheme: input.scheme,
+          simulator: input.simulator,
+          configuration: input.configuration ?? "Debug",
+          testplan: testplan,
+          filter: input.filter,
+          coverage: input.coverage ?? false,
+          long: input.long ?? false,
+          diagnose: input.diagnose ?? false,
+          simRecovery: recoveryMode,
           env: env
         )
-        let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
 
-        // Parse xcresult summary
-        if let summaryJSON = await parseTestSummary(path, env: env),
-          let data = summaryJSON.data(using: .utf8),
-          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        {
-          // Check for test-target build failure: xcodebuild failed but xcresult has a summary
-          let totalTests = json["totalTestCount"] as? Int ?? 0
-          if !buildResult.succeeded && totalTests == 0 {
-            // Build failed with zero tests — surface build diagnostics
-            var buildDiagOutput = ""
-            if let buildJSON = await parseBuildResults(path, env: env),
-              let bData = buildJSON.data(using: .utf8),
-              let bJson = try? JSONSerialization.jsonObject(with: bData) as? [String: Any]
-            {
-              let parsed = parseBuildIssues(bJson)
-              let errors = parsed.issues.filter { $0.severity == .error }
-              if !errors.isEmpty {
-                buildDiagOutput =
-                  "\nBuild errors (\(errors.count)):\n"
+        // Format result
+        var lines = [preamble.trimmingCharacters(in: .newlines)]
+
+        if execution.buildFailed {
+          lines.append("TEST TARGET BUILD FAILED in \(execution.elapsed)s")
+          if let diagnostics = execution.buildDiagnostics, !diagnostics.isEmpty {
+            let errors = diagnostics.filter { $0.severity == .error }
+            if !errors.isEmpty {
+              lines.append(
+                "Build errors (\(errors.count)):\n"
                   + errors.map { issue in
                     if let loc = issue.location {
                       return "  \(loc.filePath):\(loc.line ?? 0): \(issue.message)"
                     }
                     return "  \(issue.message)"
-                  }.joined(separator: "\n")
-              }
+                  }.joined(separator: "\n"))
             }
-            if buildDiagOutput.isEmpty {
-              let errorLines = buildResult.stderr.split(separator: "\n")
-                .filter {
-                  $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED")
-                }
-                .prefix(20)
-              if !errorLines.isEmpty {
-                buildDiagOutput = "\n" + errorLines.joined(separator: "\n")
-              }
-            }
-            return .fail(
-              preamble + "TEST TARGET BUILD FAILED in \(elapsed)s"
-                + buildDiagOutput + "\nxcresult: \(path)" + formatDiagnosticSuffix(diagResult))
+          } else if !execution.failures.isEmpty {
+            lines.append(execution.failures.map { "  \($0.message)" }.joined(separator: "\n"))
           }
-
-          var summary = preamble + formatTestSummary(json, elapsed: elapsed, xcresultPath: path)
-
-          // If tests failed, export failure screenshots
-          let result = (json["result"] as? String) ?? ""
-          if result == "Failed" {
-            let attachments = await exportFailureAttachments(path, env: env)
-            if !attachments.isEmpty {
-              summary += "\n\nFailure screenshots (\(attachments.count)):"
-              for att in attachments {
-                summary += "\n  \(att.path)"
-              }
+          lines.append("xcresult: \(execution.xcresultPath)")
+          if let diagPath = execution.hangDiagnosticPath {
+            lines.append("Diagnostic snapshot: \(diagPath)")
+            if let summary = execution.hangDiagnosticSummary {
+              lines.append("Summary: \(summary)")
             }
           }
-
-          // Zero-match diagnostic: if filter was set and 0 tests ran
-          if totalTests == 0, let f = input.filter {
-            summary += await zeroMatchHint(
-              filter: f, project: input.project, scheme: input.scheme,
-              simulator: input.simulator, testplan: testplan, env: env
-            )
-          }
-
-          summary += formatDiagnosticSuffix(diagResult)
-          let hasFailures = (json["failedTests"] as? Int ?? 0) > 0
-          // Filter matched nothing → treat as failure so agents don't assume tests passed
-          let zeroMatchWithFilter = totalTests == 0 && input.filter != nil
-          return (hasFailures || zeroMatchWithFilter) ? .fail(summary) : .ok(summary)
+          return .fail(lines.joined(separator: "\n"))
         }
 
-        // Fallback: no xcresult test summary parseable
-        if buildResult.succeeded {
-          var msg =
-            preamble + "Tests passed in \(elapsed)s (xcresult parse failed)\nxcresult: \(path)"
-          if let f = input.filter {
-            msg += await zeroMatchHint(
-              filter: f, project: input.project, scheme: input.scheme,
-              simulator: input.simulator, testplan: testplan, env: env
-            )
-          }
-          msg += formatDiagnosticSuffix(diagResult)
-          return .ok(msg)
+        let icon = execution.succeeded ? "PASSED" : "FAILED"
+        if execution.totalTestCount == 0 {
+          lines.append("No tests matched in \(execution.elapsed)s")
         } else {
-          // Build failed — try structured build diagnostics first
-          var diagnosticOutput = ""
-          if let buildJSON = await parseBuildResults(path, env: env),
-            let data = buildJSON.data(using: .utf8),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-          {
-            let parsed = parseBuildIssues(json)
-            let errors = parsed.issues.filter { $0.severity == .error }
-            if !errors.isEmpty {
-              diagnosticOutput =
-                "Build errors (\(errors.count)):\n"
-                + errors.map { issue in
-                  if let loc = issue.location {
-                    return "  \(loc.filePath):\(loc.line ?? 0): \(issue.message)"
-                  }
-                  return "  \(issue.message)"
-                }.joined(separator: "\n")
-            }
-          }
-          if diagnosticOutput.isEmpty {
-            let errorLines = buildResult.stderr.split(separator: "\n")
-              .filter {
-                $0.contains(": error:") || $0.contains(" failed") || $0.contains("FAILED")
-              }
-              .prefix(20)
-              .joined(separator: "\n")
-            diagnosticOutput = errorLines
-          }
-          return .fail(
-            preamble
-              + "TEST TARGET BUILD FAILED in \(elapsed)s\n\(diagnosticOutput)\nxcresult: \(path)"
-              + formatDiagnosticSuffix(diagResult))
+          lines.append("Tests \(icon) in \(execution.elapsed)s")
+          lines.append(
+            "  Total: \(execution.totalTestCount)  Passed: \(execution.passedTestCount)"
+              + "  Failed: \(execution.failedTestCount)  Skipped: \(execution.skippedTestCount)"
+          )
         }
+
+        if !execution.failures.isEmpty {
+          lines.append("\nFailures:")
+          for f in execution.failures {
+            lines.append("  FAIL: \(f.testName)")
+            if !f.message.isEmpty { lines.append("    \(f.message)") }
+          }
+        }
+
+        if !execution.screenshotPaths.isEmpty {
+          lines.append("\nFailure screenshots (\(execution.screenshotPaths.count)):")
+          for ss in execution.screenshotPaths {
+            lines.append("  \(ss.path)")
+          }
+        }
+
+        if execution.totalTestCount == 0, let f = input.filter {
+          let hint = await zeroMatchHint(
+            filter: f, project: input.project, scheme: input.scheme,
+            simulator: input.simulator, testplan: testplan, env: env
+          )
+          lines.append(hint)
+        }
+
+        if let deviceName = execution.deviceName {
+          lines.append("Device: \(deviceName) (\(execution.osVersion ?? ""))")
+        }
+
+        lines.append("xcresult: \(execution.xcresultPath)")
+        if let diagPath = execution.hangDiagnosticPath {
+          lines.append("Diagnostic snapshot: \(diagPath)")
+          if let summary = execution.hangDiagnosticSummary {
+            lines.append("Summary: \(summary)")
+          }
+        }
+
+        let zeroMatchWithFilter = execution.totalTestCount == 0 && input.filter != nil
+        let text = lines.joined(separator: "\n")
+        return (execution.succeeded && !zeroMatchWithFilter) ? .ok(text) : .fail(text)
       } catch {
         return .fail("Test error: \(error)")
       }
@@ -2306,6 +2756,12 @@ public enum TestTools {
       }
 
       let configuration = input.configuration ?? "Debug"
+      let recoveryMode: SimRecoveryMode
+      if let raw = input.simRecovery, let mode = SimRecoveryMode(rawValue: raw) {
+        recoveryMode = mode
+      } else {
+        recoveryMode = .auto
+      }
       do {
         let result = try await executeBuildAndTest(
           project: project,
@@ -2317,6 +2773,7 @@ public enum TestTools {
           coverage: input.coverage ?? false,
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
+          simRecovery: recoveryMode,
           env: env
         )
         // Generate zero-match hint before formatting (avoids Content extraction)

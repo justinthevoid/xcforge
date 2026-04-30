@@ -6,6 +6,12 @@ struct ResolverError: Error, CustomStringConvertible {
   init(_ message: String) { self.description = message }
 }
 
+/// Thrown when a simulator name matches multiple devices with the same OS version.
+struct MultipleSimulatorMatchError: Error, CustomStringConvertible {
+  let description: String
+  init(_ message: String) { self.description = message }
+}
+
 /// Zero-config auto-detection for project, scheme, and simulator.
 /// Throws ResolverError with rich messages when ambiguous.
 enum AutoDetect {
@@ -254,6 +260,9 @@ enum AutoDetect {
   // MARK: - Destination builder
 
   /// Build xcodebuild destination string from a simulator name, UDID, or physical device identifier.
+  ///
+  /// For simulator targets, prefers `id=<udid>` to skip DTDKRemoteDeviceConnection service browse.
+  /// Falls back to `name=<sim>` with a warning when UDID resolution fails.
   static func buildDestination(_ simulator: String) async -> String {
     // Physical device UDIDs are 40-char hex (no dashes) — check first
     if isPhysicalDeviceUDID(simulator) {
@@ -275,8 +284,56 @@ enum AutoDetect {
     if await isConnectedPhysicalDevice(simulator) {
       return "platform=iOS,name=\(simulator)"
     }
-    // Fallback: pass name directly as simulator
+    // Warn and fall back to name= — avoids DTDKRemoteDeviceConnection only when UDID is known
+    Log.warn(
+      "Could not resolve '\(simulator)' to a simulator UDID; falling back to name= destination."
+        + " This may trigger DTDKRemoteDeviceConnection service browse on iOS 26."
+    )
     return "platform=iOS Simulator,name=\(simulator)"
+  }
+
+  /// Resolve a simulator name or UDID to a (name, udid) tuple.
+  ///
+  /// - If `nameOrUDID` is already a UDID (any format), returns it directly.
+  /// - Otherwise: loads devices, filters by name (case-insensitive),
+  ///   picks the highest-OS match; throws `MultipleSimulatorMatchError` when
+  ///   two candidates share the same OS version.
+  static func resolveSimulatorNameAndUDID(_ nameOrUDID: String) async throws -> (
+    name: String, udid: String
+  ) {
+    if isPhysicalDeviceUDID(nameOrUDID) || isUDID(nameOrUDID) {
+      return (nameOrUDID, nameOrUDID)
+    }
+
+    let devices = try await loadSimulatorDevices()
+
+    // Filter by name, case-insensitive
+    let matches = devices.filter {
+      $0.isAvailable && $0.name.caseInsensitiveCompare(nameOrUDID) == .orderedSame
+    }
+
+    if matches.isEmpty {
+      throw ResolverError("No available simulator found with name '\(nameOrUDID)'.")
+    }
+
+    // Sort by OS version descending to pick highest-OS match
+    let sorted = matches.sorted { lhs, rhs in
+      lhs.runtime > rhs.runtime
+    }
+
+    // If multiple match the same (highest) runtime, that's an ambiguity error
+    let highestRuntime = sorted[0].runtime
+    let topTier = sorted.filter { $0.runtime == highestRuntime }
+    if topTier.count > 1 {
+      let descriptions = topTier.map { describe($0) }.joined(separator: "\n  ")
+      throw MultipleSimulatorMatchError(
+        "Simulator '\(nameOrUDID)' matches \(topTier.count) devices with the same OS version"
+          + " (\(highestRuntime)). Specify a UDID instead:\n  \(descriptions)"
+      )
+    }
+
+    let winner = sorted[0]
+    return (winner.name, winner.udid)
   }
 
   /// Returns true if the string looks like a physical device UDID.

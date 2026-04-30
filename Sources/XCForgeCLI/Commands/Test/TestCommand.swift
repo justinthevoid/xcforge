@@ -44,12 +44,16 @@ struct TestRun: AsyncParsableCommand {
   @Flag(help: "Capture a diagnostic snapshot even when the test run succeeds.")
   var diagnose = false
 
+  @Option(help: "Simulator recovery mode (auto|off). Default: off.")
+  var simRecovery: String = "off"
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     let configuration = self.configuration ?? "Debug"
+    let recoveryMode = SimRecoveryMode(rawValue: simRecovery) ?? .off
 
     let execution = try await TestTools.executeTest(
       project: project,
@@ -60,7 +64,8 @@ struct TestRun: AsyncParsableCommand {
       filter: filter,
       coverage: coverage,
       long: long,
-      diagnose: diagnose
+      diagnose: diagnose,
+      simRecovery: recoveryMode
     )
 
     if useJSON {

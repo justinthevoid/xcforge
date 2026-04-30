@@ -126,6 +126,17 @@ public actor SessionState {
     return try await AutoDetect.simulator()
   }
 
+  /// Resolve simulator and return both its display name and UDID.
+  ///
+  /// Calls `resolveSimulator` first, then resolves to a UDID via `AutoDetect.resolveSimulatorNameAndUDID`.
+  /// The existing `resolveSimulator` signature is unchanged for backward compatibility.
+  public func resolveSimulatorWithUDID(_ explicit: String?) async throws -> (
+    name: String, udid: String
+  ) {
+    let resolved = try await resolveSimulator(explicit)
+    return try await AutoDetect.resolveSimulatorNameAndUDID(resolved)
+  }
+
   // MARK: - Build info (populated after successful build_sim)
 
   func setBuildInfo(bundleId: String, appPath: String?, scheme: String) {

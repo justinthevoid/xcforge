@@ -34,6 +34,9 @@ let package = Package(
             dependencies: [
                 "XCForgeKit",
                 "XCForgeCLI",
+            ],
+            resources: [
+                .copy("Fixtures"),
             ]
         ),
     ]
