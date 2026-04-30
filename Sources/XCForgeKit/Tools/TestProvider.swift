@@ -140,6 +140,13 @@ public enum TestTools {
     public let buildDiagnostics: [BuildIssueObservation]?
     public let hangDiagnosticPath: String?
     public let hangDiagnosticSummary: String?
+    /// Non-nil when xcresulttool failed to parse the result bundle (e.g. finalization race).
+    /// Includes the xcodebuild exit code so callers can distinguish a parse failure from a real test failure.
+    public let xcresultParseError: String?
+    /// `true` when xcforge's watchdog killed xcodebuild (exit code -1).
+    public let xcforgeTimedOut: Bool
+    /// Up to 10 slowest tests by elapsed time, sorted descending. Empty when timing data is unavailable.
+    public let slowestTests: [SlowTest]
 
     init(
       succeeded: Bool,
@@ -160,7 +167,10 @@ public enum TestTools {
       buildFailed: Bool,
       buildDiagnostics: [BuildIssueObservation]?,
       hangDiagnosticPath: String? = nil,
-      hangDiagnosticSummary: String? = nil
+      hangDiagnosticSummary: String? = nil,
+      xcresultParseError: String? = nil,
+      xcforgeTimedOut: Bool = false,
+      slowestTests: [SlowTest] = []
     ) {
       self.succeeded = succeeded
       self.elapsed = elapsed
@@ -181,7 +191,15 @@ public enum TestTools {
       self.buildDiagnostics = buildDiagnostics
       self.hangDiagnosticPath = hangDiagnosticPath
       self.hangDiagnosticSummary = hangDiagnosticSummary
+      self.xcresultParseError = xcresultParseError
+      self.xcforgeTimedOut = xcforgeTimedOut
+      self.slowestTests = slowestTests
     }
+  }
+
+  public struct SlowTest: Codable, Sendable {
+    public let testName: String
+    public let elapsedSeconds: Double
   }
 
   public struct ScreenshotAttachment: Codable, Sendable {
@@ -292,6 +310,7 @@ public enum TestTools {
     var long: Bool?
     var diagnose: Bool?
     var simRecovery: String?
+    var timeoutSeconds: Int?
   }
 
   struct ListTestsInput: Decodable {
@@ -316,6 +335,10 @@ public enum TestTools {
     public let recoveryReason: String?
     /// Non-nil when recovery was attempted but ultimately failed.
     public let recoveryFailureReason: String?
+    /// What the sim health check found (e.g. "state=Shutdown"). Nil when recovery was off or not needed.
+    public let simHealthCheckDetail: String?
+    /// `true` when xcforge's watchdog killed xcodebuild during the build phase (exit code -1).
+    public let xcforgeTimedOut: Bool
 
     init(
       phase: String,
@@ -326,7 +349,9 @@ public enum TestTools {
       hangDiagnosticPath: String? = nil,
       recoveryAttempts: Int = 0,
       recoveryReason: String? = nil,
-      recoveryFailureReason: String? = nil
+      recoveryFailureReason: String? = nil,
+      simHealthCheckDetail: String? = nil,
+      xcforgeTimedOut: Bool = false
     ) {
       self.phase = phase
       self.buildSucceeded = buildSucceeded
@@ -337,6 +362,8 @@ public enum TestTools {
       self.recoveryAttempts = recoveryAttempts
       self.recoveryReason = recoveryReason
       self.recoveryFailureReason = recoveryFailureReason
+      self.simHealthCheckDetail = simHealthCheckDetail
+      self.xcforgeTimedOut = xcforgeTimedOut
     }
   }
 
@@ -587,10 +614,16 @@ public enum TestTools {
           "simRecovery": .object([
             "type": .string("string"),
             "description": .string(
-              "Simulator recovery mode: 'auto' (default) probes bootstatus before run and erases+reboots if unhealthy; 'off' skips probe."
-                + " Result includes recoveryAttempts: Int and recoveryReason: String? fields."
+              "Simulator recovery mode: 'auto' (default) probes sim state before run and applies tiered recovery if unhealthy; 'off' skips probe."
+                + " Result includes recoveryAttempts: Int, recoveryReason: String?, and simHealthCheckDetail: String? fields."
             ),
             "enum": .array([.string("auto"), .string("off")]),
+          ]),
+          "timeoutSeconds": .object([
+            "type": .string("integer"),
+            "description": .string(
+              "Override the xcodebuild timeout in seconds. Takes precedence over 'long'. Default: 180 (or 1800 with long: true)."
+            ),
           ]),
         ]),
       ])
@@ -934,6 +967,7 @@ public enum TestTools {
     project: String, scheme: String, destination: String,
     configuration: String, coverage: Bool, resultPath: String,
     long: Bool = false, diagnose: Bool = false, udid: String? = nil,
+    timeoutOverride: TimeInterval? = nil,
     env: Environment
   ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
@@ -948,7 +982,7 @@ public enum TestTools {
     }
     args += ["build-for-testing"]
 
-    let timeout = resolveTestTimeout(long: long)
+    let timeout = timeoutOverride ?? resolveTestTimeout(long: long)
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
@@ -966,6 +1000,7 @@ public enum TestTools {
     configuration: String, testplan: String?, filter: String?,
     coverage: Bool, resultPath: String,
     long: Bool = false, diagnose: Bool = false, udid: String? = nil,
+    timeoutOverride: TimeInterval? = nil,
     env: Environment
   ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
@@ -986,7 +1021,7 @@ public enum TestTools {
     }
     args += ["test-without-building"]
 
-    let timeout = resolveTestTimeout(long: long)
+    let timeout = timeoutOverride ?? resolveTestTimeout(long: long)
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
@@ -998,61 +1033,69 @@ public enum TestTools {
     return (result, resultPath, diagResult)
   }
 
-  /// Parse xcresult test summary JSON
-  private static func parseTestSummary(_ path: String, env: Environment) async -> String? {
+  /// Polls for `<bundle>/Info.plist` existence up to `timeout` seconds in 500 ms increments.
+  /// Returns `true` as soon as the file exists; `false` if timeout is reached.
+  /// Handles the xcodebuild finalization race where the process exits before writing Info.plist.
+  private static func waitForXCResultReady(_ path: String, timeout: TimeInterval = 5) async -> Bool {
+    let infoPlist = "\(path)/Info.plist"
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      if FileManager.default.fileExists(atPath: infoPlist) { return true }
+      try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+    return FileManager.default.fileExists(atPath: infoPlist)
+  }
+
+  /// Invoke xcresulttool with a single retry on transient failure (Info.plist present but not yet fully committed).
+  private static func runXCResultTool(
+    arguments: [String], path: String, label: String, env: Environment
+  ) async -> String? {
     do {
-      let result = try await env.shell.run(
-        "/usr/bin/xcrun",
-        arguments: ["xcresulttool", "get", "test-results", "summary", "--path", path, "--compact"],
-        timeout: 30
-      )
-      guard result.succeeded else {
-        Log.warn("parseTestSummary failed: \(result.stderr)")
-        return nil
-      }
-      return result.stdout
+      var result = try await env.shell.run("/usr/bin/xcrun", arguments: arguments, timeout: 30)
+      if result.succeeded { return result.stdout }
+      // One 500ms retry in case xcresulttool caught the bundle mid-write
+      try? await Task.sleep(nanoseconds: 500_000_000)
+      result = try await env.shell.run("/usr/bin/xcrun", arguments: arguments, timeout: 30)
+      if result.succeeded { return result.stdout }
+      Log.warn("\(label) failed: \(result.stderr)")
+      return nil
     } catch {
-      Log.warn("parseTestSummary error: \(error)")
+      Log.warn("\(label) error: \(error)")
       return nil
     }
+  }
+
+  /// Parse xcresult test summary JSON
+  private static func parseTestSummary(_ path: String, env: Environment) async -> String? {
+    guard await waitForXCResultReady(path) else {
+      Log.warn("parseTestSummary skipped: Info.plist not present in \(path) after 5s")
+      return nil
+    }
+    return await runXCResultTool(
+      arguments: ["xcresulttool", "get", "test-results", "summary", "--path", path, "--compact"],
+      path: path, label: "parseTestSummary", env: env)
   }
 
   /// Parse xcresult test details JSON
   private static func parseTestDetails(_ path: String, env: Environment) async -> String? {
-    do {
-      let result = try await env.shell.run(
-        "/usr/bin/xcrun",
-        arguments: ["xcresulttool", "get", "test-results", "tests", "--path", path, "--compact"],
-        timeout: 30
-      )
-      guard result.succeeded else {
-        Log.warn("parseTestDetails failed: \(result.stderr)")
-        return nil
-      }
-      return result.stdout
-    } catch {
-      Log.warn("parseTestDetails error: \(error)")
+    guard await waitForXCResultReady(path) else {
+      Log.warn("parseTestDetails skipped: Info.plist not present in \(path) after 5s")
       return nil
     }
+    return await runXCResultTool(
+      arguments: ["xcresulttool", "get", "test-results", "tests", "--path", path, "--compact"],
+      path: path, label: "parseTestDetails", env: env)
   }
 
   /// Parse xcresult build results JSON
   static func parseBuildResults(_ path: String, env: Environment) async -> String? {
-    do {
-      let result = try await env.shell.run(
-        "/usr/bin/xcrun",
-        arguments: ["xcresulttool", "get", "build-results", "--path", path, "--compact"],
-        timeout: 30
-      )
-      guard result.succeeded else {
-        Log.warn("parseBuildResults failed: \(result.stderr)")
-        return nil
-      }
-      return result.stdout
-    } catch {
-      Log.warn("parseBuildResults error: \(error)")
+    guard await waitForXCResultReady(path) else {
+      Log.warn("parseBuildResults skipped: Info.plist not present in \(path) after 5s")
       return nil
     }
+    return await runXCResultTool(
+      arguments: ["xcresulttool", "get", "build-results", "--path", path, "--compact"],
+      path: path, label: "parseBuildResults", env: env)
   }
 
   public static func executeBuildDiagnosis(
@@ -1797,6 +1840,7 @@ public enum TestTools {
     long: Bool = false,
     diagnose: Bool = false,
     simRecovery: SimRecoveryMode = .auto,
+    timeoutSeconds: TimeInterval? = nil,
     env: Environment = .live
   ) async throws -> BuildAndTestResult {
     let resolvedProject = try await env.session.resolveProject(project)
@@ -1814,10 +1858,12 @@ public enum TestTools {
     var recoveryAttempts = 0
     var recoveryReason: String?
     var recoveryFailureReason: String?
+    var simHealthCheckDetail: String?
 
     // Pre-build simulator health probe (only when auto)
     if simRecovery == .auto {
       let outcome = await SimulatorRecovery.probeAndRecover(udid: udidForDest, env: env)
+      simHealthCheckDetail = outcome.healthCheckDetail
       if outcome.fired {
         recoveryAttempts += 1
         recoveryReason = outcome.reason
@@ -1846,7 +1892,8 @@ public enum TestTools {
       return try await runBuildForTesting(
         project: resolvedProject, scheme: resolvedScheme, destination: destination,
         configuration: configuration, coverage: coverage, resultPath: resultPath,
-        long: long, diagnose: diagnose, udid: udidForDest, env: env
+        long: long, diagnose: diagnose, udid: udidForDest, timeoutOverride: timeoutSeconds,
+        env: env
       )
     }
 
@@ -1859,7 +1906,8 @@ public enum TestTools {
         project: resolvedProject, scheme: resolvedScheme, destination: destination,
         configuration: configuration, testplan: testplan, filter: resolvedFilter,
         coverage: coverage, resultPath: resultPath,
-        long: long, diagnose: diagnose, udid: udidForDest, env: env
+        long: long, diagnose: diagnose, udid: udidForDest, timeoutOverride: timeoutSeconds,
+        env: env
       )
     }
 
@@ -1885,6 +1933,7 @@ public enum TestTools {
         recoveryAttempts += 1
         recoveryReason = verdict?.rawValue ?? retryOutcome.reason
         recoveryFailureReason = retryOutcome.failureReason
+        if simHealthCheckDetail == nil { simHealthCheckDetail = retryOutcome.healthCheckDetail }
 
         buildStart = CFAbsoluteTimeGetCurrent()
         let retried = try await runBuildPhase(diagnose: true)
@@ -1920,7 +1969,9 @@ public enum TestTools {
         hangDiagnosticPath: buildDiagResult?.filePath,
         recoveryAttempts: recoveryAttempts,
         recoveryReason: recoveryReason,
-        recoveryFailureReason: recoveryFailureReason
+        recoveryFailureReason: recoveryFailureReason,
+        simHealthCheckDetail: simHealthCheckDetail,
+        xcforgeTimedOut: buildShellResult.exitCode == -1
       )
     }
 
@@ -1970,7 +2021,8 @@ public enum TestTools {
         hangDiagnosticPath: nil,
         recoveryAttempts: recoveryAttempts,
         recoveryReason: recoveryReason,
-        recoveryFailureReason: recoveryFailureReason
+        recoveryFailureReason: recoveryFailureReason,
+        simHealthCheckDetail: simHealthCheckDetail
       )
     }
 
@@ -1987,6 +2039,7 @@ public enum TestTools {
         let retryOutcome = await SimulatorRecovery.probeAndRecover(udid: udidForDest, env: env)
         if recoveryReason == nil { recoveryReason = verdict?.rawValue ?? retryOutcome.reason }
         if recoveryFailureReason == nil { recoveryFailureReason = retryOutcome.failureReason }
+        if simHealthCheckDetail == nil { simHealthCheckDetail = retryOutcome.healthCheckDetail }
         recoveryAttempts += 1
 
         testStart = CFAbsoluteTimeGetCurrent()
@@ -2020,7 +2073,8 @@ public enum TestTools {
         hangDiagnosticPath: testExecution.hangDiagnosticPath,
         recoveryAttempts: recoveryAttempts,
         recoveryReason: recoveryReason,
-        recoveryFailureReason: recoveryFailureReason
+        recoveryFailureReason: recoveryFailureReason,
+        simHealthCheckDetail: simHealthCheckDetail
       )
     } catch {
       return BuildAndTestResult(
@@ -2059,7 +2113,8 @@ public enum TestTools {
         hangDiagnosticPath: testDiagResult?.filePath,
         recoveryAttempts: recoveryAttempts,
         recoveryReason: recoveryReason,
-        recoveryFailureReason: recoveryFailureReason
+        recoveryFailureReason: recoveryFailureReason,
+        simHealthCheckDetail: simHealthCheckDetail
       )
     }
   }
@@ -2090,6 +2145,37 @@ public enum TestTools {
     }
   }
 
+  /// Extract up to 10 slowest test cases from test-results JSON, sorted by duration descending.
+  private static func parseSlowTests(_ json: [String: Any]) -> [SlowTest] {
+    var entries: [(name: String, duration: Double)] = []
+
+    func collectDurations(from node: [String: Any]) {
+      let nodeType = (node["nodeType"] as? String) ?? ""
+      if nodeType == "Test Case" {
+        if let duration = node["duration"] as? Double,
+          let name = node["name"] as? String
+        {
+          entries.append((name: name, duration: duration))
+        }
+      }
+      if let children = node["children"] as? [[String: Any]] {
+        for child in children { collectDurations(from: child) }
+      }
+    }
+
+    if let testNodes = json["testNodes"] as? [[String: Any]] {
+      for node in testNodes { collectDurations(from: node) }
+    }
+
+    return
+      entries
+      .sorted { $0.duration > $1.duration }
+      .prefix(10)
+      .map { SlowTest(testName: $0.name, elapsedSeconds: $0.duration) }
+  }
+
+  // MARK: - TestExecution builder
+
   /// Parse xcresult and build a `TestExecution` from shell result + parsed data.
   private static func buildTestExecutionResult(
     shellResult: ShellResult,
@@ -2101,20 +2187,33 @@ public enum TestTools {
     filter: String?,
     env: Environment
   ) async throws -> TestExecution {
+    let xcforgeTimedOut = shellResult.exitCode == -1
+
     var parsedSummary: ParsedTestSummary?
+    var xcresultParseError: String?
     if let summaryJSON = await parseTestSummary(resultPath, env: env),
       let data = summaryJSON.data(using: .utf8),
       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     {
       parsedSummary = Self.parseTestSummary(json)
+    } else if !xcforgeTimedOut {
+      // Parse failed and this wasn't a timeout kill — surface the exit code for caller diagnosis
+      let exitDesc = xcforgeTimedOut ? "-1 (timed out)" : "\(shellResult.exitCode)"
+      xcresultParseError =
+        "xcresulttool failed to parse \(resultPath) (xcodebuild exit: \(exitDesc))"
     }
 
     var failures: [TestFailureObservation] = []
+    var slowestTests: [SlowTest] = []
     if let detailsJSON = await parseTestDetails(resultPath, env: env),
-      let data = detailsJSON.data(using: .utf8),
-      let parsedFailures = parseTestFailures(data)
+      let data = detailsJSON.data(using: .utf8)
     {
-      failures = parsedFailures
+      if let parsedFailures = parseTestFailures(data) {
+        failures = parsedFailures
+      }
+      if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        slowestTests = parseSlowTests(json)
+      }
     }
     if failures.isEmpty {
       failures = parsedSummary?.failures ?? []
@@ -2199,7 +2298,10 @@ public enum TestTools {
       buildFailed: buildFailed,
       buildDiagnostics: buildDiagnostics,
       hangDiagnosticPath: diagResult?.filePath,
-      hangDiagnosticSummary: diagResult?.summaryLine
+      hangDiagnosticSummary: diagResult?.summaryLine,
+      xcresultParseError: xcresultParseError,
+      xcforgeTimedOut: xcforgeTimedOut,
+      slowestTests: slowestTests
     )
   }
 
@@ -2774,6 +2876,7 @@ public enum TestTools {
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
           simRecovery: recoveryMode,
+          timeoutSeconds: input.timeoutSeconds.map { TimeInterval($0) },
           env: env
         )
         // Generate zero-match hint before formatting (avoids Content extraction)

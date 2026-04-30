@@ -13,7 +13,7 @@ struct Main {
 
       let server = Server(
         name: "xcforge",
-        version: "1.3.4",
+        version: "1.3.5",
         capabilities: .init(tools: .init(listChanged: true))
       )
 

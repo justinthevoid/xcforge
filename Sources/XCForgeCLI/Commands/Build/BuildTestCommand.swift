@@ -36,6 +36,12 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Use 1800s timeout instead of the default 180s (for long integration suites).")
   var long = false
 
+  @Option(
+    help:
+      "Override timeout in seconds. Takes precedence over --long. Default: 180s (or 1800s with --long)."
+  )
+  var timeoutSeconds: Int?
+
   @Flag(help: "Capture a diagnostic snapshot even when the build/test succeeds.")
   var diagnose = false
 
@@ -45,6 +51,7 @@ struct BuildTest: AsyncParsableCommand {
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     let configuration = self.configuration ?? "Debug"
+    let resolvedTimeout = timeoutSeconds.map { TimeInterval($0) }
 
     let result = try await TestTools.executeBuildAndTest(
       project: project,
@@ -55,7 +62,8 @@ struct BuildTest: AsyncParsableCommand {
       filter: filter,
       coverage: coverage,
       long: long,
-      diagnose: diagnose
+      diagnose: diagnose,
+      timeoutSeconds: resolvedTimeout
     )
 
     if useJSON {

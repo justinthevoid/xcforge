@@ -13,12 +13,13 @@ actor TestRecordingShell: ShellExecutor {
 
   /// When set, `pgrep -n xcodebuild` returns this PID.
   let fakePid: String
-  /// When set, `simctl bootstatus` returns this output.
-  let bootstatusOutput: String
+  /// State returned for the test device in `simctl list` responses.
+  /// Default "Booted" = healthy sim.
+  let simState: String
 
-  init(fakePid: String = "99999", bootstatusOutput: String = "Status=4\n") {
+  init(fakePid: String = "99999", simState: String = "Booted") {
     self.fakePid = fakePid
-    self.bootstatusOutput = bootstatusOutput
+    self.simState = simState
   }
 
   nonisolated func run(
@@ -80,12 +81,11 @@ actor TestRecordingShell: ShellExecutor {
     simctlCalls.append(sub)
 
     switch sub {
-    case "bootstatus":
-      return ShellResult(stdout: bootstatusOutput, stderr: "", exitCode: 0)
     case "list":
-      // Return minimal device JSON for resolver
-      let json = """
-        {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-0":[{"name":"iPhone 17","udid":"AAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE","state":"Booted","isAvailable":true}]}}
+      // Return minimal device JSON for resolver/health probe, using configured state.
+      let json =
+        """
+        {"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-0":[{"name":"iPhone 17","udid":"AAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE","state":"\(simState)","isAvailable":true}]}}
         """
       return ShellResult(stdout: json, stderr: "", exitCode: 0)
     case "erase":
@@ -280,7 +280,7 @@ struct TestProviderTests {
 
   @Test("simRecovery .auto healthy sim: probeAndRecover returns fired=false, no erase called")
   func simRecoveryAutoHealthy() async {
-    let shell = TestRecordingShell(bootstatusOutput: "Status=4\n")
+    let shell = TestRecordingShell(simState: "Booted")
     let env = Environment(shell: shell)
 
     let outcome = await SimulatorRecovery.probeAndRecover(
@@ -294,12 +294,14 @@ struct TestProviderTests {
     #expect(!eraseCalled)
   }
 
-  // MARK: 7. simRecovery .auto — unhealthy sim: erase called
+  // MARK: 7. simRecovery .auto — unhealthy sim: tiered recovery; erase reached when tier 1 fails
 
   @Test("simRecovery .auto unhealthy sim: probeAndRecover returns fired=true, erase called")
   func simRecoveryAutoUnhealthy() async {
-    // Return unhealthy status (no Status=4)
-    let shell = TestRecordingShell(bootstatusOutput: "Status=3\n")
+    // State is Shutdown — health probe returns notBooted, triggering tiered recovery.
+    // After tier-1 shutdown+boot the list probe returns Shutdown again (mock is stateless),
+    // so tier 2 (erase) fires.
+    let shell = TestRecordingShell(simState: "Shutdown")
     let env = Environment(shell: shell)
 
     let outcome = await SimulatorRecovery.probeAndRecover(
@@ -319,8 +321,7 @@ struct TestProviderTests {
   func simRecoveryOffSkipsProbeOnUnhealthySim() async {
     // The gate in executeBuildAndTest is: `if simRecovery == .auto { probeAndRecover(...) }`
     // With .off, probeAndRecover is never called.
-    // Exercise the gate inline with the same unhealthy shell used in the .auto test above.
-    let shell = TestRecordingShell(bootstatusOutput: "Status=3\n")
+    let shell = TestRecordingShell(simState: "Shutdown")
     let env = Environment(shell: shell)
 
     let recoveryMode: SimRecoveryMode = .off
