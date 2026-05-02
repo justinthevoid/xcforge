@@ -64,7 +64,18 @@ xcforge log read --include app --include crashes --json
 xcforge log stop --json
 ```
 
-## 5) Configure MCP host integration
+## 5) Set up UI automation (optional)
+
+UI automation tools (`find_element`, `tap`, `swipe`, `type_text`, etc.) require a WebDriverAgent backend. xcforge manages the connection automatically, but you need to provide the WDA project.
+
+See [UI Automation Setup](/docs/guides/ui-automation-setup/) for full instructions. The short version:
+
+1. Set `XCFORGE_WDA_DIR` in your MCP config pointing at an `xcforgeWDA` project directory.
+2. xcforge builds and deploys WDA automatically on first use.
+
+Skip this step if you don't need UI automation — all other xcforge tools work without it.
+
+## 6) Configure MCP host integration
 
 Follow [MCP Client Configuration](/docs/reference/mcp-client-configuration/) for client-specific JSON formats and file locations.
 
@@ -74,7 +85,7 @@ Quick start for Claude Code:
 claude mcp add xcforge -- xcforge
 ```
 
-## 6) Validate parity expectations
+## 7) Validate parity expectations
 
 Before automating deeper workflows, review:
 
@@ -82,7 +93,7 @@ Before automating deeper workflows, review:
 - [Workflow Patterns](/docs/guides/workflow-patterns/)
 - [CLI and MCP Parity](/docs/reference/cli-mcp-parity/)
 
-## 7) Troubleshooting baseline
+## 8) Troubleshooting baseline
 
 If your first loop fails:
 

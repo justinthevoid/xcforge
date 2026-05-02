@@ -339,12 +339,59 @@ There are several iOS-focused MCP servers worth knowing about:
 
 ---
 
+## UI Automation Setup
+
+UI automation tools require a WebDriverAgent (WDA) backend running on the simulator. xcforge manages the WDA connection automatically — you just need to point it at a WDA project.
+
+xcforge tries two backends in order:
+
+1. **xcforgeWDA** (preferred) — xcforge's own WDA fork (`com.xcforge.wda.runner`). Auto-built and deployed when `XCFORGE_WDA_DIR` is set.
+2. **Original WebDriverAgent** (fallback) — Facebook/Appium's WDA. Picked up automatically if WDA is already running on port 8100.
+
+### Quick setup
+
+Clone [appium/WebDriverAgent](https://github.com/appium/WebDriverAgent), rename the project and scheme for xcforge, then set `XCFORGE_WDA_DIR`:
+
+```bash
+git clone https://github.com/appium/WebDriverAgent.git xcforgeWDA
+
+# Copy project with xcforge name and remap bundle ID
+cp -r xcforgeWDA/WebDriverAgent.xcodeproj xcforgeWDA/xcforgeWDA.xcodeproj
+sed -i '' 's/com\.facebook\.WebDriverAgentRunner/com.xcforge.wda.runner/g' \
+  xcforgeWDA/xcforgeWDA.xcodeproj/project.pbxproj
+
+# Add xcforgeWDARunner scheme
+cp xcforgeWDA/xcforgeWDA.xcodeproj/xcshareddata/xcschemes/WebDriverAgentRunner.xcscheme \
+   xcforgeWDA/xcforgeWDA.xcodeproj/xcshareddata/xcschemes/xcforgeWDARunner.xcscheme
+sed -i '' 's/WebDriverAgent\.xcodeproj/xcforgeWDA.xcodeproj/g' \
+  xcforgeWDA/xcforgeWDA.xcodeproj/xcshareddata/xcschemes/xcforgeWDARunner.xcscheme
+```
+
+Then add `XCFORGE_WDA_DIR` to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "xcforge": {
+      "command": "xcforge",
+      "env": {
+        "XCFORGE_WDA_DIR": "/path/to/xcforgeWDA"
+      }
+    }
+  }
+}
+```
+
+xcforge builds and deploys WDA automatically on the first UI tool call (~30–60s on first run, instant thereafter). See the [full UI Automation Setup guide](https://xcforge.dev/docs/guides/ui-automation-setup) for alternative configurations, custom ports, and troubleshooting.
+
+---
+
 ## Requirements
 
 - macOS 13+
 - Xcode 15+
 - Swift 6.0+ (source builds only)
-- WebDriverAgent on simulator (UI automation only)
+- WebDriverAgent (UI automation only — see [UI Automation Setup](#ui-automation-setup))
 
 ---
 

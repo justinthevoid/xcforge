@@ -11,6 +11,9 @@ xcuserdata/
 # === xcforge runtime ===
 /tmp/
 
+# === xcforgeWDA (fork of WebDriverAgent, not tracked) ===
+/xcforgeWDA/
+
 # === Local dev config ===
 .claude/
 .agents/
