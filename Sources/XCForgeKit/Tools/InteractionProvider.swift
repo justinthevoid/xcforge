@@ -322,6 +322,57 @@ enum UITools {
       ])
     ),
     Tool(
+      name: "list_elements",
+      description:
+        "Flat one-line-per-element listing of the on-screen accessibility tree. Each line is `<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>` with `-` for empty fields. Replaces parsing get_source XML/JSON when you just need to see what's tappable. Optional `scope` restricts output to a single a11y-id and its descendants.",
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "scope": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Optional accessibility id. Restrict the listing to that element and its descendants."
+            ),
+          ])
+        ]),
+      ])
+    ),
+    Tool(
+      name: "tap_by_id",
+      description:
+        "Atomic find-and-tap by accessibility id. Replaces the find_element → click_element two-step. On stale-element / session-dead errors, automatically re-finds and retries the click exactly once. Returns elementId and whether a retry was needed.",
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "id": .object([
+            "type": .string("string"),
+            "description": .string("Accessibility id of the element to tap."),
+          ])
+        ]),
+        "required": .array([.string("id")]),
+      ])
+    ),
+    Tool(
+      name: "tap_by",
+      description:
+        "Atomic find-and-tap using any WDA strategy (accessibility id, class name, predicate string, class chain). Same retry-on-stale semantics as tap_by_id. If find finds no element, surfaces elementNotFound immediately without retry.",
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "using": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Strategy: 'accessibility id', 'class name', 'predicate string', 'class chain'."
+            ),
+          ]),
+          "value": .object([
+            "type": .string("string"), "description": .string("Search value"),
+          ]),
+        ]),
+        "required": .array([.string("using"), .string("value")]),
+      ])
+    ),
+    Tool(
       name: "indigo_swipe",
       description:
         "Swipe via native HID (sub-5ms per step, bypasses WDA). Falls back to WDA if unavailable.",
@@ -436,6 +487,19 @@ enum UITools {
     let x: Double
     let y: Double
     let simulator: String?
+  }
+
+  struct ListElementsInput: Decodable {
+    let scope: String?
+  }
+
+  struct TapByIDInput: Decodable {
+    let id: String
+  }
+
+  struct TapByInput: Decodable {
+    let using: String
+    let value: String
   }
 
   // MARK: - Implementations
@@ -982,6 +1046,302 @@ enum UITools {
     }
   }
 
+  // MARK: - Public API for CLI
+
+  /// CLI-facing entry point for `ui ls`. Mirrors `listElements` MCP semantics:
+  /// AXP-first, WDA fallback, optional scope filter, 50KB truncation.
+  /// Throws if WDA fallback errors and AXP unavailable, or if scope id is missing.
+  static func renderListing(scope: String?, env: Environment) async throws -> (
+    body: String, count: Int, source: String
+  ) {
+    var elements: [FlatElement] = []
+    var sourceTag = "wda"
+
+    // Test hook: XCFORGE_SKIP_AXP forces the WDA fallback path. DEBUG-only.
+    var skipAXP = false
+    #if DEBUG
+      if ProcessInfo.processInfo.environment["XCFORGE_SKIP_AXP"] != nil {
+        skipAXP = true
+        Log.warn("XCFORGE_SKIP_AXP is set; bypassing AXPBridge for list_elements (DEBUG-only hook)")
+      }
+    #endif
+    if !skipAXP, AXPBridge.isAvailable {
+      do {
+        let json = try await env.axpBridge.getSourceJSON()
+        elements = parseAXPElements(json)
+        sourceTag = "axp"
+      } catch {
+        Log.warn("AXPBridge getSourceJSON failed for list_elements, falling back to WDA: \(error)")
+      }
+    }
+
+    if elements.isEmpty {
+      let raw = try await env.wdaClient.getSource(format: "json")
+      if let data = raw.data(using: .utf8),
+        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      {
+        elements = flattenWDASource(obj)
+      }
+    }
+
+    if let scope {
+      let trimmed = scope.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        guard let scoped = applyScope(elements, scope: trimmed) else {
+          throw UIListingError.scopeNotFound(trimmed)
+        }
+        elements = scoped
+      }
+    }
+
+    return (renderFlatList(elements), elements.count, sourceTag)
+  }
+
+  /// CLI-facing entry point for `ui tap-by-id` / `ui tap-by`.
+  static func performTap(using strategy: String, value: String, env: Environment)
+    async throws -> (elementId: String, retried: Bool)
+  {
+    try await findAndClick(using: strategy, value: value, env: env)
+  }
+
+  // MARK: - ui ls / tap-by-* helpers
+
+  /// Element entry used by `listElements`. One line per entry.
+  private struct FlatElement {
+    let identifier: String
+    let label: String
+    let type: String
+    let x: Int
+    let y: Int
+    let width: Int
+    let height: Int
+  }
+
+  /// Escape `|` (the field separator) and collapse `\n`/`\r` to spaces so a single
+  /// element never spans multiple lines or splits a column.
+  private static func sanitizeField(_ s: String) -> String {
+    s
+      .replacingOccurrences(of: "|", with: "\\|")
+      .replacingOccurrences(of: "\r\n", with: " ")
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "\r", with: " ")
+  }
+
+  private static func formatElementLine(_ el: FlatElement) -> String {
+    let id = el.identifier.isEmpty ? "-" : sanitizeField(el.identifier)
+    let label = el.label.isEmpty ? "-" : sanitizeField(el.label)
+    let type = el.type.isEmpty ? "-" : sanitizeField(el.type)
+    return "\(id) | \(label) | \(type) | \(el.x),\(el.y),\(el.width),\(el.height)"
+  }
+
+  /// Parse the AXP getSourceJSON payload into a flat array of `FlatElement`.
+  /// Skips non-dict entries; accepts numeric frame values as Int, NSNumber, or Double.
+  /// Filters out elements with no identifier/label/type to mirror the WDA path.
+  private static func parseAXPElements(_ json: String) -> [FlatElement] {
+    guard let data = json.data(using: .utf8),
+      let array = try? JSONSerialization.jsonObject(with: data) as? [Any]
+    else { return [] }
+    let entries: [[String: Any]] = array.compactMap { $0 as? [String: Any] }
+    func intVal(_ frame: [String: Any], _ key: String) -> Int {
+      if let i = frame[key] as? Int { return i }
+      if let n = frame[key] as? NSNumber { return n.intValue }
+      if let d = frame[key] as? Double { return Int(d) }
+      return 0
+    }
+    let parsed: [FlatElement] = entries.map { dict in
+      let frame = dict["frame"] as? [String: Any] ?? [:]
+      return FlatElement(
+        identifier: (dict["identifier"] as? String) ?? "",
+        label: (dict["label"] as? String) ?? "",
+        type: (dict["type"] as? String) ?? "",
+        x: intVal(frame, "x"),
+        y: intVal(frame, "y"),
+        width: intVal(frame, "width"),
+        height: intVal(frame, "height")
+      )
+    }
+    return parsed.filter { !$0.identifier.isEmpty || !$0.label.isEmpty || !$0.type.isEmpty }
+  }
+
+  /// Recursively flatten WDA `/source?format=json` tree into `FlatElement`s.
+  private static func flattenWDASource(_ root: [String: Any]) -> [FlatElement] {
+    var out: [FlatElement] = []
+    func visit(_ node: [String: Any]) {
+      let rect = node["rect"] as? [String: Any] ?? [:]
+      let el = FlatElement(
+        identifier: (node["name"] as? String) ?? (node["identifier"] as? String) ?? "",
+        label: (node["label"] as? String) ?? "",
+        type: (node["type"] as? String) ?? "",
+        x: (rect["x"] as? Int) ?? Int((rect["x"] as? Double) ?? 0),
+        y: (rect["y"] as? Int) ?? Int((rect["y"] as? Double) ?? 0),
+        width: (rect["width"] as? Int) ?? Int((rect["width"] as? Double) ?? 0),
+        height: (rect["height"] as? Int) ?? Int((rect["height"] as? Double) ?? 0)
+      )
+      if !el.identifier.isEmpty || !el.label.isEmpty || !el.type.isEmpty {
+        out.append(el)
+      }
+      if let children = node["children"] as? [[String: Any]] {
+        for child in children { visit(child) }
+      }
+    }
+    // The WDA source can either be the root node or wrapped in {"value": {...}}.
+    if let wrapped = root["value"] as? [String: Any] {
+      visit(wrapped)
+    } else {
+      visit(root)
+    }
+    return out
+  }
+
+  private static func contains(_ outer: FlatElement, _ inner: FlatElement) -> Bool {
+    inner.x >= outer.x && inner.y >= outer.y
+      && (inner.x + inner.width) <= (outer.x + outer.width)
+      && (inner.y + inner.height) <= (outer.y + outer.height)
+  }
+
+  /// Restrict `elements` to the element matching `scope` plus geometric descendants.
+  /// Returns nil if `scope` is not present in `elements`.
+  /// - If multiple elements share the scope identifier, logs a warning and uses the first.
+  /// - If the scope element has a zero-area frame, geometric containment is meaningless,
+  ///   so we return only the scope element itself (no descendants).
+  private static func applyScope(_ elements: [FlatElement], scope: String) -> [FlatElement]? {
+    let matches = elements.filter { $0.identifier == scope }
+    guard let root = matches.first else { return nil }
+    if matches.count > 1 {
+      Log.warn(
+        "applyScope: \(matches.count) elements share a11y-id '\(scope)'; using the first match")
+    }
+    if root.width == 0 || root.height == 0 {
+      return [root]
+    }
+    var out: [FlatElement] = [root]
+    for el in elements where el.identifier != scope {
+      if contains(root, el) { out.append(el) }
+    }
+    return out
+  }
+
+  /// Render flat elements with 50KB byte (UTF-8) truncation; appends a trailing summary
+  /// line on its own newline when truncated. Even when the very first element line exceeds
+  /// the budget, the truncation marker is still emitted so callers see how many were dropped.
+  private static func renderFlatList(_ elements: [FlatElement]) -> String {
+    let limit = 50_000
+    var out = ""
+    var emitted = 0
+    for el in elements {
+      let line = formatElementLine(el)
+      let separator = out.isEmpty ? 0 : 1  // newline byte
+      if out.utf8.count + line.utf8.count + separator > limit {
+        let remaining = elements.count - emitted
+        if !out.isEmpty { out += "\n" }
+        out += "... \(remaining) elements truncated"
+        return out
+      }
+      if !out.isEmpty { out += "\n" }
+      out += line
+      emitted += 1
+    }
+    return out
+  }
+
+  static func listElements(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    switch ToolInput.decode(ListElementsInput.self, from: args) {
+    case .failure(let err): return err
+    case .success(let input):
+      do {
+        let (body, count, source) = try await renderListing(scope: input.scope, env: env)
+        return .ok("Elements (\(source), \(count)):\n\(body)")
+      } catch let err as UIListingError {
+        return .fail(err.description)
+      } catch {
+        return .fail("List elements failed: \(error)")
+      }
+    }
+  }
+
+  /// Classify whether a click error should trigger a single re-find + retry.
+  /// Matches WDA's session-dead signature (delegated to `WDAClient.isSessionDead`)
+  /// OR a 404 from `/element/<id>/click` whose message indicates the element handle is
+  /// stale / unknown. Generic 404s (route-not-found, invalid id format) are NOT retried.
+  private static func isStaleClickError(_ error: Error, wdaClient: WDAClient) async -> Bool {
+    if await wdaClient.isSessionDead(error) { return true }
+    if let wdaErr = error as? WDAError, case .wdaError(404, let msg) = wdaErr {
+      let lower = msg.lowercased()
+      let staleSignals = ["stale element", "no such element", "element not found", "invalid element"]
+      return staleSignals.contains(where: { lower.contains($0) })
+    }
+    return false
+  }
+
+  /// Find + click. On click failures classified by `isStaleClickError`, re-find once and retry click once.
+  /// `findElement` errors (e.g. `elementNotFound`) propagate without retry.
+  /// Returns `(elementId, retried)`.
+  private static func findAndClick(
+    using strategy: String, value: String, env: Environment
+  ) async throws -> (elementId: String, retried: Bool) {
+    let (elementId, _) = try await env.wdaClient.findElement(using: strategy, value: value)
+    do {
+      try await env.wdaClient.click(elementId: elementId)
+      return (elementId, false)
+    } catch {
+      guard await isStaleClickError(error, wdaClient: env.wdaClient) else {
+        throw error
+      }
+      Log.warn("tap-by: stale-element on first click, re-finding and retrying once")
+      let (retryId, _) = try await env.wdaClient.findElement(using: strategy, value: value)
+      try await env.wdaClient.click(elementId: retryId)
+      return (retryId, true)
+    }
+  }
+
+  static func tapByID(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    switch ToolInput.decode(TapByIDInput.self, from: args) {
+    case .failure(let err): return err
+    case .success(let input):
+      let trimmedId = input.id.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmedId.isEmpty {
+        return .fail("id required (non-empty)")
+      }
+      do {
+        let start = CFAbsoluteTimeGetCurrent()
+        let (elementId, retried) = try await findAndClick(
+          using: "accessibility id", value: trimmedId, env: env
+        )
+        let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+        let suffix = retried ? " (retried)" : ""
+        let token = retried ? " retried=true" : " retried=false"
+        return .ok("Tapped '\(trimmedId)' → \(elementId) (\(elapsed)ms)\(suffix)\(token)")
+      } catch {
+        return .fail("tap-by-id failed: \(error)")
+      }
+    }
+  }
+
+  static func tapBy(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    switch ToolInput.decode(TapByInput.self, from: args) {
+    case .failure(let err): return err
+    case .success(let input):
+      let trimmedUsing = input.using.trimmingCharacters(in: .whitespacesAndNewlines)
+      let trimmedValue = input.value.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmedUsing.isEmpty || trimmedValue.isEmpty {
+        return .fail("using and value required (non-empty)")
+      }
+      do {
+        let start = CFAbsoluteTimeGetCurrent()
+        let (elementId, retried) = try await findAndClick(
+          using: trimmedUsing, value: trimmedValue, env: env
+        )
+        let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+        let suffix = retried ? " (retried)" : ""
+        let token = retried ? " retried=true" : " retried=false"
+        return .ok(
+          "Tapped \(trimmedUsing)='\(trimmedValue)' → \(elementId) (\(elapsed)ms)\(suffix)\(token)")
+      } catch {
+        return .fail("tap-by failed: \(error)")
+      }
+    }
+  }
+
   static func getSource(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(SourceInput.self, from: args) {
     case .failure(let err): return err
@@ -1057,6 +1417,36 @@ extension Value {
   }
 }
 
+// MARK: - Public CLI helpers
+//
+// The CLI target lives in a separate module and cannot reach `internal` UITools members.
+// These free-standing helpers are the supported surface for `xcforge ui ls` / `tap-by` CLI.
+
+public enum UIListingError: Error, CustomStringConvertible {
+  case scopeNotFound(String)
+
+  public var description: String {
+    switch self {
+    case .scopeNotFound(let id): return "no element with a11y-id '\(id)'"
+    }
+  }
+}
+
+/// Render the on-screen accessibility tree as a flat one-line-per-element listing.
+/// AXP-first; WDA `/source?format=json` fallback. 50KB-truncated.
+public func xcforgeRenderUIListing(scope: String?, env: Environment) async throws -> (
+  body: String, count: Int, source: String
+) {
+  try await UITools.renderListing(scope: scope, env: env)
+}
+
+/// Atomic find + click via WDA. Retries once on stale-element / session-dead.
+public func xcforgePerformUITap(using strategy: String, value: String, env: Environment)
+  async throws -> (elementId: String, retried: Bool)
+{
+  try await UITools.performTap(using: strategy, value: value, env: env)
+}
+
 extension UITools: ToolProvider {
   public static func dispatch(_ name: String, _ args: [String: Value]?, env: Environment) async
     -> CallTool.Result?
@@ -1080,6 +1470,9 @@ extension UITools: ToolProvider {
     case "type_text": return await typeText(args, wdaClient: env.wdaClient)
     case "get_text": return await getText(args, env: env)
     case "get_source": return await getSource(args, env: env)
+    case "list_elements": return await listElements(args, env: env)
+    case "tap_by_id": return await tapByID(args, env: env)
+    case "tap_by": return await tapBy(args, env: env)
     case "clipboard_get": return await clipboardGet(args, wdaClient: env.wdaClient)
     case "clipboard_set": return await clipboardSet(args, wdaClient: env.wdaClient)
     default: return nil

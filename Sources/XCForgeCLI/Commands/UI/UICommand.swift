@@ -7,6 +7,30 @@ struct UIResult: Codable {
   let message: String
   let elementId: String?
   let elementCount: Int?
+  let retried: Bool?
+
+  init(
+    succeeded: Bool, message: String, elementId: String?, elementCount: Int?, retried: Bool? = nil
+  ) {
+    self.succeeded = succeeded
+    self.message = message
+    self.elementId = elementId
+    self.elementCount = elementCount
+    self.retried = retried
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case succeeded, message, elementId, elementCount, retried
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(succeeded, forKey: .succeeded)
+    try c.encode(message, forKey: .message)
+    try c.encodeIfPresent(elementId, forKey: .elementId)
+    try c.encodeIfPresent(elementCount, forKey: .elementCount)
+    try c.encodeIfPresent(retried, forKey: .retried)
+  }
 }
 
 struct UI: AsyncParsableCommand {
@@ -20,6 +44,7 @@ struct UI: AsyncParsableCommand {
       UISwipe.self, UIPinch.self, UIDrag.self,
       UIType.self, UIGetText.self,
       UISource.self, UIAlert.self,
+      UILs.self, UITapByID.self, UITapBy.self,
     ],
     defaultSubcommand: UIStatus.self
   )
@@ -887,6 +912,159 @@ struct UIAlert: AsyncParsableCommand {
     }
 
     if !succeeded {
+      throw ExitCode.failure
+    }
+  }
+}
+
+// MARK: - List Elements (ui ls)
+
+struct UILs: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "ls",
+    abstract:
+      "Flat one-line-per-element listing. Format: <a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>."
+  )
+
+  @Option(help: "Restrict the listing to an a11y-id and its descendants.")
+  var scope: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
+    let env = Environment.live
+    do {
+      let (body, count, source) = try await xcforgeRenderUIListing(scope: scope, env: env)
+      let message = "Elements (\(source), \(count)):\n\(body)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(succeeded: true, message: message, elementId: nil, elementCount: count)))
+      } else {
+        print(message)
+      }
+    } catch {
+      let message = "List elements failed: \(error)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
+      } else {
+        print(message)
+      }
+      throw ExitCode.failure
+    }
+  }
+}
+
+// MARK: - Tap By ID (ui tap-by-id <a11y-id>)
+
+struct UITapByID: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "tap-by-id",
+    abstract:
+      "Atomic find-and-tap by accessibility id. Retries once on stale-element / session-dead."
+  )
+
+  @Argument(help: "Accessibility id of the element to tap.")
+  var id: String
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
+    let env = Environment.live
+    do {
+      let clock = ContinuousClock()
+      let start = clock.now
+      let (elementId, retried) = try await xcforgePerformUITap(
+        using: "accessibility id", value: id, env: env
+      )
+      let dur = clock.now - start
+      let elapsedMs =
+        Double(dur.components.seconds) * 1000
+        + Double(dur.components.attoseconds) / 1.0e15
+      let elapsed = String(format: "%.0f", elapsedMs)
+      let suffix = retried ? " (retried)" : ""
+      let message = "Tapped '\(id)' → \(elementId) (\(elapsed)ms)\(suffix)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(
+              succeeded: true, message: message, elementId: elementId, elementCount: nil,
+              retried: retried)))
+      } else {
+        print(message)
+      }
+    } catch {
+      let message = "tap-by-id failed: \(error)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
+      } else {
+        print(message)
+      }
+      throw ExitCode.failure
+    }
+  }
+}
+
+// MARK: - Tap By Strategy (ui tap-by --using <strat> --value <v>)
+
+struct UITapBy: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "tap-by",
+    abstract:
+      "Atomic find-and-tap via any WDA strategy. Retries once on stale-element / session-dead. find-not-found is surfaced immediately without retry."
+  )
+
+  @Option(help: "Strategy: 'accessibility id', 'class name', 'predicate string', 'class chain'.")
+  var using: String
+
+  @Option(help: "Search value.")
+  var value: String
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
+    let env = Environment.live
+    do {
+      let clock = ContinuousClock()
+      let start = clock.now
+      let (elementId, retried) = try await xcforgePerformUITap(
+        using: using, value: value, env: env
+      )
+      let dur = clock.now - start
+      let elapsedMs =
+        Double(dur.components.seconds) * 1000
+        + Double(dur.components.attoseconds) / 1.0e15
+      let elapsed = String(format: "%.0f", elapsedMs)
+      let suffix = retried ? " (retried)" : ""
+      let message = "Tapped \(using)='\(value)' → \(elementId) (\(elapsed)ms)\(suffix)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(
+              succeeded: true, message: message, elementId: elementId, elementCount: nil,
+              retried: retried)))
+      } else {
+        print(message)
+      }
+    } catch {
+      let message = "tap-by failed: \(error)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
+      } else {
+        print(message)
+      }
       throw ExitCode.failure
     }
   }
