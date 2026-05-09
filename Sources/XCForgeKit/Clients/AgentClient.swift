@@ -465,49 +465,81 @@ public actor WDAClient {
     return try await createSession()
   }
 
+  /// True for the WebDriver "no such session" / "invalid session id" signature only.
+  /// Conservative on purpose: connectivity errors and unrelated 4xx must not trigger retry.
+  func isSessionDead(_ error: Error) -> Bool {
+    guard case let WDAError.wdaError(status, msg) = error, status == 404 else { return false }
+    let lower = msg.lowercased()
+    return lower.contains("no such session") || lower.contains("invalid session id")
+  }
+
+  /// Run `op` with a freshly ensured session id. If `op` throws a session-dead error,
+  /// invalidate `sessionId`, create a new session, and retry `op` exactly once.
+  /// A session-dead error means WDA accepted the request and rejected the session id —
+  /// WDA itself is alive, so `createSession()` is sufficient (no full restart cycle needed).
+  private func withSessionRetry<T>(_ op: (String) async throws -> T) async throws -> T {
+    let sid = try await ensureSession()
+    do {
+      return try await op(sid)
+    } catch let err where isSessionDead(err) {
+      Log.warn("WDA session expired mid-call; recreating and retrying once")
+      sessionId = nil
+      let newSid = try await createSession()
+      return try await op(newSid)
+    }
+  }
+
   // MARK: - Element Finding
 
   public func findElement(
     using strategy: String, value: String, scroll: Bool = false, direction: String = "auto",
     maxSwipes: Int = 10
   ) async throws -> (elementId: String, swipes: Int) {
-    let sid = try await ensureSession()
-    var body: [String: Any] = ["using": strategy, "value": value]
-    if scroll {
-      body["scroll"] = true
-      body["direction"] = direction
-      body["maxSwipes"] = maxSwipes
-    }
-    let json = try await jsonRequest(
-      method: "POST",
-      path: "/session/\(sid)/element",
-      body: body
-    )
+    try await withSessionRetry { sid in
+      var body: [String: Any] = ["using": strategy, "value": value]
+      if scroll {
+        body["scroll"] = true
+        body["direction"] = direction
+        body["maxSwipes"] = maxSwipes
+      }
+      let json = try await self.jsonRequest(
+        method: "POST",
+        path: "/session/\(sid)/element",
+        body: body
+      )
 
-    guard let element = json["value"] as? [String: Any],
-      let elementId = element["ELEMENT"] as? String ?? element.values.first as? String
-    else {
-      throw WDAError.elementNotFound(strategy, value)
+      guard let element = json["value"] as? [String: Any],
+        let elementId = element["ELEMENT"] as? String ?? element.values.first as? String
+      else {
+        throw WDAError.elementNotFound(strategy, value)
+      }
+      let swipes = element["swipes"] as? Int ?? 0
+      return (elementId, swipes)
     }
-    let swipes = element["swipes"] as? Int ?? 0
-    return (elementId, swipes)
   }
 
   public func findElements(using strategy: String, value: String) async throws -> [String] {
-    let sid = try await ensureSession()
-    let json = try await jsonRequest(
-      method: "POST",
-      path: "/session/\(sid)/elements",
-      body: ["using": strategy, "value": value]
-    )
+    try await withSessionRetry { sid in
+      let json = try await self.jsonRequest(
+        method: "POST",
+        path: "/session/\(sid)/elements",
+        body: ["using": strategy, "value": value]
+      )
 
-    guard let elements = json["value"] as? [[String: Any]] else { return [] }
-    return elements.compactMap { elem in
-      elem["ELEMENT"] as? String ?? elem.values.first as? String
+      guard let elements = json["value"] as? [[String: Any]] else { return [] }
+      return elements.compactMap { elem in
+        elem["ELEMENT"] as? String ?? elem.values.first as? String
+      }
     }
   }
 
-  // MARK: - Element Interaction
+  // MARK: - Element Interaction (not wrapped in withSessionRetry)
+  //
+  // These methods accept an element id captured under the *current* session. If the session
+  // dies between find and use, recreating the session would invalidate the element id and the
+  // retry would fail with "no such element" — a less truthful error than "no such session".
+  // We surface the original session-dead error so the caller can re-find and retry at a
+  // higher level.
 
   public func click(elementId: String) async throws {
     let sid = try await ensureSession()
@@ -566,164 +598,177 @@ public actor WDAClient {
   }
 
   public func getWindowSize() async throws -> WindowSize {
-    let sid = try await ensureSession()
-    let json = try await jsonRequest(method: "GET", path: "/session/\(sid)/window/size")
-    guard let value = json["value"] as? [String: Any],
-      let w = value["width"] as? Double,
-      let h = value["height"] as? Double
-    else {
-      throw WDAError.invalidResponse("Invalid window size")
+    try await withSessionRetry { sid in
+      let json = try await self.jsonRequest(method: "GET", path: "/session/\(sid)/window/size")
+      guard let value = json["value"] as? [String: Any],
+        let w = value["width"] as? Double,
+        let h = value["height"] as? Double
+      else {
+        throw WDAError.invalidResponse("Invalid window size")
+      }
+      return WindowSize(width: w, height: h)
     }
-    return WindowSize(width: w, height: h)
   }
 
   // MARK: - Touch Actions (W3C Actions API)
 
   public func tap(x: Double, y: Double) async throws {
-    let sid = try await ensureSession()
-    let actions: [String: Any] = [
-      "actions": [
-        [
-          "type": "pointer",
-          "id": "finger1",
-          "parameters": ["pointerType": "touch"],
-          "actions": [
-            ["type": "pointerMove", "duration": 0, "x": Int(x), "y": Int(y)],
-            ["type": "pointerDown", "button": 0],
-            ["type": "pause", "duration": 50],
-            ["type": "pointerUp", "button": 0],
-          ],
+    try await withSessionRetry { sid in
+      let actions: [String: Any] = [
+        "actions": [
+          [
+            "type": "pointer",
+            "id": "finger1",
+            "parameters": ["pointerType": "touch"],
+            "actions": [
+              ["type": "pointerMove", "duration": 0, "x": Int(x), "y": Int(y)],
+              ["type": "pointerDown", "button": 0],
+              ["type": "pause", "duration": 50],
+              ["type": "pointerUp", "button": 0],
+            ],
+          ]
         ]
       ]
-    ]
-    _ = try await jsonRequest(method: "POST", path: "/session/\(sid)/actions", body: actions)
+      _ = try await self.jsonRequest(
+        method: "POST", path: "/session/\(sid)/actions", body: actions)
+    }
   }
 
   public func doubleTap(x: Double, y: Double) async throws {
-    let sid = try await ensureSession()
-    let actions: [String: Any] = [
-      "actions": [
-        [
-          "type": "pointer",
-          "id": "finger1",
-          "parameters": ["pointerType": "touch"],
-          "actions": [
-            ["type": "pointerMove", "duration": 0, "x": Int(x), "y": Int(y)],
-            ["type": "pointerDown", "button": 0],
-            ["type": "pause", "duration": 30],
-            ["type": "pointerUp", "button": 0],
-            ["type": "pause", "duration": 50],
-            ["type": "pointerDown", "button": 0],
-            ["type": "pause", "duration": 30],
-            ["type": "pointerUp", "button": 0],
-          ],
+    try await withSessionRetry { sid in
+      let actions: [String: Any] = [
+        "actions": [
+          [
+            "type": "pointer",
+            "id": "finger1",
+            "parameters": ["pointerType": "touch"],
+            "actions": [
+              ["type": "pointerMove", "duration": 0, "x": Int(x), "y": Int(y)],
+              ["type": "pointerDown", "button": 0],
+              ["type": "pause", "duration": 30],
+              ["type": "pointerUp", "button": 0],
+              ["type": "pause", "duration": 50],
+              ["type": "pointerDown", "button": 0],
+              ["type": "pause", "duration": 30],
+              ["type": "pointerUp", "button": 0],
+            ],
+          ]
         ]
       ]
-    ]
-    _ = try await jsonRequest(method: "POST", path: "/session/\(sid)/actions", body: actions)
+      _ = try await self.jsonRequest(
+        method: "POST", path: "/session/\(sid)/actions", body: actions)
+    }
   }
 
   public func longPress(x: Double, y: Double, durationMs: Int = 1000) async throws {
-    let sid = try await ensureSession()
-    let actions: [String: Any] = [
-      "actions": [
-        [
-          "type": "pointer",
-          "id": "finger1",
-          "parameters": ["pointerType": "touch"],
-          "actions": [
-            ["type": "pointerMove", "duration": 0, "x": Int(x), "y": Int(y)],
-            ["type": "pointerDown", "button": 0],
-            ["type": "pause", "duration": durationMs],
-            ["type": "pointerUp", "button": 0],
-          ],
+    try await withSessionRetry { sid in
+      let actions: [String: Any] = [
+        "actions": [
+          [
+            "type": "pointer",
+            "id": "finger1",
+            "parameters": ["pointerType": "touch"],
+            "actions": [
+              ["type": "pointerMove", "duration": 0, "x": Int(x), "y": Int(y)],
+              ["type": "pointerDown", "button": 0],
+              ["type": "pause", "duration": durationMs],
+              ["type": "pointerUp", "button": 0],
+            ],
+          ]
         ]
       ]
-    ]
-    _ = try await jsonRequest(method: "POST", path: "/session/\(sid)/actions", body: actions)
+      _ = try await self.jsonRequest(
+        method: "POST", path: "/session/\(sid)/actions", body: actions)
+    }
   }
 
   public func swipe(
     startX: Double, startY: Double, endX: Double, endY: Double, durationMs: Int = 300
   ) async throws {
-    let sid = try await ensureSession()
-    let actions: [String: Any] = [
-      "actions": [
-        [
-          "type": "pointer",
-          "id": "finger1",
-          "parameters": ["pointerType": "touch"],
-          "actions": [
-            ["type": "pointerMove", "duration": 0, "x": Int(startX), "y": Int(startY)],
-            ["type": "pointerDown", "button": 0],
-            ["type": "pointerMove", "duration": durationMs, "x": Int(endX), "y": Int(endY)],
-            ["type": "pointerUp", "button": 0],
-          ],
+    try await withSessionRetry { sid in
+      let actions: [String: Any] = [
+        "actions": [
+          [
+            "type": "pointer",
+            "id": "finger1",
+            "parameters": ["pointerType": "touch"],
+            "actions": [
+              ["type": "pointerMove", "duration": 0, "x": Int(startX), "y": Int(startY)],
+              ["type": "pointerDown", "button": 0],
+              ["type": "pointerMove", "duration": durationMs, "x": Int(endX), "y": Int(endY)],
+              ["type": "pointerUp", "button": 0],
+            ],
+          ]
         ]
       ]
-    ]
-    _ = try await jsonRequest(method: "POST", path: "/session/\(sid)/actions", body: actions)
+      _ = try await self.jsonRequest(
+        method: "POST", path: "/session/\(sid)/actions", body: actions)
+    }
   }
 
   public func pinch(centerX: Double, centerY: Double, scale: Double, durationMs: Int = 500)
     async throws
   {
-    let sid = try await ensureSession()
-    let isZoomIn = scale > 1.0
+    try await withSessionRetry { sid in
+      let isZoomIn = scale > 1.0
 
-    // Calculate finger offsets so the start/end distance ratio matches the requested scale.
-    // Base offset = 50px (comfortable finger spacing). For zoom-in, fingers spread apart;
-    // for zoom-out, fingers move closer together.
-    let baseOffset = 50.0
-    let startOffset = isZoomIn ? baseOffset : baseOffset * scale
-    let endOffset = isZoomIn ? baseOffset * scale : baseOffset
+      // Calculate finger offsets so the start/end distance ratio matches the requested scale.
+      // Base offset = 50px (comfortable finger spacing). For zoom-in, fingers spread apart;
+      // for zoom-out, fingers move closer together.
+      let baseOffset = 50.0
+      let startOffset = isZoomIn ? baseOffset : baseOffset * scale
+      let endOffset = isZoomIn ? baseOffset * scale : baseOffset
 
-    let finger1Start = (x: centerX, y: centerY - startOffset)
-    let finger1End = (x: centerX, y: centerY - endOffset)
-    let finger2Start = (x: centerX, y: centerY + startOffset)
-    let finger2End = (x: centerX, y: centerY + endOffset)
+      let finger1Start = (x: centerX, y: centerY - startOffset)
+      let finger1End = (x: centerX, y: centerY - endOffset)
+      let finger2Start = (x: centerX, y: centerY + startOffset)
+      let finger2End = (x: centerX, y: centerY + endOffset)
 
-    let actions: [String: Any] = [
-      "actions": [
-        [
-          "type": "pointer",
-          "id": "finger1",
-          "parameters": ["pointerType": "touch"],
-          "actions": [
-            [
-              "type": "pointerMove", "duration": 0, "x": Int(finger1Start.x),
-              "y": Int(finger1Start.y),
+      let actions: [String: Any] = [
+        "actions": [
+          [
+            "type": "pointer",
+            "id": "finger1",
+            "parameters": ["pointerType": "touch"],
+            "actions": [
+              [
+                "type": "pointerMove", "duration": 0, "x": Int(finger1Start.x),
+                "y": Int(finger1Start.y),
+              ],
+              ["type": "pointerDown", "button": 0],
+              [
+                "type": "pointerMove", "duration": durationMs, "x": Int(finger1End.x),
+                "y": Int(finger1End.y),
+              ],
+              ["type": "pointerUp", "button": 0],
             ],
-            ["type": "pointerDown", "button": 0],
-            [
-              "type": "pointerMove", "duration": durationMs, "x": Int(finger1End.x),
-              "y": Int(finger1End.y),
-            ],
-            ["type": "pointerUp", "button": 0],
           ],
-        ],
-        [
-          "type": "pointer",
-          "id": "finger2",
-          "parameters": ["pointerType": "touch"],
-          "actions": [
-            [
-              "type": "pointerMove", "duration": 0, "x": Int(finger2Start.x),
-              "y": Int(finger2Start.y),
+          [
+            "type": "pointer",
+            "id": "finger2",
+            "parameters": ["pointerType": "touch"],
+            "actions": [
+              [
+                "type": "pointerMove", "duration": 0, "x": Int(finger2Start.x),
+                "y": Int(finger2Start.y),
+              ],
+              ["type": "pointerDown", "button": 0],
+              [
+                "type": "pointerMove", "duration": durationMs, "x": Int(finger2End.x),
+                "y": Int(finger2End.y),
+              ],
+              ["type": "pointerUp", "button": 0],
             ],
-            ["type": "pointerDown", "button": 0],
-            [
-              "type": "pointerMove", "duration": durationMs, "x": Int(finger2End.x),
-              "y": Int(finger2End.y),
-            ],
-            ["type": "pointerUp", "button": 0],
           ],
-        ],
+        ]
       ]
-    ]
-    _ = try await jsonRequest(method: "POST", path: "/session/\(sid)/actions", body: actions)
+      _ = try await self.jsonRequest(
+        method: "POST", path: "/session/\(sid)/actions", body: actions)
+    }
   }
 
+  // dragAndDrop accepts element ids in `sourceElement`/`targetElement`. Same caveat as
+  // click(elementId:) — those ids are session-scoped, so we don't auto-retry on session death.
   public func dragAndDrop(
     sourceElement: String? = nil, targetElement: String? = nil,
     fromX: Double? = nil, fromY: Double? = nil,
@@ -764,72 +809,80 @@ public actor WDAClient {
     }
   }
 
-  /// Get alert text. Returns nil if no alert is visible (404 from WDA).
+  /// Get alert text. Returns nil if no alert is visible (404 from WDA) or on any error.
+  /// Wrapped in withSessionRetry so a session-death between calls doesn't masquerade as
+  /// "no alert"; on a true no-alert response WDA's 404 message is "no such alert", which
+  /// `isSessionDead` does not match, so the retry path is not engaged.
   public func getAlertText() async -> AlertInfo? {
-    guard let sid = try? await ensureSession() else { return nil }
     do {
-      let json = try await jsonRequest(method: "GET", path: "/session/\(sid)/alert/text")
-      let text = json["value"] as? String ?? ""
-      let buttons = json["buttons"] as? [String] ?? []
-      return AlertInfo(text: text, buttons: buttons)
+      return try await withSessionRetry { sid in
+        let json = try await self.jsonRequest(
+          method: "GET", path: "/session/\(sid)/alert/text")
+        let text = json["value"] as? String ?? ""
+        let buttons = json["buttons"] as? [String] ?? []
+        return AlertInfo(text: text, buttons: buttons)
+      }
     } catch {
-      return nil  // No alert visible
+      return nil
     }
   }
 
   /// Accept the current alert or all visible alerts.
   public func acceptAlert(buttonLabel: String? = nil, all: Bool = false) async throws -> AlertInfo? {
-    let sid = try await ensureSession()
-    var body: [String: Any] = [:]
-    if let label = buttonLabel { body["name"] = label }
-    if all { body["all"] = true }
+    try await withSessionRetry { sid in
+      var body: [String: Any] = [:]
+      if let label = buttonLabel { body["name"] = label }
+      if all { body["all"] = true }
 
-    let json = try await jsonRequest(
-      method: "POST", path: "/session/\(sid)/alert/accept", body: body.isEmpty ? nil : body)
-    let text = json["alertText"] as? String
-    let buttons = json["buttons"] as? [String]
-    if let text, let buttons {
-      return AlertInfo(text: text, buttons: buttons)
+      let json = try await self.jsonRequest(
+        method: "POST", path: "/session/\(sid)/alert/accept", body: body.isEmpty ? nil : body)
+      let text = json["alertText"] as? String
+      let buttons = json["buttons"] as? [String]
+      if let text, let buttons {
+        return AlertInfo(text: text, buttons: buttons)
+      }
+      return nil
     }
-    return nil
   }
 
   /// Dismiss the current alert or all visible alerts.
   public func dismissAlert(buttonLabel: String? = nil, all: Bool = false) async throws -> AlertInfo? {
-    let sid = try await ensureSession()
-    var body: [String: Any] = [:]
-    if let label = buttonLabel { body["name"] = label }
-    if all { body["all"] = true }
+    try await withSessionRetry { sid in
+      var body: [String: Any] = [:]
+      if let label = buttonLabel { body["name"] = label }
+      if all { body["all"] = true }
 
-    let json = try await jsonRequest(
-      method: "POST", path: "/session/\(sid)/alert/dismiss", body: body.isEmpty ? nil : body)
-    let text = json["alertText"] as? String
-    let buttons = json["buttons"] as? [String]
-    if let text, let buttons {
-      return AlertInfo(text: text, buttons: buttons)
+      let json = try await self.jsonRequest(
+        method: "POST", path: "/session/\(sid)/alert/dismiss", body: body.isEmpty ? nil : body)
+      let text = json["alertText"] as? String
+      let buttons = json["buttons"] as? [String]
+      if let text, let buttons {
+        return AlertInfo(text: text, buttons: buttons)
+      }
+      return nil
     }
-    return nil
   }
 
   /// Accept or dismiss all visible alerts in batch. Returns count + details.
   public func handleAllAlerts(accept: Bool) async throws -> BatchAlertResult {
-    let sid = try await ensureSession()
-    let path = accept ? "/session/\(sid)/alert/accept" : "/session/\(sid)/alert/dismiss"
-    let json = try await jsonRequest(method: "POST", path: path, body: ["all": true])
+    try await withSessionRetry { sid in
+      let path = accept ? "/session/\(sid)/alert/accept" : "/session/\(sid)/alert/dismiss"
+      let json = try await self.jsonRequest(method: "POST", path: path, body: ["all": true])
 
-    guard let value = json["value"] as? [String: Any] else {
-      return BatchAlertResult(count: 0, alerts: [])
+      guard let value = json["value"] as? [String: Any] else {
+        return BatchAlertResult(count: 0, alerts: [])
+      }
+      let count = value["count"] as? Int ?? 0
+      let alertDicts = value["alerts"] as? [[String: Any]] ?? []
+      let alerts = alertDicts.map {
+        BatchAlertResult.AlertDetail(
+          text: $0["text"] as? String ?? "",
+          buttons: $0["buttons"] as? [String] ?? [],
+          source: $0["source"] as? String ?? ""
+        )
+      }
+      return BatchAlertResult(count: count, alerts: alerts)
     }
-    let count = value["count"] as? Int ?? 0
-    let alertDicts = value["alerts"] as? [[String: Any]] ?? []
-    let alerts = alertDicts.map {
-      BatchAlertResult.AlertDetail(
-        text: $0["text"] as? String ?? "",
-        buttons: $0["buttons"] as? [String] ?? [],
-        source: $0["source"] as? String ?? ""
-      )
-    }
-    return BatchAlertResult(count: count, alerts: alerts)
   }
 
   // MARK: - View Hierarchy
@@ -849,61 +902,66 @@ public actor WDAClient {
   // MARK: - Screenshot via WDA
 
   func wdaScreenshot() async throws -> Data {
-    let sid = try await ensureSession()
-    let json = try await jsonRequest(method: "GET", path: "/session/\(sid)/screenshot")
-    guard let b64 = json["value"] as? String,
-      let data = Data(base64Encoded: b64)
-    else {
-      throw WDAError.invalidResponse("Invalid screenshot data")
+    try await withSessionRetry { sid in
+      let json = try await self.jsonRequest(method: "GET", path: "/session/\(sid)/screenshot")
+      guard let b64 = json["value"] as? String,
+        let data = Data(base64Encoded: b64)
+      else {
+        throw WDAError.invalidResponse("Invalid screenshot data")
+      }
+      return data
     }
-    return data
   }
 
   // MARK: - Pasteboard (Clipboard)
 
   public func getPasteboard(contentType: String = "plaintext") async throws -> String {
-    let sid = try await ensureSession()
-    let json = try await jsonRequest(
-      method: "POST",
-      path: "/session/\(sid)/wda/pasteboard",
-      body: ["contentType": contentType]
-    )
-    guard let value = json["value"] as? String else {
-      return ""
+    try await withSessionRetry { sid in
+      let json = try await self.jsonRequest(
+        method: "POST",
+        path: "/session/\(sid)/wda/pasteboard",
+        body: ["contentType": contentType]
+      )
+      guard let value = json["value"] as? String else {
+        return ""
+      }
+      // WDA returns base64-encoded pasteboard content
+      if let data = Data(base64Encoded: value), let text = String(data: data, encoding: .utf8) {
+        return text
+      }
+      return value
     }
-    // WDA returns base64-encoded pasteboard content
-    if let data = Data(base64Encoded: value), let text = String(data: data, encoding: .utf8) {
-      return text
-    }
-    return value
   }
 
   public func setPasteboard(_ text: String, contentType: String = "plaintext") async throws {
-    let sid = try await ensureSession()
-    let encoded = Data(text.utf8).base64EncodedString()
-    _ = try await jsonRequest(
-      method: "POST",
-      path: "/session/\(sid)/wda/setPasteboard",
-      body: ["content": encoded, "contentType": contentType]
-    )
+    try await withSessionRetry { sid in
+      let encoded = Data(text.utf8).base64EncodedString()
+      _ = try await self.jsonRequest(
+        method: "POST",
+        path: "/session/\(sid)/wda/setPasteboard",
+        body: ["content": encoded, "contentType": contentType]
+      )
+    }
   }
 
   // MARK: - Device Orientation
 
   func getOrientation() async throws -> String {
-    let sid = try await ensureSession()
-    let json = try await jsonRequest(method: "GET", path: "/session/\(sid)/orientation")
-    return json["value"] as? String ?? "PORTRAIT"
+    try await withSessionRetry { sid in
+      let json = try await self.jsonRequest(method: "GET", path: "/session/\(sid)/orientation")
+      return json["value"] as? String ?? "PORTRAIT"
+    }
   }
 
   func setOrientation(_ orientation: String) async throws -> String {
-    let sid = try await ensureSession()
-    let json = try await jsonRequest(
-      method: "POST",
-      path: "/session/\(sid)/orientation",
-      body: ["orientation": orientation]
-    )
-    return json["value"] as? String ?? orientation
+    try await withSessionRetry { sid in
+      let json = try await self.jsonRequest(
+        method: "POST",
+        path: "/session/\(sid)/orientation",
+        body: ["orientation": orientation]
+      )
+      return json["value"] as? String ?? orientation
+    }
   }
 
   // MARK: - Status

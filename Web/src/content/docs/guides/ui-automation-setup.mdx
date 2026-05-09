@@ -111,15 +111,20 @@ xcforge detects the running WDA and switches to the `originalWDA` backend automa
 xcforge ui status --json
 ```
 
-A healthy response includes the WDA version, session ID, and which backend is active (`xcforgeWDA` or `Original WDA`).
+A healthy response includes the WDA version, session ID, and which backend is active (`xcforgeWDA` or `Original WDA`). That's all you need — every `xcforge ui *` command auto-creates a session on first use and re-attaches if the existing one dies, so an explicit "create session" step is not part of the normal flow. If `ui status` reports an unhealthy state, jump to [Troubleshooting](#troubleshooting).
+
+## Optional: bind to a specific app
+
+`xcforge ui session` exists for two narrower cases: launching the WDA session against a specific bundle ID, or pointing it at a non-default WDA URL.
 
 ```bash
-xcforge ui create-session --bundle-id com.example.MyApp --json
+# Activate a specific app on session create
+xcforge ui session --bundle-id com.example.MyApp --json
 ```
 
 ## Custom WDA URL
 
-If WDA runs on a non-default port or host, override it:
+If WDA runs on a non-default port or host, override it for all subsequent commands:
 
 **MCP:**
 ```json
@@ -128,7 +133,7 @@ If WDA runs on a non-default port or host, override it:
 
 **CLI:**
 ```bash
-xcforge ui create-session --wda-url http://localhost:8200 --json
+xcforge ui session --wda-url http://localhost:8200 --json
 ```
 
 ## Troubleshooting

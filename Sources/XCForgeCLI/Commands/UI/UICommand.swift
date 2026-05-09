@@ -85,7 +85,8 @@ struct UIStatus: AsyncParsableCommand {
 struct UISession: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "session",
-    abstract: "Create a new WDA session, optionally for a specific app."
+    abstract:
+      "Bind a WDA session to a specific bundle ID or WDA URL. Not required for normal use — `ui *` commands auto-create sessions."
   )
 
   @Option(help: "Bundle ID to activate.")
