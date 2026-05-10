@@ -27,12 +27,20 @@ Create a new WDA session, optionally activating an app.
 it as the active bundle id and threads it through every subsequent recreate
 (mid-call session-dead retry, WDA restart). Auto-bootstrapped sessions therefore
 stay bound to the app under test rather than reverting to whatever app WDA picks.
-Binding is mandatory if you want WDA queries to reach SwiftUI sheets, alerts, or
-`fullScreenCover` — those mount in secondary windows owned by the app, and only
-queries rooted at `XCUIApplication(bundleId)` walk every window. The CLI form
-(`xcforge ui session --bundle-id <id>`) verifies the binding via `GET /session/<sid>`
-and exits non-zero on a `CFBundleIdentifier` mismatch — silent no-binds become
-explicit failures. Empty/whitespace bundle ids are rejected.
+The CLI form (`xcforge ui session --bundle-id <id>`) verifies the binding via
+`GET /session/<sid>` and exits non-zero on a `CFBundleIdentifier` mismatch — silent
+no-binds become explicit failures. Empty/whitespace bundle ids are rejected.
+
+**WDA can't see SwiftUI sheets — improved in v1.4.1.** Earlier releases needed
+the bundle-id binding above and still missed `.sheet` / `fullScreenCover`
+content because `XCUIApplication.snapshotWithError:` only walks the keyWindow.
+As of v1.4.1, WDA reads sheet-window content automatically for source dumps
+and coordinate taps — `/source` (json/xml/description) merges per-window
+snapshots when the app exposes more than one `UIWindow`, and coordinate
+`/wda/tap` re-roots on the topmost hittable window. Element find retries the
+sheet window only when the keyWindow query returns no matches, so an id that
+exists in *both* windows resolves to the keyWindow element. If `ui ls` still
+misses sheet elements, file a bug with `--source wda` output attached.
 
 ---
 
