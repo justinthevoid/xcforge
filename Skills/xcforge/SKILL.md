@@ -248,6 +248,12 @@ clipboard_get()                               → read pasteboard content
 
 8. **Forgetting WDA session** — UI automation tools require WebDriverAgent running on the simulator. If `wda_status` fails, WDA needs to be started. `build_run_sim` does NOT start WDA automatically.
 
+   **Sub-pitfall: WDA can't see SwiftUI sheets / alerts / `fullScreenCover`.** Those mount in a secondary window owned by the app. Queries reach them only when the WDA session is bound to the app's bundle id. Run `xcforge ui session --bundle-id <id>` once — `WDAClient` persists the binding across recreates from then on, and the CLI verifies the binding via `GET /session/<sid>`, exiting non-zero on mismatch (no more silent no-binds). If `ui find` / `tap-by-id` 404s on an id you can see in `ui ls`, this is almost always why.
+
+   **Sub-pitfall: `xcforge ui ls` returning 300+ macOS menubar elements.** That's AXP returning Simulator.app's chrome instead of the iOS app tree. `ui ls --source auto` (default) flips to WDA when an iOS sim is booted — pre-1.4.1 it always preferred AXP. If you still get the wrong tree, force it: `--source wda`.
+
+   **Sub-pitfall: `xcforge pose --screenshot` capturing the launch zoom animation.** `pose` now waits 1.5s by default before capturing so the iOS launch zoom can settle. Override with `--screenshot-delay <sec>` (use `0` for legacy immediate-capture).
+
 9. **Not clearing status bar overrides** — `sim_statusbar` overrides persist until cleared. Always call `sim_statusbar_clear()` after capturing screenshots with overrides.
 
 10. **Confusing simulator vs device tools** — Simulator tools (`sim`, `build_sim`, etc.) don't work with physical devices. Use `device_*` tools (`list_devices`, `device_install`, etc.) for physical iOS devices connected via USB/WiFi.

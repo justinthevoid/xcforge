@@ -13,8 +13,9 @@ Launch an app into a named visual state (pose) for rapid design iteration. Inter
 | `scheme` | No | Auto-detect | Scheme name |
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 | `configuration` | No | Debug | Build configuration |
-| `key` | No | `-pose` | Argument key to prepend to pose name (e.g., `-pose dark-theme` or `--state onboarding-step-2`) |
+| `key` | No | `-pose` | Argument key to prepend to pose name (e.g., `-pose dark-theme` or `--state onboarding-step-2`). For values starting with `-`, use `--key=-myValue` (ArgumentParser parses bare `--key -myValue` as a missing value). |
 | `screenshot` | No | — | Optional file path to capture screenshot after launch |
+| `screenshotDelay` (`--screenshot-delay`) | No | `1.5` | Seconds to wait after launch before capturing the screenshot, so the iOS launch-zoom animation can settle. Pass `0` for legacy immediate-capture. Clamped to `[0, 60]`; NaN/inf are treated as `0`. |
 
 **Returns:** Build status, install confirmation, launch status, app PID. If `screenshot` provided, also returns image data (capture failure only warns, does not fail the pose).
 

@@ -402,10 +402,16 @@ UI automation via WebDriverAgent. 17 subcommands — `status` is the default.
 ```bash
 xcforge ui status                                # Check WDA health
 xcforge ui session                               # Create WDA session
-xcforge ui session --bundle-id com.app.id        # Session for specific app
+xcforge ui session --bundle-id com.app.id        # Bind session to app — verifies CFBundleIdentifier
+xcforge ui ls                                    # Flat element list — auto picks WDA when sim is booted
+xcforge ui ls --source wda                       # Force WDA (iOS app tree); use this if sheets aren't visible
+xcforge ui ls --source axp                       # Force macOS Accessibility (Simulator.app chrome)
+xcforge ui ls --scope home.drawer.root           # Restrict to a11y-id and its descendants
 xcforge ui find --using "accessibility id" --value "Save"
 xcforge ui find --using "accessibility id" --value "Save" --scroll
 xcforge ui find-all --using "class name" --value "XCUIElementTypeButton"
+xcforge ui tap-by-id home.drawer.cancel          # Atomic find + tap by a11y-id
+xcforge ui tap-by --using "accessibility id" --value "Save"
 xcforge ui click --element-id <id>
 xcforge ui tap --x 200 --y 400                  # Tap at point coordinates
 xcforge ui tap-pixel --x 1080 --y 2400          # Tap at pixel coordinates
@@ -422,6 +428,21 @@ xcforge ui source --format xml
 xcforge ui alert --action accept_all             # Handle all alerts
 xcforge ui alert --action dismiss --button-label "Cancel"
 ```
+
+**WDA session binding.** `ui session --bundle-id <id>` binds the WDA session to a
+specific app. This is the right hammer when WDA queries (`find`, `tap-by-id`,
+class-chain) can't reach SwiftUI sheets, alerts, or `fullScreenCover` — those
+mount in a secondary window owned by the app, and only sessions bound to the
+app's bundle id walk every window. `xcforge ui *` commands auto-create a session,
+and the bound bundle id is now persisted across recreates (mid-call retry,
+WDA restart). `ui session --bundle-id` verifies binding via `GET /session/<sid>`
+and exits non-zero if WDA reports a different `CFBundleIdentifier`.
+
+**ui ls source selection.** `--source auto` (default) picks WDA when any iOS sim
+is booted, AXP otherwise. Use `--source wda` to force the iOS app's tree when
+auto-detection misfires; use `--source axp` for macOS workflows. AXP returns
+Simulator.app's menubar/dock chrome — almost never what you want when
+automating an iOS app.
 
 All subcommands support `--json`.
 
@@ -712,8 +733,10 @@ xcforge pose dark-theme                          # Build + install + launch with
 xcforge pose onboarding-step-2                   # Another pose
 xcforge pose dark-theme --project MyApp.xcodeproj --scheme MyApp
 xcforge pose dark-theme --configuration Release
-xcforge pose dark-theme --screenshot /tmp/pose.png  # Capture screenshot after launch
+xcforge pose dark-theme --screenshot /tmp/pose.png  # Capture (waits 1.5s for launch zoom to settle)
+xcforge pose dark-theme --screenshot /tmp/pose.png --screenshot-delay 0  # Immediate capture (legacy)
 xcforge pose dark-theme --key "--debug-state"    # Custom argument key
+xcforge pose dark-theme --key=-NookPose          # `=` form required for values starting with '-'
 xcforge pose dark-theme --json
 ```
 
@@ -724,8 +747,9 @@ xcforge pose dark-theme --json
 | `--scheme <name>` | Xcode scheme name. Auto-detected if omitted |
 | `--simulator <name\|udid>` | Simulator name or UDID. Auto-detected if omitted |
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
-| `--key <str>` | Argument key to prepend to pose name. Default: `-pose` |
+| `--key <str>` | Argument key to prepend to pose name. Default: `-pose`. Use `--key=-myValue` for values starting with `-` (bare `--key -myValue` is parsed as a missing value). |
 | `--screenshot <path>` | Optional file path to capture screenshot after launch |
+| `--screenshot-delay <sec>` | Seconds to wait after launch before capturing, so the iOS launch zoom can settle. Default `1.5`; pass `0` for legacy immediate-capture. |
 | `--json` | Machine-readable JSON output |
 
 **Returns:** Build status, install confirmation, launch status, app PID. If `--screenshot` provided, also returns image data.

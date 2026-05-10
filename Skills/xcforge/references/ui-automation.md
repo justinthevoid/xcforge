@@ -23,6 +23,34 @@ Create a new WDA session, optionally activating an app.
 | `bundle_id` | No | — | App to activate (optional) |
 | `wda_url` | No | http://localhost:8100 | Custom WDA URL |
 
+**Bundle id binding (v1.4.1+).** When `bundle_id` is provided, `WDAClient` persists
+it as the active bundle id and threads it through every subsequent recreate
+(mid-call session-dead retry, WDA restart). Auto-bootstrapped sessions therefore
+stay bound to the app under test rather than reverting to whatever app WDA picks.
+Binding is mandatory if you want WDA queries to reach SwiftUI sheets, alerts, or
+`fullScreenCover` — those mount in secondary windows owned by the app, and only
+queries rooted at `XCUIApplication(bundleId)` walk every window. The CLI form
+(`xcforge ui session --bundle-id <id>`) verifies the binding via `GET /session/<sid>`
+and exits non-zero on a `CFBundleIdentifier` mismatch — silent no-binds become
+explicit failures. Empty/whitespace bundle ids are rejected.
+
+---
+
+## list_elements (CLI: `xcforge ui ls`)
+
+Flat one-line-per-element listing. Format: `<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>`. 50KB-truncated. Optional scope filter restricts the listing to a single a11y-id and its descendants.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `scope` | No | — | a11y-id to scope the listing to |
+| `source` | No | `auto` | Tree source: `auto` (WDA when sim is booted, else AXP), `wda` (iOS app via WebDriverAgent), `axp` (macOS Accessibility) |
+
+**Source policy.** `auto` flips primary to WDA whenever an iOS simulator is
+booted — that's the signal you're automating an iOS app, in which case AXP
+would return Simulator.app's macOS chrome (menubar, dock, About menu). When
+the primary source returns empty, `auto` falls back to the alternate; explicit
+`--source wda` or `--source axp` is forced and throws on failure or empty.
+
 ---
 
 ## handle_alert
