@@ -477,7 +477,9 @@ public actor WDAClient {
   /// invalidate `sessionId`, create a new session, and retry `op` exactly once.
   /// A session-dead error means WDA accepted the request and rejected the session id —
   /// WDA itself is alive, so `createSession()` is sufficient (no full restart cycle needed).
-  private func withSessionRetry<T>(_ op: (String) async throws -> T) async throws -> T {
+  private func withSessionRetry<T>(
+    _ op: (String) async throws -> sending T
+  ) async throws -> sending T {
     let sid = try await ensureSession()
     do {
       return try await op(sid)
