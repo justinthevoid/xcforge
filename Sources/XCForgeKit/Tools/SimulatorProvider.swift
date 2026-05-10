@@ -590,6 +590,10 @@ public enum SimTools {
         simulatorUDID: udid, bundleId: resolvedBundleId, args: args, env: env)
 
       if launch.succeeded {
+        // Hint WDA so any subsequent implicit `ensureSession()` (e.g. from `ui ls
+        // --source wda`) creates a session bound to this app instead of defaulting to
+        // Springboard.
+        await env.wdaClient.recordLaunchedApp(bundleId: resolvedBundleId)
         let note = launch.wasRunning ? " (was running, relaunched)" : ""
         return SimResult(
           succeeded: true,

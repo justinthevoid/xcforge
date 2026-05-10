@@ -471,6 +471,62 @@ public actor WDAClient {
     return nil
   }
 
+  /// Record the bundle id of the most recently launched app (e.g. via `simctl launch`)
+  /// so the next implicit `ensureSession()` carries it as a `bundleId` capability. Without
+  /// this hint, WDA defaults to activating Springboard whenever `ensureSession()` has to
+  /// auto-create a session — silently backgrounding the user's app on the first `ui ls`.
+  /// If the bundle changes from a previously recorded one, invalidate the cached
+  /// `sessionId` so the next `ensureSession()` rebinds — otherwise the actor's quick
+  /// session-health check would happily reuse a session bound to the *old* bundle and
+  /// poll/queries would target the wrong app. WDA reaps the orphaned session via its
+  /// session timeout; no DELETE call needed here. No network I/O.
+  public func recordLaunchedApp(bundleId: String) {
+    let trimmed = bundleId.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return }
+    if activeBundleId != trimmed {
+      sessionId = nil
+    }
+    activeBundleId = trimmed
+  }
+
+  /// Poll `verifyActiveBundleId()` until it returns `target` or `budget` seconds elapse.
+  /// Used by `pose` to wait for the app to actually become foreground after a cold launch
+  /// instead of relying on a fixed sleep. Cadence ~150ms. Errors during polling are
+  /// warn-only — caller falls back to a residual sleep when this returns false. Budget is
+  /// clamped to [0, 60].
+  public func pollForActiveBundleId(target: String, budget: TimeInterval) async -> Bool {
+    let trimmed = target.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty, budget.isFinite else { return false }
+    let clampedBudget = max(0, min(budget, 60))
+    if clampedBudget == 0 { return false }
+    let deadline = Date().addingTimeInterval(clampedBudget)
+    let cadenceNs: UInt64 = 150_000_000
+    if sessionId == nil {
+      do {
+        _ = try await ensureSession()
+      } catch {
+        Log.warn("pollForActiveBundleId: ensureSession failed: \(error)")
+        return false
+      }
+    }
+    while Date() < deadline {
+      if Task.isCancelled { return false }
+      do {
+        if let active = try await verifyActiveBundleId(), active == trimmed {
+          return true
+        }
+      } catch {
+        Log.warn("pollForActiveBundleId: verify failed (continuing): \(error)")
+      }
+      do {
+        try await Task.sleep(nanoseconds: cadenceNs)
+      } catch {
+        return false  // cancellation
+      }
+    }
+    return false
+  }
+
   @discardableResult
   func deleteSession() async -> Bool {
     guard let sid = sessionId else { return true }

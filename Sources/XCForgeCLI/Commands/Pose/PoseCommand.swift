@@ -43,9 +43,9 @@ struct Pose: AsyncParsableCommand {
 
   @Option(
     help:
-      "Seconds to wait after launch before capturing the screenshot, so the iOS launch-zoom animation can settle. Default 1.5. Pass 0 to capture immediately (legacy behavior)."
+      "Ceiling (seconds) for the post-launch wait before screenshot. Polls WDA for the active CFBundleIdentifier and proceeds as soon as the app is foreground; falls back to sleeping the residual budget if WDA is unreachable. Default 2.5. Pass 0 to capture immediately (legacy behavior)."
   )
-  var screenshotDelay: Double = 1.5
+  var screenshotDelay: Double = 2.5
 
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false

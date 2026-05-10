@@ -71,7 +71,7 @@ public enum PoseTools {
           "screenshotDelay": .object([
             "type": .string("number"),
             "description": .string(
-              "Seconds to wait after launch before capturing the screenshot, so the iOS launch-zoom animation can settle. Default 1.5. Pass 0 to capture immediately."
+              "Ceiling (seconds) for the post-launch wait before screenshot. Polls WDA for active CFBundleIdentifier and proceeds as soon as the app is foreground; falls back to sleeping the residual budget if WDA is unreachable. Default 2.5. Pass 0 to capture immediately."
             ),
           ]),
         ]),
@@ -103,7 +103,7 @@ public enum PoseTools {
     simulator: String? = nil,
     configuration: String = "Debug",
     screenshotPath: String? = nil,
-    screenshotDelay: Double = 1.5,
+    screenshotDelay: Double = 2.5,
     env: Environment = .live
   ) async -> PoseExecution {
     let start = CFAbsoluteTimeGetCurrent()
@@ -226,20 +226,32 @@ public enum PoseTools {
       )
     }
 
+    // Tell WDAClient which app we just launched. Without this hint, any subsequent
+    // implicit `ensureSession()` (e.g. from `ui ls --source wda`) creates a session with
+    // no bundleId capability and silently activates Springboard.
+    await env.wdaClient.recordLaunchedApp(bundleId: bundleId)
+
     // Optional screenshot — failures here only warn; do not fail the pose.
     var screenshotResultPath: String?
     var screenshotWarning: String?
     if let path = screenshotPath {
-      // Wait for the iOS launch zoom animation to settle before capture.
-      // Default 1.5s clears typical M-series launch transitions; explicit 0 skips.
-      // Sanitize: reject NaN/inf (would trap the UInt64 cast) and clamp to a sane
-      // upper bound so a typo can't strand the process for hours.
+      // Wait for the app to actually become foreground before capture. Sanitize: reject
+      // NaN/inf (would trap the UInt64 cast) and clamp to a sane upper bound so a typo
+      // can't strand the process for hours. Explicit 0 skips both poll and sleep.
       let delay: Double = {
         guard screenshotDelay.isFinite, screenshotDelay > 0 else { return 0 }
         return min(screenshotDelay, 60)
       }()
       if delay > 0 {
-        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        let pollStart = CFAbsoluteTimeGetCurrent()
+        let matched = await env.wdaClient.pollForActiveBundleId(
+          target: bundleId, budget: delay)
+        if !matched {
+          let remaining = delay - (CFAbsoluteTimeGetCurrent() - pollStart)
+          if remaining > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+          }
+        }
       }
       do {
         let udid = try await SimTools.resolveSimulator(resolvedSim, env: env)
@@ -282,7 +294,7 @@ public enum PoseTools {
         simulator: input.simulator,
         configuration: input.configuration ?? "Debug",
         screenshotPath: input.screenshot,
-        screenshotDelay: input.screenshotDelay ?? 1.5,
+        screenshotDelay: input.screenshotDelay ?? 2.5,
         env: env
       )
 
