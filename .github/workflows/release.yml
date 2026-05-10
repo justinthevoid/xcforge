@@ -19,12 +19,15 @@ jobs:
           file .build/release/xcforge
           echo "BINARY_PATH=.build/release/xcforge" >> "$GITHUB_ENV"
 
-      - name: Package tarball
+      - name: Package tarball (binary + xcforgeWDA)
         run: |
           BINARY="${BINARY_PATH}"
           VERSION="${GITHUB_REF_NAME}"
-          TARBALL="xcforge-${VERSION}-macos.tar.gz"
-          tar -czf "${TARBALL}" -C "$(dirname "${BINARY}")" "$(basename "${BINARY}")"
+          TARBALL="xcforge-${VERSION}-macos-arm64.tar.gz"
+          STAGING="$(mktemp -d)"
+          cp "${BINARY}" "${STAGING}/xcforge"
+          cp -R xcforgeWDA "${STAGING}/xcforgeWDA"
+          tar -czf "${TARBALL}" -C "${STAGING}" xcforge xcforgeWDA
           echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
           echo "SHA256=$(shasum -a 256 "${TARBALL}" | awk '{print $1}')" >> "$GITHUB_ENV"
 
@@ -71,8 +74,8 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          SOURCE_URL="https://github.com/justinthevoid/xcforge/archive/refs/tags/${VERSION}.tar.gz"
-          SOURCE_SHA=$(curl -sL "${SOURCE_URL}" | shasum -a 256 | awk '{print $1}')
+          SEMVER="${VERSION#v}"
+          TARBALL_URL="https://github.com/justinthevoid/xcforge/releases/download/${VERSION}/${TARBALL}"
 
           git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/justinthevoid/homebrew-tap.git /tmp/tap
           cd /tmp/tap
@@ -81,20 +84,37 @@ jobs:
           class Xcforge < Formula
             desc "MCP server and CLI for iOS development"
             homepage "https://github.com/justinthevoid/xcforge"
-            url "${SOURCE_URL}"
-            sha256 "${SOURCE_SHA}"
+            version "${SEMVER}"
             license "MIT"
 
-            depends_on xcode: ["15.0", :build]
+            on_macos do
+              on_arm do
+                url "${TARBALL_URL}"
+                sha256 "${SHA256}"
+              end
+            end
+
             depends_on :macos
 
             def install
-              system "swift", "build", "-c", "release", "--disable-sandbox"
-              bin.install ".build/release/XCForgeCLI" => "xcforge"
+              bin.install "xcforge"
+              (share/"xcforge").install "xcforgeWDA"
+            end
+
+            def caveats
+              <<~CAVEATS
+                xcforgeWDA (UI automation runner source) installed at:
+                  #{opt_share}/xcforge/xcforgeWDA
+
+                The first UI automation call builds the runner once via xcodebuild,
+                so Xcode is required at runtime for UI automation features.
+                CLI / build / test / log tools work without Xcode-build of the runner.
+              CAVEATS
             end
 
             test do
               assert_match "xcforge", shell_output("#{bin}/xcforge --help 2>&1", 0)
+              assert_predicate share/"xcforge/xcforgeWDA/xcforgeWDA.xcodeproj", :exist?
             end
           end
           EOF

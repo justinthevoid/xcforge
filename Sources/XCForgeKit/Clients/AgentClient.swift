@@ -242,10 +242,12 @@ public actor WDAClient {
     {
       projectDir = envDir
     } else {
-      // Try relative to this binary's known repo layout: <repo>/xcforgeWDA
+      // Search order: CWD-relative (developer running from a clone) → Homebrew share dirs.
       let candidates = [
         FileManager.default.currentDirectoryPath + "/xcforgeWDA",
         FileManager.default.currentDirectoryPath + "/../xcforgeWDA",
+        "/opt/homebrew/share/xcforge/xcforgeWDA",
+        "/usr/local/share/xcforge/xcforgeWDA",
       ]
       guard
         let found = candidates.first(where: {
