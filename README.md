@@ -12,7 +12,7 @@
 
 An MCP server and CLI for iOS development — build, test, automate, and diagnose from any AI agent or terminal.
 
-**103 MCP tools. 17 CLI command groups. Single native binary (~8 MB stripped, ~18 MB with debug symbols). Zero external runtime dependencies.**
+**107 MCP tools. 17 CLI command groups. Single native binary (~8 MB stripped, ~18 MB with debug symbols). Zero external runtime dependencies.**
 
 ---
 
@@ -204,8 +204,8 @@ Once installed, Claude will automatically load the right reference files when yo
 ## Two Modes, Same Tools
 
 ```bash
-xcforge                          # MCP server (stdio JSON-RPC, 102 tools)
-xcforge build --scheme MyApp     # CLI mode (16 command groups)
+xcforge                          # MCP server (stdio JSON-RPC, 107 tools)
+xcforge build --scheme MyApp     # CLI mode (17 command groups)
 ```
 
 Every tool available over MCP has a matching CLI command. Every CLI command supports `--json`.
@@ -216,12 +216,12 @@ Every tool available over MCP has a matching CLI command. Every CLI command supp
 
 | Category              | Count | Highlights                                                                                        |
 | --------------------- | ----- | ------------------------------------------------------------------------------------------------- |
-| **Build**             | 5     | `build_sim`, `build_run_sim` (build + boot + install + launch), `clean`, project/scheme discovery |
+| **Build**             | 6     | `build_sim`, `build_compile` (fast compile-only), `build_run_sim`, `clean`, project/scheme discovery |
 | **Test**              | 6     | `test_sim` with xcresult parsing, `test_failures` with screenshots, `test_coverage`, `list_tests` |
-| **Simulator**         | 17    | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override      |
+| **Simulator**         | 18    | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override, info |
 | **Physical Devices**  | 7     | Via `devicectl` — list, install, launch, screenshot, pair                                         |
-| **UI Automation**     | 19    | WebDriverAgent + native AX bridge — find, tap, swipe, drag, type, alerts, hierarchy               |
-| **Screenshots**       | 2     | Framebuffer capture (0.3s), point-space coordinate alignment                                      |
+| **UI Automation**     | 20    | WebDriverAgent + native AX bridge — find, tap (point or pixel), swipe, drag, type, alerts        |
+| **Screenshots**       | 3     | Framebuffer capture (0.3s), point-space coordinate alignment, optional grid overlay              |
 | **Visual Regression** | 2     | Pixel-diff baselines, multi-device checks (Dark Mode, Landscape, iPad)                            |
 | **Logs**              | 4     | 4-layer filtered capture, 8 topic categories, regex wait                                          |
 | **Console**           | 3     | stdout/stderr capture for launched apps                                                           |
@@ -293,15 +293,20 @@ Use alongside logs and screenshots for systematic root-cause analysis.
 
 ```bash
 xcforge build                                    # Build (auto-detects project, scheme, sim)
+xcforge build compile --scheme MyApp             # Fast compile-only check (~5s)
 xcforge build --scheme MyApp --simulator "iPhone 16 Pro"
 xcforge test --scheme MyApp --json               # Run tests, JSON output
 xcforge test failures --xcresult /path/to.xcresult
 xcforge test coverage --min-coverage 80
 xcforge sim list                                 # List simulators
 xcforge sim boot "iPhone 16 Pro"
+xcforge sim info                                 # Booted simulator screen size and scale
 xcforge ui find --aid "loginButton"              # Find by accessibility ID
-xcforge ui tap --element el-0                    # Tap element
+xcforge ui tap --element el-0                    # Tap element at point coordinates
+xcforge ui tap-pixel --x 750 --y 1334            # Tap at pixel coordinates
 xcforge screenshot                               # Screenshot to stdout
+xcforge screenshot --grid --output /tmp/x.png    # Screenshot with point-coordinate grid
+xcforge pose Settings                            # Build, install, launch to a screen
 xcforge log start                                # Start log capture
 xcforge log read --include network               # Read with topic filter
 xcforge spm resolve                              # Resolve packages
@@ -322,7 +327,7 @@ There are several iOS-focused MCP servers worth knowing about:
 
 | Server                                                               | Stars | Scope     | Build   | Test | UI Automation | Screenshots | Visual Regression | Accessibility | Physical Devices | SPM | Git | Logs |
 | -------------------------------------------------------------------- | ----- | --------- | ------- | ---- | ------------- | ----------- | ----------------- | ------------- | ---------------- | --- | --- | ---- |
-| **xcforge**                                                          | —     | 102 tools | Yes     | Yes  | Yes           | Yes         | Yes               | Yes           | Yes              | Yes | Yes | Yes  |
+| **xcforge**                                                          | —     | 107 tools | Yes     | Yes  | Yes           | Yes         | Yes               | Yes           | Yes              | Yes | Yes | Yes  |
 | [XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP)          | ~5k   | ~15 tools | Yes     | Yes  | Partial       | No          | No                | No            | No               | No  | No  | No   |
 | [ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp) | ~1.8k | ~10 tools | No      | No   | Yes           | Yes         | No                | No            | No               | No  | No  | No   |
 | [xcode-mcp-server](https://github.com/r-huijts/xcode-mcp-server)     | ~370  | ~8 tools  | Partial | No   | No            | No          | No                | No            | No               | No  | No  | No   |
@@ -335,7 +340,7 @@ There are several iOS-focused MCP servers worth knowing about:
 - **[iosef](https://github.com/riwsky/iosef)** — Agent-optimized simulator CLI with clean ergonomics. Narrow scope but thoughtful design. Swift native.
 - **[Appium MCP](https://github.com/nicholasgcoles/appium-mcp-server)** — Cross-platform (iOS + Android) via the Appium ecosystem. Requires Node.js + Java + Appium server — heavier dependency chain.
 
-**Where xcforge fits:** It combines build, test, UI automation, log analysis, visual regression, device support, SPM, accessibility auditing, and multi-step diagnosis in a single zero-dependency binary. The trade-off is iOS-only — no Android, watchOS, or visionOS.
+**Where xcforge fits:** It combines fast compile checks, build, test, pixel-accurate UI automation, screenshot grids, screen-targeted launch, log analysis, visual regression, device support, SPM, accessibility auditing, and multi-step diagnosis in a single zero-dependency binary. The trade-off is iOS-only — no Android, watchOS, or visionOS.
 
 ---
 

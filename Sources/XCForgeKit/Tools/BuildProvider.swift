@@ -227,6 +227,52 @@ public enum BuildTools {
       ])
     ),
     Tool(
+      name: "build_compile",
+      description: """
+        Compile-only iOS build (no boot, install, or launch). \
+        Fast feedback loop for "does it still compile?" — wraps `build_sim` semantics \
+        without running the simulator pipeline. \
+        Project, scheme, and simulator are auto-detected if omitted.
+        """,
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "project": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Path to .xcodeproj or .xcworkspace. Auto-detected from working directory if omitted."
+            ),
+          ]),
+          "scheme": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Xcode scheme name. Auto-detected if project has only one scheme."),
+          ]),
+          "simulator": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Simulator name or UDID. Auto-detected from booted simulator if omitted."),
+          ]),
+          "configuration": .object([
+            "type": .string("string"),
+            "description": .string("Build configuration (Debug/Release). Default: Debug"),
+          ]),
+          "long": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Use 1800s timeout instead of the default 180s for large projects."
+            ),
+          ]),
+          "diagnose": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Capture a diagnostic snapshot on completion even without a hang."
+            ),
+          ]),
+        ]),
+      ])
+    ),
+    Tool(
       name: "clean",
       description: """
         Clean Xcode build artifacts for a project/scheme. \
@@ -479,6 +525,67 @@ public enum BuildTools {
       }
     }
     return errors.isEmpty ? "unknown" : "compiler_error"
+  }
+
+  /// MCP wrapper around `executeBuild` that performs only the compile step —
+  /// no simulator boot, install, or launch. Faster path for "does it compile?" loops.
+  static func buildCompile(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    switch ToolInput.decode(BuildInput.self, from: args) {
+    case .failure(let err): return err
+    case .success(let input):
+      do {
+        let execution = try await executeBuild(
+          project: input.project,
+          scheme: input.scheme,
+          simulator: input.simulator,
+          configuration: input.configuration ?? "Debug",
+          long: input.long ?? false,
+          diagnose: input.diagnose ?? false,
+          env: env
+        )
+
+        if execution.succeeded {
+          var output = "Compile succeeded in \(execution.elapsed)s"
+          output += "\nScheme: \(execution.scheme)"
+          output += "\nSimulator: \(execution.simulator)"
+          output += "\nConfiguration: \(execution.configuration)"
+          if let path = execution.xcresultPath {
+            output += "\nxcresult: \(path)"
+          }
+          if let issues = execution.issues {
+            let warnings = issues.filter { $0.severity == .warning }
+            if !warnings.isEmpty {
+              output += "\nWarnings (\(warnings.count)):"
+              for w in warnings.prefix(5) {
+                let loc = w.location.map { l -> String in
+                  let short = (l.filePath as NSString).lastPathComponent
+                  return l.line.map { "\(short):\($0)" } ?? short
+                }
+                output += "\n  \(loc ?? "-"): \(w.message)"
+              }
+            }
+          }
+          if let diag = execution.hangDiagnosticPath {
+            output += "\nDiagnostic snapshot: \(diag)"
+            if let summary = execution.hangDiagnosticSummary {
+              output += "\nSummary: \(summary)"
+            }
+          }
+          return .ok(output)
+        }
+
+        var failMsg = formatBuildFailure(execution)
+        if let diag = execution.hangDiagnosticPath {
+          failMsg += "\nDiagnostic snapshot: \(diag)"
+          if let summary = execution.hangDiagnosticSummary {
+            failMsg += "\nSummary: \(summary)"
+          }
+        }
+        return .fail(failMsg)
+      } catch {
+        return .fail("Compile error: \(error)")
+      }
+    }
   }
 
   static func buildSim(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -1247,6 +1354,7 @@ extension BuildTools: ToolProvider {
   {
     switch name {
     case "build_sim": return await buildSim(args, env: env)
+    case "build_compile": return await buildCompile(args, env: env)
     case "build_run_sim": return await buildRunSim(args, env: env)
     case "clean": return await clean(args, env: env)
     case "discover_projects": return await discoverProjects(args, env: env)

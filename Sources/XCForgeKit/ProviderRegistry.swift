@@ -20,6 +20,7 @@ public enum ToolRegistry {
     SwiftPackageTools.self,
     DeviceTools.self,
     DebuggerProvider.self,
+    PoseTools.self,
   ]
 
   // MARK: - Tool Group Management (runtime-only, not persisted)

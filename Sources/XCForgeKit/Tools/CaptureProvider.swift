@@ -1,5 +1,9 @@
+import CoreGraphics
+import CoreText
 import Foundation
+import ImageIO
 import MCP
+import UniformTypeIdentifiers
 
 enum ScreenshotTools {
   struct WorkflowCaptureResult: Sendable, Equatable {
@@ -27,6 +31,12 @@ enum ScreenshotTools {
             "type": .string("string"),
             "description": .string("Image format: png or jpeg. Default: jpeg"),
           ]),
+          "grid": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Overlay a point-coordinate grid (50pt minor lines, 100pt labeled). Useful for eyeballing tap coordinates. Default: false."
+            ),
+          ]),
         ]),
       ])
     )
@@ -37,6 +47,7 @@ enum ScreenshotTools {
   struct ScreenshotInput: Decodable {
     let simulator: String?
     let format: String?
+    let grid: Bool?
   }
 
   static func screenshot(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -56,8 +67,45 @@ enum ScreenshotTools {
       return .fail("\(error)")
     }
     let format = input.format ?? "jpeg"
+    let wantGrid = input.grid ?? false
 
     let start = CFAbsoluteTimeGetCurrent()
+
+    // Grid mode: capture CGImage → overlay → encode → return inline.
+    // On any failure during the overlay path, fall back to the ungridded path
+    // and surface a warning rather than failing the call.
+    if wantGrid {
+      do {
+        let udid = try await SimTools.resolveSimulator(sim, env: env)
+        let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
+        let cgImage = try await VisualTools.captureCGImage(simulator: udid, env: env)
+        if let gridded = drawPointGrid(
+          on: cgImage,
+          pointWidth: info.pointSize.width,
+          pointHeight: info.pointSize.height,
+          scale: info.scale
+        ), let encoded = encodeImage(gridded, format: format) {
+          let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+          let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
+          let pxW = gridded.width
+          let pxH = gridded.height
+          let ptW = Int(info.pointSize.width)
+          let ptH = Int(info.pointSize.height)
+          return .init(content: [
+            .image(
+              data: encoded.base64EncodedString(), mimeType: mimeType,
+              annotations: nil, _meta: nil),
+            .text(
+              text:
+                "\(ptW)×\(ptH) pt | \(pxW)x\(pxH) px | \(encoded.count / 1024)KB | \(elapsed)ms (grid)",
+              annotations: nil, _meta: nil),
+          ])
+        }
+        Log.warn("Grid overlay or encode failed; returning ungridded image")
+      } catch {
+        Log.warn("Grid overlay failed (\(error)); returning ungridded image")
+      }
+    }
 
     // Fast path: inline capture (macOS 14+)
     if #available(macOS 14.0, *) {
@@ -274,6 +322,156 @@ enum ScreenshotTools {
     }
     return .executionFailed
   }
+
+  // MARK: - Grid Overlay
+
+  /// Draw a point-coordinate grid over the given image. Minor lines every 50pt,
+  /// labeled major lines every 100pt. Drawing is performed in pixel space; the
+  /// `scale` factor maps point spacing to the image's native pixel dimensions.
+  /// Returns nil when the overlay cannot be applied (invalid geometry, allocation
+  /// failure, or unsupported image dimensions). Callers should fall back to the
+  /// ungridded image and surface a warning.
+  static func drawPointGrid(
+    on image: CGImage, pointWidth: Double, pointHeight: Double, scale: Double
+  ) -> CGImage? {
+    let pixelWidth = image.width
+    let pixelHeight = image.height
+    guard pixelWidth > 0, pixelHeight > 0, scale > 0, pointWidth > 0, pointHeight > 0 else {
+      return nil
+    }
+
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    guard
+      let ctx = CGContext(
+        data: nil, width: pixelWidth, height: pixelHeight,
+        bitsPerComponent: 8, bytesPerRow: 0,
+        space: colorSpace, bitmapInfo: bitmapInfo
+      )
+    else { return nil }
+
+    // Draw the source image into the bitmap. Origin is bottom-left in CG.
+    ctx.draw(image, in: CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+
+    let minorStepPt: Double = 50
+    let majorStepPt: Double = 100
+    let minorPxX = minorStepPt * scale
+    let minorPxY = minorStepPt * scale
+    let lineWidthMinor: CGFloat = max(1, CGFloat(scale) * 0.5)
+    let lineWidthMajor: CGFloat = max(1, CGFloat(scale))
+
+    // Minor (50pt) lines — light gray, semi-transparent.
+    ctx.setStrokeColor(red: 1, green: 1, blue: 1, alpha: 0.35)
+    ctx.setLineWidth(lineWidthMinor)
+    var x = minorPxX
+    while x < Double(pixelWidth) {
+      ctx.move(to: CGPoint(x: x, y: 0))
+      ctx.addLine(to: CGPoint(x: x, y: Double(pixelHeight)))
+      x += minorPxX
+    }
+    var y = minorPxY
+    while y < Double(pixelHeight) {
+      ctx.move(to: CGPoint(x: 0, y: y))
+      ctx.addLine(to: CGPoint(x: Double(pixelWidth), y: y))
+      y += minorPxY
+    }
+    ctx.strokePath()
+
+    // Major (100pt) lines — magenta, more opaque.
+    ctx.setStrokeColor(red: 1, green: 0, blue: 1, alpha: 0.7)
+    ctx.setLineWidth(lineWidthMajor)
+    let majorPxX = majorStepPt * scale
+    let majorPxY = majorStepPt * scale
+    var mx = majorPxX
+    while mx < Double(pixelWidth) {
+      ctx.move(to: CGPoint(x: mx, y: 0))
+      ctx.addLine(to: CGPoint(x: mx, y: Double(pixelHeight)))
+      mx += majorPxX
+    }
+    var my = majorPxY
+    while my < Double(pixelHeight) {
+      ctx.move(to: CGPoint(x: 0, y: my))
+      ctx.addLine(to: CGPoint(x: Double(pixelWidth), y: my))
+      my += majorPxY
+    }
+    ctx.strokePath()
+
+    // Labels every 100pt along top + left edges (in points).
+    let fontSize = max(10, 8 * scale)
+    let font = CTFontCreateWithName("Menlo-Bold" as CFString, fontSize, nil)
+    let labelColor = CGColor(red: 1, green: 1, blue: 1, alpha: 0.95)
+    let shadowColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0.85)
+
+    func drawLabel(_ text: String, atPixel point: CGPoint) {
+      let attrs: [NSAttributedString.Key: Any] = [
+        .font: font,
+        .foregroundColor: labelColor,
+      ]
+      let attributed = NSAttributedString(string: text, attributes: attrs)
+      let line = CTLineCreateWithAttributedString(attributed)
+
+      // Drop shadow for legibility on bright backgrounds.
+      ctx.saveGState()
+      ctx.setShadow(
+        offset: CGSize(width: 1, height: -1), blur: 2, color: shadowColor)
+      ctx.textPosition = point
+      CTLineDraw(line, ctx)
+      ctx.restoreGState()
+    }
+
+    // X labels (top edge). CG origin is bottom-left; place near top.
+    let topY = Double(pixelHeight) - fontSize - 4
+    var labelX = majorPxX
+    var ptX = Int(majorStepPt)
+    while labelX < Double(pixelWidth) {
+      drawLabel("\(ptX)", atPixel: CGPoint(x: labelX + 4, y: topY))
+      labelX += majorPxX
+      ptX += Int(majorStepPt)
+    }
+    // Y labels (left edge), in points from top.
+    var labelY = majorPxY
+    var ptY = Int(majorStepPt)
+    while labelY < Double(pixelHeight) {
+      // Convert "point Y from top" to CG y (from bottom).
+      let cgY = Double(pixelHeight) - labelY - fontSize
+      drawLabel("\(ptY)", atPixel: CGPoint(x: 4, y: cgY))
+      labelY += majorPxY
+      ptY += Int(majorStepPt)
+    }
+
+    return ctx.makeImage()
+  }
+
+  /// Encode a CGImage as PNG or JPEG bytes.
+  static func encodeImage(_ image: CGImage, format: String) -> Data? {
+    let utType: CFString =
+      format.hasPrefix("jp") ? UTType.jpeg.identifier as CFString : UTType.png.identifier as CFString
+    let data = NSMutableData()
+    guard let dest = CGImageDestinationCreateWithData(data, utType, 1, nil) else { return nil }
+    let options: CFDictionary =
+      format.hasPrefix("jp")
+      ? [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary
+      : [:] as CFDictionary
+    CGImageDestinationAddImage(dest, image, options)
+    guard CGImageDestinationFinalize(dest) else { return nil }
+    return data as Data
+  }
+}
+
+// MARK: - Public CLI Helpers
+
+/// Public wrapper around the internal grid overlay so the CLI can apply it
+/// to a `CGImage` without exposing the entire `ScreenshotTools` namespace.
+public func xcforgeDrawPointGrid(
+  on image: CGImage, pointWidth: Double, pointHeight: Double, scale: Double
+) -> CGImage? {
+  ScreenshotTools.drawPointGrid(
+    on: image, pointWidth: pointWidth, pointHeight: pointHeight, scale: scale)
+}
+
+/// Public wrapper for encoding a `CGImage` as PNG/JPEG bytes.
+public func xcforgeEncodeImage(_ image: CGImage, format: String) -> Data? {
+  ScreenshotTools.encodeImage(image, format: format)
 }
 
 extension ScreenshotTools: ToolProvider {

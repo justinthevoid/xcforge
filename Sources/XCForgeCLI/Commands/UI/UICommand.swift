@@ -44,7 +44,7 @@ struct UI: AsyncParsableCommand {
       UISwipe.self, UIPinch.self, UIDrag.self,
       UIType.self, UIGetText.self,
       UISource.self, UIAlert.self,
-      UILs.self, UITapByID.self, UITapBy.self,
+      UILs.self, UITapByID.self, UITapBy.self, UITapPixel.self,
     ],
     defaultSubcommand: UIStatus.self
   )
@@ -1058,6 +1058,61 @@ struct UITapBy: AsyncParsableCommand {
       }
     } catch {
       let message = "tap-by failed: \(error)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
+      } else {
+        print(message)
+      }
+      throw ExitCode.failure
+    }
+  }
+}
+
+// MARK: - Tap Pixel (ui tap-pixel --x <px> --y <px>)
+
+struct UITapPixel: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "tap-pixel",
+    abstract:
+      "Tap at screenshot pixel coordinates. Pixels are auto-converted to point coordinates using the live simulator scale, then dispatched via WDA."
+  )
+
+  @Option(help: "X coordinate in pixels.")
+  var x: Double
+
+  @Option(help: "Y coordinate in pixels.")
+  var y: Double
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
+    let env = Environment.live
+    do {
+      let start = CFAbsoluteTimeGetCurrent()
+      let (px, py, scale) = try await xcforgePerformUITapPixel(
+        pixelX: x, pixelY: y, simulator: simulator, env: env
+      )
+      let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+      let pxStr = String(format: "%.1f", px)
+      let pyStr = String(format: "%.1f", py)
+      let message =
+        "Tapped pixel (\(Int(x)), \(Int(y))) → point (\(pxStr), \(pyStr)) [scale \(scale)x] (\(elapsed)ms)"
+      if useJSON {
+        print(
+          try WorkflowJSONRenderer.renderJSON(
+            UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
+      } else {
+        print(message)
+      }
+    } catch {
+      let message = "tap-pixel failed: \(error)"
       if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(

@@ -21,10 +21,15 @@ Most build/test/simulator/diagnosis actions have both:
 | Intent | CLI | MCP |
 | --- | --- | --- |
 | Build app | `xcforge build` | `build_sim` |
+| Fast compile check | `xcforge build compile` | `build_compile` |
 | Build and launch | `xcforge build run` | `build_run_sim` |
 | Build then test | `xcforge build-test` | `build_and_test` |
+| Booted simulator info | `xcforge sim info` | `sim_info` |
 | Test failures | `xcforge test failures` | `test_failures` |
 | Coverage report | `xcforge test coverage` | `test_coverage` |
+| Tap at pixel coords | `xcforge ui tap-pixel` | `ui_tap_pixel` |
+| Screenshot with grid | `xcforge screenshot --grid` | `screenshot` with `grid: true` |
+| Build, install, and pose | `xcforge pose <name>` | `pose` |
 | Start diagnosis | `xcforge diagnose start` | `diagnose_start` |
 | Consolidated diagnosis view | `xcforge diagnose inspect` | `diagnose_inspect` |
 | Execute UI plan | `xcforge plan run` | `run_plan` |

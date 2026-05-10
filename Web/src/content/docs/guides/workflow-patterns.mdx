@@ -68,7 +68,59 @@ xcforge screenshot compare --name before-fix --json
 xcforge log stop --json
 ```
 
-## Pattern 5: Hang Diagnostics
+## Pattern 5: Fast Compile Checks
+
+Use this when you need compile confidence but don't want to spend 20s on install and launch.
+
+```bash
+xcforge build compile --json
+```
+
+Why this pattern works:
+
+- `build compile` runs xcodebuild with compile-only flags (~5s vs ~20s for `build run`).
+- Instant feedback loop for syntax and type-checker errors.
+- Pair with `ui tap-pixel` and `screenshot --grid` if the app is already running.
+
+## Pattern 6: Visual Iteration Loop
+
+Use this for iterating on SwiftUI screens or UI layouts. Combine pose, sim info, grid screenshots, and pixel-coordinate taps.
+
+```bash
+# Target a specific screen at launch
+xcforge pose Settings
+
+# Capture the screen with point-coordinate grid overlay
+xcforge screenshot --grid --output /tmp/screen.png
+
+# Get simulator dimensions for manual coordinate math
+xcforge sim info --json
+
+# Tap at a pixel coordinate (auto-converts to points based on scale)
+xcforge ui tap-pixel --x 200 --y 400
+```
+
+Why this pattern works:
+
+- `pose <name>` lets apps with a debug router jump to a specific screen (no repeated launch args).
+- `screenshot --grid` shows 50pt minor lines and 100pt labels in point space — directly readable for layout decisions.
+- `ui tap-pixel` converts pixel coordinates to points automatically (divides by device scale).
+- `sim info` returns scale, pointSize, and pixelSize for manual verification or headless scripts.
+
+Example app-side integration (pseudocode):
+
+```swift
+// In your app's SceneDelegate or @main
+if CommandLine.arguments.contains("-pose") {
+    if let index = CommandLine.arguments.firstIndex(of: "-pose"),
+       index + 1 < CommandLine.arguments.count {
+        let screenName = CommandLine.arguments[index + 1]
+        navigateTo(screenName)  // e.g., "Settings", "Profile", "Onboarding"
+    }
+}
+```
+
+## Pattern 7: Hang Diagnostics
 
 Use this when a build or test run is taking too long or timing out with no useful output.
 

@@ -8,15 +8,18 @@ Take a simulator screenshot. 0.3s latency — 44x faster than alternatives.
 |-----------|----------|---------|-------------|
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 | `format` | No | jpeg | Image format: `png` or `jpeg` |
+| `grid` | No | false | Overlay a point-coordinate grid on the image |
 
 **3-tier capture strategy:**
 1. **Burst** — native CoreSimulator IOSurface framebuffer access (~10ms)
 2. **Stream** — ScreenCaptureKit fallback (~20ms)
 3. **Safe** — simctl io screenshot last resort (~320ms)
 
+**Grid overlay:** When `grid: true`, overlays a transparent grid with 50pt minor lines and 100pt labeled divisions. Displays both X and Y axis labels at 100pt intervals. Falls back to ungridded image with a warning if overlay allocation fails.
+
 **Returns:** Inline base64 image + metadata (resolution, byte size, capture method).
 
-Use `jpeg` (default) for fastest transfer. Use `png` for pixel-perfect visual regression baselines.
+Use `jpeg` (default) for fastest transfer. Use `png` for pixel-perfect visual regression baselines. Use `grid: true` for coordinate verification during layout work or UI automation scripting.
 
 ---
 

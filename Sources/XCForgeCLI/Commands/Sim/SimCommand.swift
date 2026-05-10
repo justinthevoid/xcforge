@@ -13,6 +13,7 @@ struct Sim: ParsableCommand {
       SimOrientation.self, SimRecordStart.self, SimRecordStop.self,
       SimLocation.self, SimLocationReset.self,
       SimAppearance.self, SimStatusBar.self, SimStatusBarClear.self,
+      SimInfo.self,
     ],
     defaultSubcommand: SimList.self
   )
@@ -561,6 +562,57 @@ struct SimStatusBarClear: AsyncParsableCommand {
     }
 
     if !result.succeeded {
+      throw ExitCode.failure
+    }
+  }
+}
+
+// MARK: - Sim Info
+
+struct SimInfo: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "info",
+    abstract: """
+      Show live screen geometry for a booted simulator: \
+      pixel size, point size, and scale (derived from SIMULATOR_MAINSCREEN_*).
+      """
+  )
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
+    let env = Environment.live
+
+    let outcome = await SimTools.executeSimInfo(simulator: simulator, env: env)
+    switch outcome {
+    case .success(let info):
+      if useJSON {
+        print(try WorkflowJSONRenderer.renderJSON(info))
+      } else {
+        let pxW = Int(info.pixelSize.width)
+        let pxH = Int(info.pixelSize.height)
+        let ptW = Int(info.pointSize.width)
+        let ptH = Int(info.pointSize.height)
+        print("UDID: \(info.udid)")
+        print("Scale: \(info.scale)x")
+        print("Pixel size: \(pxW)×\(pxH)")
+        print("Point size: \(ptW)×\(ptH)")
+      }
+    case .failure(let error):
+      let message = "sim info failed: \(error)"
+      if useJSON {
+        struct ErrEnvelope: Codable {
+          let error: String
+        }
+        print(try WorkflowJSONRenderer.renderJSON(ErrEnvelope(error: message)))
+      } else {
+        print(message)
+      }
       throw ExitCode.failure
     }
   }

@@ -284,6 +284,32 @@ enum UITools {
       ])
     ),
     Tool(
+      name: "ui_tap_pixel",
+      description: """
+        Tap at screenshot pixel coordinates. Pixels are auto-converted to point coordinates \
+        using the live simulator scale (`simctl getenv SIMULATOR_MAINSCREEN_SCALE`), then \
+        dispatched via the same WDA tap path as `tap_coordinates`. Use after eyeballing a \
+        screenshot at native pixel resolution without doing the divide-by-scale math yourself.
+        """,
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "x": .object([
+            "type": .string("number"), "description": .string("X coordinate in pixels"),
+          ]),
+          "y": .object([
+            "type": .string("number"), "description": .string("Y coordinate in pixels"),
+          ]),
+          "simulator": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Simulator name or UDID. Auto-detected from booted simulator if omitted."),
+          ]),
+        ]),
+        "required": .array([.string("x"), .string("y")]),
+      ])
+    ),
+    Tool(
       name: "indigo_tap",
       description:
         "Tap at x,y via native HID (sub-5ms, bypasses WDA). Falls back to WDA if unavailable.",
@@ -484,6 +510,12 @@ enum UITools {
   }
 
   struct IndigoTapInput: Decodable {
+    let x: Double
+    let y: Double
+    let simulator: String?
+  }
+
+  struct TapPixelInput: Decodable {
     let x: Double
     let y: Double
     let simulator: String?
@@ -978,6 +1010,44 @@ enum UITools {
 
   // MARK: - IndigoHID Tools
 
+  /// Convert pixel coordinates to point coordinates using the live simulator scale,
+  /// then dispatch a tap via WDA. Returns the converted point coords for transparency.
+  static func executeTapPixel(
+    pixelX: Double, pixelY: Double, simulator: String?, env: Environment
+  ) async throws -> (pointX: Double, pointY: Double, scale: Double) {
+    let sim = try await env.session.resolveSimulator(simulator)
+    let udid = try await SimTools.resolveSimulator(sim, env: env)
+    let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
+    let pointX = pixelX / info.scale
+    let pointY = pixelY / info.scale
+    try await env.wdaClient.tap(x: pointX, y: pointY)
+    return (pointX, pointY, info.scale)
+  }
+
+  static func tapPixel(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    switch ToolInput.decode(TapPixelInput.self, from: args) {
+    case .failure(let err): return err
+    case .success(let input):
+      do {
+        let start = CFAbsoluteTimeGetCurrent()
+        let (px, py, scale) = try await executeTapPixel(
+          pixelX: input.x, pixelY: input.y, simulator: input.simulator, env: env
+        )
+        let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+        let pxStr = String(format: "%.1f", px)
+        let pyStr = String(format: "%.1f", py)
+        return .ok(
+          "Tapped pixel (\(Int(input.x)), \(Int(input.y))) → point (\(pxStr), \(pyStr)) [scale \(scale)x] (\(elapsed)ms)"
+        )
+      } catch let err as SimTools.ScreenInfoError {
+        return .fail(
+          "Tap-pixel failed: \(err). Use `ui tap` with point coordinates instead.")
+      } catch {
+        return .fail("Tap-pixel failed: \(error)")
+      }
+    }
+  }
+
   static func indigoTap(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
     switch ToolInput.decode(IndigoTapInput.self, from: args) {
     case .failure(let err): return err
@@ -1447,6 +1517,17 @@ public func xcforgePerformUITap(using strategy: String, value: String, env: Envi
   try await UITools.performTap(using: strategy, value: value, env: env)
 }
 
+/// CLI-facing entry point for `ui tap-pixel`. Converts pixel coords to point coords
+/// using the live simulator scale, then dispatches a tap via WDA.
+/// Returns the converted point coords and scale for transparency.
+public func xcforgePerformUITapPixel(
+  pixelX: Double, pixelY: Double, simulator: String?, env: Environment
+) async throws -> (pointX: Double, pointY: Double, scale: Double) {
+  try await UITools.executeTapPixel(
+    pixelX: pixelX, pixelY: pixelY, simulator: simulator, env: env
+  )
+}
+
 extension UITools: ToolProvider {
   public static func dispatch(_ name: String, _ args: [String: Value]?, env: Environment) async
     -> CallTool.Result?
@@ -1460,6 +1541,7 @@ extension UITools: ToolProvider {
     case "find_elements": return await findElements(args, wdaClient: env.wdaClient)
     case "click_element": return await clickElement(args, env: env)
     case "tap_coordinates": return await tapCoordinates(args, wdaClient: env.wdaClient)
+    case "ui_tap_pixel": return await tapPixel(args, env: env)
     case "double_tap": return await doubleTap(args, wdaClient: env.wdaClient)
     case "long_press": return await longPress(args, wdaClient: env.wdaClient)
     case "swipe": return await swipeAction(args, wdaClient: env.wdaClient)

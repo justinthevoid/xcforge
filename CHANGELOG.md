@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-09
+
+### Added
+- `build compile` (CLI) / `build_compile` (MCP) — fast compile-only build (~5s) with no install/launch
+- `sim info` (CLI) / `sim_info` (MCP) — returns booted simulator screen size, pixel size, and scale
+- `ui tap-pixel` (CLI) / `ui_tap_pixel` (MCP) — tap simulator UI using pixel coordinates (auto-converts to points via screen scale)
+- `screenshot --grid` flag — overlays point-coordinate grid on captured PNG for visual iteration
+- `pose <name>` (CLI) / `pose` (MCP) — build, install, and launch app with `<key> <name>` appended to the launch argv (default key `-pose`); apps with a debug router that reads `ProcessInfo.arguments` can deep-link into a screen
+- Extended `executeLaunchApp` and `launchAppStructured` with optional launch arguments (default `nil` keeps all existing call sites unchanged)
+
+### Hardened
+- `fetchScreenInfo` rejects non-finite scale, scale below 0.5, and non-positive widths/heights to prevent silent (0,0) taps and runaway grid-overlay loops on corrupt simulator metadata
+- `screenshot --grid` skips `mkdir` when `--output` has no parent directory; grid-overlay allocation failure now propagates to the existing ungridded fallback warning instead of silently returning the source image
+- `pose` rejects empty/whitespace-only screen names early with a clear error
+- `ui tap-pixel` error on missing screen scale now suggests falling back to `ui tap` with point coordinates
+
 ## [1.3.2] - 2026-04-12
 
 ### Fixed

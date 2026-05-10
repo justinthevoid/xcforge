@@ -16,6 +16,20 @@ public enum SimTools {
     }
   }
 
+  /// Live screen geometry of a booted simulator, derived from
+  /// `simctl getenv <udid> SIMULATOR_MAINSCREEN_{WIDTH,HEIGHT,SCALE}`.
+  /// Pixel dimensions divided by `scale` give point dimensions.
+  public struct ScreenInfo: Codable, Sendable, Equatable {
+    public struct Size: Codable, Sendable, Equatable {
+      public let width: Double
+      public let height: Double
+    }
+    public let udid: String
+    public let scale: Double
+    public let pixelSize: Size
+    public let pointSize: Size
+  }
+
   struct RuntimeContinuityReset: Sendable, Equatable {
     let simulatorUDID: String
     let bundleId: String
@@ -310,6 +324,25 @@ public enum SimTools {
       ])
     ),
     Tool(
+      name: "sim_info",
+      description: """
+        Return live screen geometry for a booted simulator: \
+        `{udid, scale, pixelSize:{width,height}, pointSize:{width,height}}`. \
+        Values are derived from `simctl getenv <udid> SIMULATOR_MAINSCREEN_{WIDTH,HEIGHT,SCALE}`. \
+        Use to convert screenshot pixel coordinates into point coordinates for taps.
+        """,
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "simulator": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Simulator name or UDID. Auto-detected from booted simulator if omitted."),
+          ])
+        ]),
+      ])
+    ),
+    Tool(
       name: "set_orientation",
       description: """
         Set device orientation (portrait/landscape) via WDA. \
@@ -538,9 +571,9 @@ public enum SimTools {
     }
   }
 
-  public static func executeLaunchApp(simulator: String?, bundleId: String?, env: Environment) async
-    -> SimResult
-  {
+  public static func executeLaunchApp(
+    simulator: String?, bundleId: String?, args: [String]? = nil, env: Environment
+  ) async -> SimResult {
     guard let resolvedBundleId = await env.session.resolveBundleId(bundleId) else {
       return SimResult(
         succeeded: false, message: "Missing bundle ID — provide it or run a build first")
@@ -554,7 +587,7 @@ public enum SimTools {
     do {
       let udid = try await resolveSimulator(sim, env: env)
       let launch = try await launchAppStructured(
-        simulatorUDID: udid, bundleId: resolvedBundleId, env: env)
+        simulatorUDID: udid, bundleId: resolvedBundleId, args: args, env: env)
 
       if launch.succeeded {
         let note = launch.wasRunning ? " (was running, relaunched)" : ""
@@ -876,6 +909,79 @@ public enum SimTools {
     }
   }
 
+  // MARK: - Screen Info
+
+  /// Errors raised when reading SIMULATOR_MAINSCREEN_* via simctl getenv.
+  public enum ScreenInfoError: Error, CustomStringConvertible {
+    case missingValue(String)
+    case invalidValue(String, String)
+    case scaleZero
+
+    public var description: String {
+      switch self {
+      case .missingValue(let key):
+        return "Could not determine simulator \(key) (simctl getenv returned empty)"
+      case .invalidValue(let key, let raw):
+        return "Could not parse simulator \(key) value: \(raw)"
+      case .scaleZero:
+        return "Simulator scale is zero — cannot derive point dimensions"
+      }
+    }
+  }
+
+  /// Fetch live screen geometry via `simctl getenv <udid> SIMULATOR_MAINSCREEN_*`.
+  /// Pixel/point values are doubles to preserve sub-pixel precision when needed.
+  public static func fetchScreenInfo(udid: String, env: Environment = .live) async throws
+    -> ScreenInfo
+  {
+    func getEnv(_ key: String) async throws -> String {
+      let result = try await env.shell.xcrun(timeout: 10, "simctl", "getenv", udid, key)
+      let trimmed = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard result.succeeded, !trimmed.isEmpty else {
+        throw ScreenInfoError.missingValue(key)
+      }
+      return trimmed
+    }
+
+    let widthRaw = try await getEnv("SIMULATOR_MAINSCREEN_WIDTH")
+    let heightRaw = try await getEnv("SIMULATOR_MAINSCREEN_HEIGHT")
+    let scaleRaw = try await getEnv("SIMULATOR_MAINSCREEN_SCALE")
+
+    guard let width = Double(widthRaw) else {
+      throw ScreenInfoError.invalidValue("SIMULATOR_MAINSCREEN_WIDTH", widthRaw)
+    }
+    guard let height = Double(heightRaw) else {
+      throw ScreenInfoError.invalidValue("SIMULATOR_MAINSCREEN_HEIGHT", heightRaw)
+    }
+    guard let scale = Double(scaleRaw) else {
+      throw ScreenInfoError.invalidValue("SIMULATOR_MAINSCREEN_SCALE", scaleRaw)
+    }
+    guard scale.isFinite, scale >= 0.5 else { throw ScreenInfoError.scaleZero }
+    guard width.isFinite, width > 0, height.isFinite, height > 0 else {
+      throw ScreenInfoError.invalidValue("SIMULATOR_MAINSCREEN_WIDTH/HEIGHT", "\(widthRaw)x\(heightRaw)")
+    }
+
+    return ScreenInfo(
+      udid: udid,
+      scale: scale,
+      pixelSize: ScreenInfo.Size(width: width, height: height),
+      pointSize: ScreenInfo.Size(width: width / scale, height: height / scale)
+    )
+  }
+
+  public static func executeSimInfo(simulator: String?, env: Environment) async -> Result<
+    ScreenInfo, Error
+  > {
+    do {
+      let sim = try await env.session.resolveSimulator(simulator)
+      let udid = try await resolveSimulator(sim, env: env)
+      let info = try await fetchScreenInfo(udid: udid, env: env)
+      return .success(info)
+    } catch {
+      return .failure(error)
+    }
+  }
+
   // MARK: - MCP Dispatch Helpers
 
   private static func dispatchResult(_ result: SimResult) -> CallTool.Result {
@@ -884,18 +990,22 @@ public enum SimTools {
 
   // MARK: - Internal Helpers
 
-  static func launchAppStructured(simulatorUDID: String, bundleId: String, env: Environment)
-    async throws -> StructuredAppLaunch
-  {
+  static func launchAppStructured(
+    simulatorUDID: String, bundleId: String, args: [String]? = nil, env: Environment
+  ) async throws -> StructuredAppLaunch {
     let wasRunning = try await terminateAppIfRunning(
       simulatorUDID: simulatorUDID, bundleId: bundleId, env: env)
     if wasRunning {
       try? await Task.sleep(nanoseconds: 500_000_000)
     }
 
+    var launchArgs = ["simctl", "launch", simulatorUDID, bundleId]
+    if let args, !args.isEmpty {
+      launchArgs.append(contentsOf: args)
+    }
     let result = try await env.shell.run(
       "/usr/bin/xcrun",
-      arguments: ["simctl", "launch", simulatorUDID, bundleId],
+      arguments: launchArgs,
       timeout: 15
     )
 
@@ -1003,6 +1113,19 @@ extension SimTools: ToolProvider {
       case .failure(let err): return err
       case .success(let input):
         return dispatchResult(await executeDeleteSim(simulator: input.simulator, env: env))
+      }
+    case "sim_info":
+      switch ToolInput.decode(OptionalSimInput.self, from: args) {
+      case .failure(let err): return err
+      case .success(let input):
+        let result = await executeSimInfo(simulator: input.simulator, env: env)
+        switch result {
+        case .success(let info):
+          let json = (try? WorkflowJSONRenderer.renderJSON(info)) ?? ""
+          return .ok(json)
+        case .failure(let error):
+          return .fail("\(error)")
+        }
       }
     case "set_orientation":
       switch ToolInput.decode(OrientationInput.self, from: args) {

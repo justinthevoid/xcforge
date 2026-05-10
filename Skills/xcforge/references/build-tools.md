@@ -1,4 +1,24 @@
-# Build Tools (5 tools)
+# Build Tools (6 tools)
+
+## build_compile
+
+Fast compile-only build without install or launch (~5s vs ~20s for full pipeline). Reuses the standard build infrastructure, skips the simulator boot/install/launch chain.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `project` | No | Auto-detect | Path to .xcodeproj or .xcworkspace |
+| `scheme` | No | Auto-detect | Scheme name |
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID (for SDK selection) |
+| `configuration` | No | Debug | Build configuration (Debug/Release) |
+| `long` | No | false | Use 1800s timeout instead of default 180s |
+
+**Returns:** Bundle ID, app path, build duration, warnings count. On failure: structured errors with file:line from xcresult.
+
+**Use case:** Rapid iteration on code without deployment latency. Does not boot simulator or install app.
+
+**Build flags applied:** `parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES` for speed.
+
+---
 
 ## build_sim
 

@@ -1,14 +1,14 @@
 # xcforge CLI Commands
 
 xcforge operates in two modes:
-- **No arguments** → MCP server mode (stdio transport, 102 tools)
+- **No arguments** → MCP server mode (stdio transport, 106 tools)
 - **With arguments** → CLI mode (ArgumentParser-based terminal commands)
 
 ## Mode Detection
 
 ```bash
 xcforge                    # MCP server mode
-xcforge build ...          # CLI mode — 16 command groups
+xcforge build ...          # CLI mode — 18 command groups
 xcforge test ...           # CLI mode
 xcforge sim ...            # CLI mode
 xcforge device ...         # CLI mode
@@ -22,13 +22,14 @@ xcforge accessibility ...  # CLI mode
 xcforge defaults ...       # CLI mode
 xcforge diagnose ...       # CLI mode
 xcforge plan ...           # CLI mode
+xcforge pose ...           # CLI mode
 ```
 
 ---
 
 ## xcforge build
 
-Build, clean, and inspect Xcode projects. Five subcommands — `run` is the default.
+Build, clean, and inspect Xcode projects. Six subcommands — `run` is the default.
 
 ### build run (default subcommand)
 
@@ -71,6 +72,29 @@ xcforge build diagnose --json
 | `--xcresult <path>` | Path to .xcresult bundle. Auto-detected from /tmp if omitted |
 | `--errors-only` | Show only errors, suppressing warnings |
 | `--json` | Machine-readable JSON output |
+
+### build compile
+
+Fast compile-only build without simulator boot/install/launch. Reuses the standard build infrastructure.
+
+```bash
+xcforge build compile                              # Compile-only, auto-detect everything
+xcforge build compile --project MyApp.xcodeproj --scheme MyApp
+xcforge build compile --configuration Release
+xcforge build compile --long                       # 1800s timeout instead of 180s
+xcforge build compile --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--project <path>` | Path to .xcodeproj or .xcworkspace. Auto-detected if omitted |
+| `--scheme <name>` | Xcode scheme name. Auto-detected if omitted |
+| `--simulator <name\|udid>` | Simulator name or UDID (for SDK selection). Auto-detected if omitted |
+| `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
+| `--long` | Use 1800s timeout instead of default 180s |
+| `--json` | Machine-readable JSON output |
+
+**Use case:** Rapid code iteration without deployment latency. Does not boot simulator or install app.
 
 ### build clean
 
@@ -237,12 +261,14 @@ xcforge build-test --json                        # Machine-readable JSON
 
 ## xcforge sim
 
-Manage iOS simulators. 17 subcommands — `list` is the default.
+Manage iOS simulators. 18 subcommands — `list` is the default.
 
 ```bash
 xcforge sim                                      # Same as `xcforge sim list`
 xcforge sim list                                 # List all simulators with state/UDID
 xcforge sim list --filter iPhone                 # Filter by name/state
+xcforge sim info                                 # Get display metrics for booted simulator
+xcforge sim info --simulator "iPhone 16 Pro"     # Get metrics for specific simulator
 xcforge sim boot "iPhone 16 Pro"                 # Boot a simulator
 xcforge sim shutdown "iPhone 16 Pro"             # Shutdown (or "all")
 xcforge sim install --app-path /path/to/App.app  # Install app (auto-detects sim)
@@ -358,19 +384,20 @@ Capture simulator screenshots and manage visual baselines. Three subcommands —
 xcforge screenshot                               # Same as `xcforge screenshot capture`
 xcforge screenshot capture                       # Capture to /tmp/xcforge-screenshot.png
 xcforge screenshot capture --format jpeg --output /path/to/file.jpeg
+xcforge screenshot capture --grid                # Include point-coordinate grid overlay
 xcforge screenshot baseline --name login-screen  # Save as named baseline
 xcforge screenshot baseline --name login-screen --baseline-dir ./baselines
 xcforge screenshot compare --name login-screen   # Pixel diff against baseline
 xcforge screenshot compare --name login-screen --threshold 1.0
 ```
 
-All subcommands support `--json`. `--format` defaults to png. `--threshold` defaults to 0.5%.
+All subcommands support `--json`. `--format` defaults to png. `--threshold` defaults to 0.5%. `--grid` overlays 50pt minor grid lines and 100pt labeled divisions for coordinate verification.
 
 ---
 
 ## xcforge ui
 
-UI automation via WebDriverAgent. 16 subcommands — `status` is the default.
+UI automation via WebDriverAgent. 17 subcommands — `status` is the default.
 
 ```bash
 xcforge ui status                                # Check WDA health
@@ -380,7 +407,8 @@ xcforge ui find --using "accessibility id" --value "Save"
 xcforge ui find --using "accessibility id" --value "Save" --scroll
 xcforge ui find-all --using "class name" --value "XCUIElementTypeButton"
 xcforge ui click --element-id <id>
-xcforge ui tap --x 200 --y 400
+xcforge ui tap --x 200 --y 400                  # Tap at point coordinates
+xcforge ui tap-pixel --x 1080 --y 2400          # Tap at pixel coordinates
 xcforge ui double-tap --x 200 --y 400
 xcforge ui long-press --x 200 --y 400 --duration-ms 2000
 xcforge ui swipe --start-x 200 --start-y 600 --end-x 200 --end-y 200
@@ -672,6 +700,37 @@ xcforge plan decide --session-id <UUID> --decision abort
 | `--session-id <uuid>` | Session ID from suspended plan run |
 | `--decision <str>` | `accept`, `dismiss`, `skip`, `abort`, or freeform |
 | `--json` | Machine-readable JSON output |
+
+---
+
+## xcforge pose
+
+Launch an app into a named visual state for rapid design iteration. Internally runs build → install → launch with custom arguments, optionally followed by screenshot.
+
+```bash
+xcforge pose dark-theme                          # Build + install + launch with -pose dark-theme
+xcforge pose onboarding-step-2                   # Another pose
+xcforge pose dark-theme --project MyApp.xcodeproj --scheme MyApp
+xcforge pose dark-theme --configuration Release
+xcforge pose dark-theme --screenshot /tmp/pose.png  # Capture screenshot after launch
+xcforge pose dark-theme --key "--debug-state"    # Custom argument key
+xcforge pose dark-theme --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `<name>` | **Required** — Pose name to pass to the app |
+| `--project <path>` | Path to .xcodeproj or .xcworkspace. Auto-detected if omitted |
+| `--scheme <name>` | Xcode scheme name. Auto-detected if omitted |
+| `--simulator <name\|udid>` | Simulator name or UDID. Auto-detected if omitted |
+| `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
+| `--key <str>` | Argument key to prepend to pose name. Default: `-pose` |
+| `--screenshot <path>` | Optional file path to capture screenshot after launch |
+| `--json` | Machine-readable JSON output |
+
+**Returns:** Build status, install confirmation, launch status, app PID. If `--screenshot` provided, also returns image data.
+
+See the [Pose & Visual Iteration](pose.md) reference for app-side routing patterns and visual iteration workflows.
 
 ---
 

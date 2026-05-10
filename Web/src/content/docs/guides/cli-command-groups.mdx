@@ -8,25 +8,21 @@ This guide maps the top-level xcforge CLI command surface to practical use cases
 
 ## Command Group Model
 
-Repository sources currently use two counting styles:
-
-- Some capability statements describe 17 CLI command groups.
-- The current top-level CLI entrypoint lists 16 direct subcommands.
-
 For day-to-day usage, rely on the concrete subcommands shown by `xcforge --help` in your installed version.
 
 ## Top-Level Command Groups
 
 | Group | Primary use |
 | --- | --- |
-| `build` | Build + install + launch (Cmd+R), clean, diagnose, discover projects, list schemes |
+| `build` | Build + install + launch (Cmd+R), fast compile check, clean, diagnose, discover projects, list schemes |
 | `test` | Run tests, inspect failures, inspect coverage, list test identifiers |
 | `build-test` | Build then test in one command for TDD loops |
-| `sim` | Simulator lifecycle, app launch/install, video, location, appearance, status bar |
+| `sim` | Simulator lifecycle, app launch/install, info query, video, location, appearance, status bar |
 | `device` | Physical device management via `devicectl` |
 | `spm` | Swift Package Manager build, test, run, list, clean |
-| `ui` | WebDriverAgent-powered UI automation and interaction |
-| `screenshot` | Capture screenshots and run visual baseline comparisons |
+| `ui` | WebDriverAgent-powered UI automation, point and pixel coordinate taps |
+| `screenshot` | Capture screenshots, point-coordinate grid overlay, visual baseline comparisons |
+| `pose` | Build, install, and launch app to a specific screen or state |
 | `log` | Start/read/wait on filtered simulator logs |
 | `console` | Capture stdout/stderr console output from launched apps |
 | `diagnose` | Structured diagnosis runs and proof-oriented results |

@@ -1,4 +1,4 @@
-# UI Automation Tools (19 tools)
+# UI Automation Tools (20 tools)
 
 All UI tools communicate directly with WebDriverAgent via HTTP — no Appium, no Node.js, no Python.
 
@@ -104,12 +104,32 @@ Tap a UI element by ID.
 
 ## tap_coordinates
 
-Tap at specific screen coordinates.
+Tap at specific screen coordinates (point coordinates).
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `x` | **Yes** | — | X coordinate |
-| `y` | **Yes** | — | Y coordinate |
+| `x` | **Yes** | — | X coordinate in points |
+| `y` | **Yes** | — | Y coordinate in points |
+
+**Note:** Use point coordinates, not pixels. For pixel coordinates, see `ui_tap_pixel`.
+
+---
+
+## ui_tap_pixel
+
+Tap at pixel coordinates, automatically converting to point coordinates via simulator scale. Useful for screenshot annotation workflows or tools that report pixel positions.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `x` | **Yes** | — | X coordinate in pixels |
+| `y` | **Yes** | — | Y coordinate in pixels |
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+
+**Returns:** Confirmation of tap, including both pixel and point coordinates for verification.
+
+**Error handling:** If simulator scale cannot be determined, returns error with hint to use `tap_coordinates` with point coordinates instead.
+
+**Conversion:** Internally divides pixel coordinates by simulator scale (e.g., pixel 100 on 2x scale = point 50). Get scale via `sim_info`.
 
 ---
 

@@ -1,4 +1,4 @@
-# Simulator Tools (17 tools)
+# Simulator Tools (18 tools)
 
 ## list_sims
 
@@ -203,3 +203,31 @@ Set device orientation via WebDriverAgent.
 | `orientation` | **Yes** | — | One of: `PORTRAIT`, `LANDSCAPE`, `LANDSCAPE_LEFT`, `LANDSCAPE_RIGHT` |
 
 **Requires:** WDA running on the simulator.
+
+---
+
+## sim_info
+
+Get simulator display metrics.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+
+**Returns:**
+```json
+{
+  "udid": "ABCD1234-EF56-7890-ABCD-EF1234567890",
+  "scale": 2.0,
+  "pixelSize": {
+    "width": 2796,
+    "height": 1290
+  },
+  "pointSize": {
+    "width": 1398,
+    "height": 645
+  }
+}
+```
+
+**Use case:** Determine screen resolution and pixel scale for coordinate conversion in UI automation (e.g., converting pixel coordinates to point coordinates for `tap_coordinates`).

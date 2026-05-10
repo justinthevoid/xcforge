@@ -49,6 +49,12 @@ struct ScreenshotCapture: AsyncParsableCommand {
   @Option(help: "Output file path. Default: /tmp/xcforge-screenshot.<format>")
   var output: String?
 
+  @Flag(
+    help:
+      "Overlay a point-coordinate grid (50pt minor lines, 100pt labeled). Failures in the overlay fall back to an ungridded image and warn."
+  )
+  var grid = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -59,11 +65,59 @@ struct ScreenshotCapture: AsyncParsableCommand {
     let env = Environment.live
     let sim = try await env.session.resolveSimulator(simulator)
 
-    try await VisualTools.captureScreenshot(
-      simulator: sim,
-      format: format,
-      outputPath: output
-    )
+    if grid {
+      // Capture CGImage → overlay → encode → write. On any failure, fall back
+      // to the standard capture path and emit a warning.
+      do {
+        let udid = try await SimTools.resolveSimulator(sim, env: env)
+        let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
+        let cg = try await VisualTools.captureCGImage(simulator: udid, env: env)
+        guard
+          let gridded = xcforgeDrawPointGrid(
+            on: cg,
+            pointWidth: info.pointSize.width,
+            pointHeight: info.pointSize.height,
+            scale: info.scale
+          )
+        else {
+          fputs("warning: grid overlay failed (could not allocate bitmap); falling back to ungridded image\n", stderr)
+          try await VisualTools.captureScreenshot(
+            simulator: sim, format: format, outputPath: output)
+          let attrs = try FileManager.default.attributesOfItem(atPath: output)
+          let fileSize = (attrs[.size] as? Int) ?? 0
+          let result = ScreenshotResult(
+            succeeded: true, path: output, format: format, sizeKB: fileSize / 1024)
+          if useJSON {
+            print(try WorkflowJSONRenderer.renderJSON(result))
+          } else {
+            print(ScreenshotRenderer.renderCapture(result))
+          }
+          return
+        }
+        if let data = xcforgeEncodeImage(gridded, format: format) {
+          let parent = (output as NSString).deletingLastPathComponent
+          if !parent.isEmpty {
+            try FileManager.default.createDirectory(
+              atPath: parent, withIntermediateDirectories: true)
+          }
+          try data.write(to: URL(fileURLWithPath: output))
+        } else {
+          fputs("warning: grid overlay encode failed; falling back to ungridded image\n", stderr)
+          try await VisualTools.captureScreenshot(
+            simulator: sim, format: format, outputPath: output)
+        }
+      } catch {
+        fputs("warning: grid overlay failed (\(error)); falling back to ungridded image\n", stderr)
+        try await VisualTools.captureScreenshot(
+          simulator: sim, format: format, outputPath: output)
+      }
+    } else {
+      try await VisualTools.captureScreenshot(
+        simulator: sim,
+        format: format,
+        outputPath: output
+      )
+    }
 
     let attrs = try FileManager.default.attributesOfItem(atPath: output)
     let fileSize = (attrs[.size] as? Int) ?? 0

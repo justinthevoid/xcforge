@@ -7,10 +7,65 @@ struct Build: AsyncParsableCommand {
     commandName: "build",
     abstract: "Build, clean, and inspect Xcode projects.",
     subcommands: [
-      BuildRun.self, BuildDiagnose.self, BuildClean.self, BuildDiscover.self, BuildSchemes.self,
+      BuildRun.self, BuildCompile.self, BuildDiagnose.self, BuildClean.self, BuildDiscover.self,
+      BuildSchemes.self,
     ],
     defaultSubcommand: BuildRun.self
   )
+}
+
+// MARK: - build compile
+
+struct BuildCompile: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "compile",
+    abstract: "Compile-only build (no boot, install, or launch). Fast feedback loop."
+  )
+
+  @Option(help: "Path to .xcodeproj or .xcworkspace. Auto-detected if omitted.")
+  var project: String?
+
+  @Option(help: "Xcode scheme name. Auto-detected if omitted.")
+  var scheme: String?
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Option(help: "Build configuration (Debug/Release). Default: Debug")
+  var configuration: String?
+
+  @Flag(help: "Use 1800s timeout instead of the default 180s for large projects.")
+  var long = false
+
+  @Flag(help: "Capture a diagnostic snapshot on completion even without a hang.")
+  var diagnose = false
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let useJSON = shouldOutputJSON(flag: json)
+    let configuration = self.configuration ?? "Debug"
+
+    let execution = try await BuildTools.executeBuild(
+      project: project,
+      scheme: scheme,
+      simulator: simulator,
+      configuration: configuration,
+      long: long,
+      diagnose: diagnose
+    )
+
+    if useJSON {
+      print(try WorkflowJSONRenderer.renderJSON(execution))
+    } else {
+      print(BuildRenderer.renderBuild(execution))
+    }
+
+    if !execution.succeeded {
+      throw ExitCode.failure
+    }
+  }
 }
 
 // MARK: - build run (default)
