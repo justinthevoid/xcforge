@@ -31,9 +31,30 @@ public struct DefaultsStore: Sendable {
     guard FileManager.default.fileExists(atPath: fileURL.path) else {
       return nil
     }
-    return withFileLock(.shared) { _ in
-      readFromDisk()
-    } ?? nil
+    let raw =
+      withFileLock(.shared) { _ in
+        readFromDisk()
+      } ?? nil
+    return raw.map(filteringStalePaths)
+  }
+
+  /// Drops `project` and `appPath` when those paths no longer exist on disk so
+  /// downstream code falls through to autodetect instead of failing on stale state
+  /// (e.g. a `defaults.json` shipped from another machine, or pointing at a now-deleted
+  /// build product). `scheme`/`simulator`/`bundleId`/`buildScheme` are not path-shaped
+  /// and are kept as-is.
+  private func filteringStalePaths(_ defaults: PersistedDefaults) -> PersistedDefaults {
+    var out = defaults
+    let fm = FileManager.default
+    if let p = out.project, !fm.fileExists(atPath: p) {
+      Log.debug("DefaultsStore: ignoring stale project path '\(p)' (no such file)")
+      out.project = nil
+    }
+    if let p = out.appPath, !fm.fileExists(atPath: p) {
+      Log.debug("DefaultsStore: ignoring stale appPath '\(p)' (no such file)")
+      out.appPath = nil
+    }
+    return out
   }
 
   public func save(_ defaults: PersistedDefaults) {

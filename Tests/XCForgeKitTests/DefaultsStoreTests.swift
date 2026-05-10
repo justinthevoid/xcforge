@@ -23,12 +23,14 @@ struct DefaultsStoreTests {
     let (store, dir) = makeTempStore()
     defer { cleanup(dir) }
 
+    // Use the temp dir for path-shaped fields so the stale-path filter (which
+    // strips non-existent project / appPath entries on load) does not interfere.
     let defaults = PersistedDefaults(
-      project: "/path/to/Foo.xcodeproj",
+      project: dir.path,
       scheme: "FooScheme",
       simulator: "iPhone 16",
       bundleId: "com.example.foo",
-      appPath: "/tmp/Foo.app"
+      appPath: dir.path
     )
 
     store.save(defaults)
@@ -50,7 +52,7 @@ struct DefaultsStoreTests {
     let (store, dir) = makeTempStore()
     defer { cleanup(dir) }
 
-    store.save(PersistedDefaults(project: "/path"))
+    store.save(PersistedDefaults(project: dir.path))
     #expect(store.load() != nil)
 
     store.clear()
@@ -86,7 +88,7 @@ struct DefaultsStoreTests {
     let (store, dir) = makeTempStore()
     defer { cleanup(dir) }
 
-    store.save(PersistedDefaults(project: "/path", scheme: "A"))
+    store.save(PersistedDefaults(project: dir.path, scheme: "A"))
 
     // Simulate update: load, modify, save
     var existing = store.load()!
@@ -94,7 +96,7 @@ struct DefaultsStoreTests {
     store.save(existing)
 
     let loaded = store.load()
-    #expect(loaded?.project == "/path")
+    #expect(loaded?.project == dir.path)
     #expect(loaded?.scheme == "B")
   }
 
@@ -109,13 +111,15 @@ struct DefaultsStoreTests {
     let (store, dir) = makeTempStore()
     defer { cleanup(dir) }
 
-    store.save(PersistedDefaults(project: "/path", scheme: "A", simulator: "iPhone 16"))
+    store.save(PersistedDefaults(project: dir.path, scheme: "A", simulator: "iPhone 16"))
 
     // Save with only project — scheme and simulator should survive
-    store.save(PersistedDefaults(project: "/new"))
+    let secondPath = dir.appendingPathComponent("nested", isDirectory: true)
+    try! FileManager.default.createDirectory(at: secondPath, withIntermediateDirectories: true)
+    store.save(PersistedDefaults(project: secondPath.path))
 
     let loaded = store.load()
-    #expect(loaded?.project == "/new")
+    #expect(loaded?.project == secondPath.path)
     #expect(loaded?.scheme == "A")
     #expect(loaded?.simulator == "iPhone 16")
   }
@@ -125,10 +129,12 @@ struct DefaultsStoreTests {
     let (store, dir) = makeTempStore()
     defer { cleanup(dir) }
 
-    // Run two concurrent saves with disjoint fields
+    // Run two concurrent saves with disjoint fields. Use the temp dir's path
+    // for `project` so the stale-path filter does not strip it on load.
+    let projectPath = dir.path
     await withTaskGroup(of: Void.self) { group in
       group.addTask {
-        store.save(PersistedDefaults(project: "/concurrent-project"))
+        store.save(PersistedDefaults(project: projectPath))
       }
       group.addTask {
         store.save(PersistedDefaults(scheme: "ConcurrentScheme"))
@@ -136,8 +142,40 @@ struct DefaultsStoreTests {
     }
 
     let loaded = store.load()
-    #expect(loaded?.project == "/concurrent-project")
+    #expect(loaded?.project == projectPath)
     #expect(loaded?.scheme == "ConcurrentScheme")
+  }
+
+  @Test("load drops stale project and appPath when files no longer exist")
+  func loadFiltersStalePaths() throws {
+    let (store, dir) = makeTempStore()
+    defer { cleanup(dir) }
+
+    // Bypass the save() filter by writing the file directly with a non-existent path,
+    // simulating a defaults.json shipped from another machine or pointing at a
+    // since-deleted DerivedData app bundle.
+    let stale = PersistedDefaults(
+      project: "/tmp/Fake.xcodeproj",
+      scheme: "FakeScheme",
+      simulator: "iPhone Test",
+      bundleId: "com.example.fake",
+      appPath: "/tmp/Fake.app"
+    )
+    try FileManager.default.createDirectory(
+      at: store.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let encoder = JSONEncoder()
+    let data = try encoder.encode(stale)
+    try data.write(to: store.fileURL)
+
+    let loaded = store.load()
+    #expect(loaded != nil)
+    // Path-shaped stale fields are dropped.
+    #expect(loaded?.project == nil)
+    #expect(loaded?.appPath == nil)
+    // Non-path fields survive — they may still be valid even if paths are stale.
+    #expect(loaded?.scheme == "FakeScheme")
+    #expect(loaded?.simulator == "iPhone Test")
+    #expect(loaded?.bundleId == "com.example.fake")
   }
 
   @Test("merging applies non-nil fields from other over self")

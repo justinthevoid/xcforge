@@ -77,6 +77,30 @@ struct PoseToolsTests {
     #expect(argv == ["simctl", "launch", "FAKE-UDID", "com.example.app", "-DebugScreen", "Login"])
   }
 
+  /// `executePose` short-circuits on empty pose name before any build/launch work,
+  /// so this is a cheap way to confirm the `screenshotDelay` parameter is wired
+  /// through without dragging in a real build environment. The test guards against
+  /// a regression where a future refactor drops the new parameter.
+  @Test("executePose accepts screenshotDelay and short-circuits on empty name")
+  func executePoseAcceptsDelayParam() async {
+    let shell = LaunchArgvShell()
+    let env = Environment(shell: shell)
+
+    let exec = await PoseTools.executePose(
+      name: "  ",
+      key: "-pose",
+      screenshotPath: nil,
+      screenshotDelay: 0,
+      env: env
+    )
+
+    #expect(exec.succeeded == false)
+    #expect(exec.launchMessage.contains("empty"))
+    // No simctl launch should have been invoked because the empty-name guard fires
+    // before the build path runs.
+    #expect(await shell.snapshot() == nil)
+  }
+
   /// Existing call sites pass nil → original argv shape preserved.
   @Test("nil args preserves the original simctl launch argv (no extra tokens)")
   func nilArgsPreservesArgv() async throws {

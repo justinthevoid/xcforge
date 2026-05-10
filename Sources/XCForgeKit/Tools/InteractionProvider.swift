@@ -523,6 +523,7 @@ enum UITools {
 
   struct ListElementsInput: Decodable {
     let scope: String?
+    let source: String?
   }
 
   struct TapByIDInput: Decodable {
@@ -1118,14 +1119,42 @@ enum UITools {
 
   // MARK: - Public API for CLI
 
+  /// Source preference for `ui ls`. `auto` prefers WDA when an iOS sim is booted
+  /// (the user is automating an app); falls back to AXP otherwise.
+  public enum ListingSource: String, Sendable {
+    case auto, wda, axp
+  }
+
+  /// True if any iOS simulator is currently in the "Booted" state. Used to decide
+  /// `auto` source preference. Conservative: any simctl error returns false.
+  static func isAnySimulatorBooted(env: Environment) async -> Bool {
+    do {
+      let result = try await env.shell.xcrun(timeout: 5, "simctl", "list", "devices", "-j")
+      guard let data = result.stdout.data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let groups = json["devices"] as? [String: [[String: Any]]]
+      else { return false }
+      for (_, devices) in groups {
+        for device in devices where (device["state"] as? String) == "Booted" {
+          return true
+        }
+      }
+      return false
+    } catch {
+      return false
+    }
+  }
+
   /// CLI-facing entry point for `ui ls`. Mirrors `listElements` MCP semantics:
-  /// AXP-first, WDA fallback, optional scope filter, 50KB truncation.
-  /// Throws if WDA fallback errors and AXP unavailable, or if scope id is missing.
-  static func renderListing(scope: String?, env: Environment) async throws -> (
-    body: String, count: Int, source: String
-  ) {
+  /// optional scope filter, 50KB truncation. Source selection:
+  /// `auto` (default) prefers WDA when an iOS sim is booted, AXP otherwise;
+  /// `wda` forces WDA; `axp` forces AXP. Throws if the chosen source errors
+  /// and the alternate is unavailable, or if a scope id is missing.
+  static func renderListing(
+    scope: String?, source: ListingSource = .auto, env: Environment
+  ) async throws -> (body: String, count: Int, source: String) {
     var elements: [FlatElement] = []
-    var sourceTag = "wda"
+    var sourceTag = "unknown"
 
     // Test hook: XCFORGE_SKIP_AXP forces the WDA fallback path. DEBUG-only.
     var skipAXP = false
@@ -1135,23 +1164,91 @@ enum UITools {
         Log.warn("XCFORGE_SKIP_AXP is set; bypassing AXPBridge for list_elements (DEBUG-only hook)")
       }
     #endif
-    if !skipAXP, AXPBridge.isAvailable {
+
+    // Resolve a primary + fallback policy from the requested source.
+    // `auto` flips primary to WDA when a sim is booted (user is automating an iOS app,
+    // so AXP would point at Simulator.app's macOS chrome).
+    let primary: ListingSource
+    let fallback: ListingSource?
+    switch source {
+    case .wda:
+      primary = .wda
+      fallback = nil
+    case .axp:
+      primary = .axp
+      fallback = nil
+    case .auto:
+      let simBooted = await isAnySimulatorBooted(env: env)
+      primary = simBooted ? .wda : .axp
+      fallback = simBooted ? .axp : .wda
+    }
+
+    // Try a single source. Returns true on success (`elements` populated and `sourceTag`
+    // set); throws only when `forced` is true and the source errored — unforced failures
+    // log and return false so the caller can try the alternate.
+    func tryWDA(forced: Bool) async throws -> Bool {
       do {
-        let json = try await env.axpBridge.getSourceJSON()
-        elements = parseAXPElements(json)
-        sourceTag = "axp"
+        let raw = try await env.wdaClient.getSource(format: "json")
+        guard let data = raw.data(using: .utf8),
+          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+          if forced {
+            throw UIListingError.scopeNotFound("WDA returned a non-JSON-object source body")
+          }
+          Log.warn("ui ls: WDA source body was not a JSON object; trying fallback")
+          return false
+        }
+        let parsed = flattenWDASource(obj)
+        if parsed.isEmpty, forced == false {
+          // Empty WDA tree on the primary path is suspicious — fall back if we have one.
+          return false
+        }
+        elements = parsed
+        sourceTag = "wda"
+        return true
+      } catch let err as UIListingError {
+        throw err
       } catch {
-        Log.warn("AXPBridge getSourceJSON failed for list_elements, falling back to WDA: \(error)")
+        if forced { throw error }
+        Log.warn("ui ls: WDA getSource failed; trying fallback: \(error)")
+        return false
       }
     }
 
-    if elements.isEmpty {
-      let raw = try await env.wdaClient.getSource(format: "json")
-      if let data = raw.data(using: .utf8),
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-      {
-        elements = flattenWDASource(obj)
+    func tryAXP(forced: Bool) async throws -> Bool {
+      if skipAXP || !AXPBridge.isAvailable {
+        if forced {
+          throw UIListingError.scopeNotFound("AXPBridge is unavailable on this host")
+        }
+        return false
       }
+      do {
+        let json = try await env.axpBridge.getSourceJSON()
+        let parsed = parseAXPElements(json)
+        if parsed.isEmpty, forced == false {
+          return false
+        }
+        elements = parsed
+        sourceTag = "axp"
+        return true
+      } catch {
+        if forced { throw error }
+        Log.warn("ui ls: AXPBridge getSourceJSON failed; trying fallback: \(error)")
+        return false
+      }
+    }
+
+    func attempt(_ src: ListingSource, forced: Bool) async throws -> Bool {
+      switch src {
+      case .wda: return try await tryWDA(forced: forced)
+      case .axp: return try await tryAXP(forced: forced)
+      case .auto: return false  // unreachable — primary/fallback are never `.auto`
+      }
+    }
+
+    let primaryOK = try await attempt(primary, forced: fallback == nil)
+    if !primaryOK, let fb = fallback {
+      _ = try await attempt(fb, forced: true)
     }
 
     if let scope {
@@ -1319,7 +1416,15 @@ enum UITools {
     case .failure(let err): return err
     case .success(let input):
       do {
-        let (body, count, source) = try await renderListing(scope: input.scope, env: env)
+        let chosen: ListingSource
+        switch input.source?.lowercased() {
+        case "wda": chosen = .wda
+        case "axp": chosen = .axp
+        case nil, "", "auto": chosen = .auto
+        default: return .fail("Invalid source: \(input.source ?? "") (expected auto/wda/axp)")
+        }
+        let (body, count, source) = try await renderListing(
+          scope: input.scope, source: chosen, env: env)
         return .ok("Elements (\(source), \(count)):\n\(body)")
       } catch let err as UIListingError {
         return .fail(err.description)
@@ -1503,11 +1608,18 @@ public enum UIListingError: Error, CustomStringConvertible {
 }
 
 /// Render the on-screen accessibility tree as a flat one-line-per-element listing.
-/// AXP-first; WDA `/source?format=json` fallback. 50KB-truncated.
-public func xcforgeRenderUIListing(scope: String?, env: Environment) async throws -> (
-  body: String, count: Int, source: String
-) {
-  try await UITools.renderListing(scope: scope, env: env)
+/// `source` selects auto (default), wda, or axp. 50KB-truncated.
+public func xcforgeRenderUIListing(
+  scope: String?, source: String? = nil, env: Environment
+) async throws -> (body: String, count: Int, source: String) {
+  let chosen: UITools.ListingSource
+  switch source?.lowercased() {
+  case "wda": chosen = .wda
+  case "axp": chosen = .axp
+  case nil, "", "auto": chosen = .auto
+  default: throw UIListingError.scopeNotFound("invalid --source: \(source ?? "")")
+  }
+  return try await UITools.renderListing(scope: scope, source: chosen, env: env)
 }
 
 /// Atomic find + click via WDA. Retries once on stale-element / session-dead.

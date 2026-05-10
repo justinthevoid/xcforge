@@ -132,6 +132,23 @@ struct UISession: AsyncParsableCommand {
 
       do {
         let sid = try await env.wdaClient.createSession(bundleId: bundleId)
+        if let requested = bundleId {
+          let bound = try await env.wdaClient.verifyActiveBundleId()
+          if bound != requested {
+            let message =
+              "Session created: \(sid) (custom WDA: \(url)) but bundleId binding failed "
+              + "(requested=\(requested), reported=\(bound ?? "<none>")). "
+              + "WDA may not have activated the app — ensure it is installed and runnable."
+            if useJSON {
+              print(
+                try WorkflowJSONRenderer.renderJSON(
+                  UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
+            } else {
+              print(message)
+            }
+            throw ExitCode.failure
+          }
+        }
         let message = "Session created: \(sid) (custom WDA: \(url))"
         if useJSON {
           print(
@@ -140,6 +157,9 @@ struct UISession: AsyncParsableCommand {
         } else {
           print(message)
         }
+      } catch let exit as ExitCode {
+        await env.wdaClient.setBaseURL(previousURL)
+        throw exit
       } catch {
         await env.wdaClient.setBaseURL(previousURL)
         let message =
@@ -157,6 +177,23 @@ struct UISession: AsyncParsableCommand {
       do {
         try await env.wdaClient.ensureWDARunning()
         let sid = try await env.wdaClient.createSession(bundleId: bundleId)
+        if let requested = bundleId {
+          let bound = try await env.wdaClient.verifyActiveBundleId()
+          if bound != requested {
+            let message =
+              "Session created: \(sid) but bundleId binding failed "
+              + "(requested=\(requested), reported=\(bound ?? "<none>")). "
+              + "WDA may not have activated the app — ensure it is installed and runnable."
+            if useJSON {
+              print(
+                try WorkflowJSONRenderer.renderJSON(
+                  UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
+            } else {
+              print(message)
+            }
+            throw ExitCode.failure
+          }
+        }
         let message = "Session created: \(sid)"
         if useJSON {
           print(
@@ -929,6 +966,12 @@ struct UILs: AsyncParsableCommand {
   @Option(help: "Restrict the listing to an a11y-id and its descendants.")
   var scope: String?
 
+  @Option(
+    help:
+      "Tree source: auto (default — WDA when a sim is booted, otherwise AXP), wda (force iOS app via WebDriverAgent), axp (force macOS Accessibility)."
+  )
+  var source: String = "auto"
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -936,8 +979,9 @@ struct UILs: AsyncParsableCommand {
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
-      let (body, count, source) = try await xcforgeRenderUIListing(scope: scope, env: env)
-      let message = "Elements (\(source), \(count)):\n\(body)"
+      let (body, count, resolvedSource) = try await xcforgeRenderUIListing(
+        scope: scope, source: source, env: env)
+      let message = "Elements (\(resolvedSource), \(count)):\n\(body)"
       if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(

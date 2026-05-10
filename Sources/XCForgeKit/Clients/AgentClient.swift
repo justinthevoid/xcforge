@@ -35,6 +35,12 @@ public actor WDAClient {
   private var sessionId: String?
   private var knownSessionIds: [String] = []  // Track all created sessions
 
+  /// Last bundleId requested for an active session. Persisted across recreates so
+  /// `ensureSession()` and the mid-call retry path rebind the same app — without this,
+  /// auto-bootstrapped sessions are unbound and WDA queries can't reach app-owned
+  /// secondary windows (sheets, alerts, fullScreenCover).
+  private var activeBundleId: String?
+
   /// Active WDA backend. Default: xcforgeWDA with fallback to Original WDA.
   public private(set) var backend: WDABackend = .xcForgeWDA
 
@@ -402,9 +408,21 @@ public actor WDAClient {
       : nil
   }
 
+  /// Read the bundleId currently bound to recreated sessions (nil when unbound).
+  public func getActiveBundleId() -> String? { activeBundleId }
+
+  /// Clear any persisted bundleId; subsequent recreates will produce unbound sessions.
+  public func clearActiveBundleId() { activeBundleId = nil }
+
   public func createSession(bundleId: String? = nil) async throws -> String {
+    // Reject empty/whitespace bundleIds — silently storing one would poison every
+    // future recreate with a request WDA cannot satisfy.
+    let normalizedRequested: String? =
+      bundleId?.trimmingCharacters(in: .whitespaces).isEmpty == false
+      ? bundleId : nil
+    let effectiveBundleId = normalizedRequested ?? activeBundleId
     var capabilities: [String: Any] = [:]
-    if let bid = bundleId {
+    if let bid = effectiveBundleId {
       capabilities["bundleId"] = bid
     }
 
@@ -427,7 +445,28 @@ public actor WDAClient {
     if !knownSessionIds.contains(sessionId) {
       knownSessionIds.append(sessionId)
     }
+    // Persist only after the POST returns a session id. Doing this before the call
+    // would let a failed first attempt leave a poisoned `activeBundleId` for every
+    // subsequent recreate — including against an app WDA already rejected.
+    if let bid = normalizedRequested {
+      activeBundleId = bid
+    }
     return sessionId
+  }
+
+  /// Returns the CFBundleIdentifier reported by WDA for the active session, or nil if
+  /// none. Use after `createSession(bundleId:)` to confirm the binding actually took
+  /// effect — WDA accepts the capability silently even when activation fails.
+  public func verifyActiveBundleId() async throws -> String? {
+    guard let sid = sessionId else { return nil }
+    let json = try await jsonRequest(method: "GET", path: "/session/\(sid)")
+    let value = json["value"] as? [String: Any] ?? json
+    if let caps = value["capabilities"] as? [String: Any] {
+      if let bid = caps["CFBundleIdentifier"] as? String, !bid.isEmpty { return bid }
+      if let bid = caps["bundleId"] as? String, !bid.isEmpty { return bid }
+    }
+    if let bid = value["CFBundleIdentifier"] as? String, !bid.isEmpty { return bid }
+    return nil
   }
 
   @discardableResult

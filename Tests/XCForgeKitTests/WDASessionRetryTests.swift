@@ -272,4 +272,92 @@ struct WDASessionRetryTests {
     let m5 = await client.isSessionDead(WDAError.wdaNotResponding)
     #expect(m5 == false)
   }
+
+  // MARK: - bundleId persistence across recreates (G1 + G4 root fix)
+  //
+  // The original bug: `ensureSession()` recreated sessions without a bundleId, so any
+  // auto-bootstrapped WDA session was unbound — queries defaulted to whatever app WDA
+  // picked and could not see app-owned secondary windows (sheets, alerts, fullScreenCover).
+  // These tests live in this suite (not a sibling) so they share the `.serialized` trait
+  // and `withStubbedWDA` harness — cross-suite parallelism stomps the global URLProtocol.
+
+  @Test("createSession(bundleId:) records activeBundleId for future recreates")
+  func recordsActiveBundleId() async throws {
+    try await withStubbedWDA {
+      StubWDAProtocol.enqueue("POST", "/session", body: ["sessionId": "s1"])
+
+      let client = WDAClient()
+      #expect(await client.getActiveBundleId() == nil)
+
+      _ = try await client.createSession(bundleId: "com.example.foo")
+
+      #expect(await client.getActiveBundleId() == "com.example.foo")
+    }
+  }
+
+  @Test("createSession() with no arg reuses persisted activeBundleId")
+  func nilArgReusesPersisted() async throws {
+    try await withStubbedWDA {
+      StubWDAProtocol.enqueue("POST", "/session", body: ["sessionId": "s1"])
+      StubWDAProtocol.enqueue("POST", "/session", body: ["sessionId": "s2"])
+
+      let client = WDAClient()
+      _ = try await client.createSession(bundleId: "com.example.foo")
+      _ = try await client.createSession()
+
+      #expect(await client.getActiveBundleId() == "com.example.foo")
+    }
+  }
+
+  @Test("clearActiveBundleId resets the persisted state to nil")
+  func clearResetsBundleId() async throws {
+    try await withStubbedWDA {
+      StubWDAProtocol.enqueue("POST", "/session", body: ["sessionId": "s1"])
+
+      let client = WDAClient()
+      _ = try await client.createSession(bundleId: "com.example.foo")
+      await client.clearActiveBundleId()
+      #expect(await client.getActiveBundleId() == nil)
+    }
+  }
+
+  @Test("verifyActiveBundleId reads CFBundleIdentifier from /session GET response")
+  func verifyReadsCFBundleIdentifier() async throws {
+    try await withStubbedWDA {
+      StubWDAProtocol.enqueue("POST", "/session", body: ["sessionId": "s1"])
+      StubWDAProtocol.enqueue(
+        "GET", "/session/s1",
+        body: [
+          "value": [
+            "capabilities": [
+              "CFBundleIdentifier": "com.example.foo"
+            ]
+          ]
+        ])
+
+      let client = WDAClient()
+      _ = try await client.createSession(bundleId: "com.example.foo")
+      let bound = try await client.verifyActiveBundleId()
+      #expect(bound == "com.example.foo")
+    }
+  }
+
+  @Test("verifyActiveBundleId returns nil when WDA reports no CFBundleIdentifier")
+  func verifyReturnsNilWhenUnset() async throws {
+    try await withStubbedWDA {
+      StubWDAProtocol.enqueue("POST", "/session", body: ["sessionId": "s1"])
+      StubWDAProtocol.enqueue(
+        "GET", "/session/s1",
+        body: [
+          "value": [
+            "capabilities": [:] as [String: Any]
+          ]
+        ])
+
+      let client = WDAClient()
+      _ = try await client.createSession(bundleId: "com.example.foo")
+      let bound = try await client.verifyActiveBundleId()
+      #expect(bound == nil)
+    }
+  }
 }

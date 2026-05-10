@@ -17,7 +17,10 @@ struct Pose: AsyncParsableCommand {
   @Argument(help: "Pose name to pass after the launch-arg key (e.g. 'Settings').")
   var name: String
 
-  @Option(help: "Launch-arg key. Default: -pose")
+  @Option(
+    help:
+      "Launch-arg key. Default: -pose. For values starting with '-' use --key=<value> (e.g. --key=-NookPose); a bare space-separated form is parsed as a missing value."
+  )
   var key: String = "-pose"
 
   @Option(help: "Path to .xcodeproj or .xcworkspace. Auto-detected if omitted.")
@@ -38,6 +41,12 @@ struct Pose: AsyncParsableCommand {
   )
   var screenshot: String?
 
+  @Option(
+    help:
+      "Seconds to wait after launch before capturing the screenshot, so the iOS launch-zoom animation can settle. Default 1.5. Pass 0 to capture immediately (legacy behavior)."
+  )
+  var screenshotDelay: Double = 1.5
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -53,6 +62,7 @@ struct Pose: AsyncParsableCommand {
       simulator: simulator,
       configuration: configuration ?? "Debug",
       screenshotPath: screenshot,
+      screenshotDelay: screenshotDelay,
       env: env
     )
 

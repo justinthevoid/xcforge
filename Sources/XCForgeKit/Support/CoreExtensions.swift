@@ -7,6 +7,14 @@ enum Log {
   static func warn(_ message: String) {
     fputs("[xcforge] \(message)\n", stderr)
   }
+
+  /// Verbose / informational. Suppressed unless XCFORGE_DEBUG is set, so routine
+  /// stderr stays quiet for MCP clients while still being available when needed.
+  static func debug(_ message: String) {
+    if ProcessInfo.processInfo.environment["XCFORGE_DEBUG"] != nil {
+      fputs("[xcforge debug] \(message)\n", stderr)
+    }
+  }
 }
 
 // MARK: - Convenience for CallTool.Result

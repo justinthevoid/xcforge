@@ -68,6 +68,12 @@ public enum PoseTools {
               "Optional output path. After a successful launch, capture a PNG to this path. Failures here only warn."
             ),
           ]),
+          "screenshotDelay": .object([
+            "type": .string("number"),
+            "description": .string(
+              "Seconds to wait after launch before capturing the screenshot, so the iOS launch-zoom animation can settle. Default 1.5. Pass 0 to capture immediately."
+            ),
+          ]),
         ]),
         "required": .array([.string("name")]),
       ])
@@ -84,6 +90,7 @@ public enum PoseTools {
     let simulator: String?
     let configuration: String?
     let screenshot: String?
+    let screenshotDelay: Double?
   }
 
   // MARK: - Execution
@@ -96,6 +103,7 @@ public enum PoseTools {
     simulator: String? = nil,
     configuration: String = "Debug",
     screenshotPath: String? = nil,
+    screenshotDelay: Double = 1.5,
     env: Environment = .live
   ) async -> PoseExecution {
     let start = CFAbsoluteTimeGetCurrent()
@@ -222,6 +230,17 @@ public enum PoseTools {
     var screenshotResultPath: String?
     var screenshotWarning: String?
     if let path = screenshotPath {
+      // Wait for the iOS launch zoom animation to settle before capture.
+      // Default 1.5s clears typical M-series launch transitions; explicit 0 skips.
+      // Sanitize: reject NaN/inf (would trap the UInt64 cast) and clamp to a sane
+      // upper bound so a typo can't strand the process for hours.
+      let delay: Double = {
+        guard screenshotDelay.isFinite, screenshotDelay > 0 else { return 0 }
+        return min(screenshotDelay, 60)
+      }()
+      if delay > 0 {
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+      }
       do {
         let udid = try await SimTools.resolveSimulator(resolvedSim, env: env)
         try await VisualTools.captureScreenshot(
@@ -263,6 +282,7 @@ public enum PoseTools {
         simulator: input.simulator,
         configuration: input.configuration ?? "Debug",
         screenshotPath: input.screenshot,
+        screenshotDelay: input.screenshotDelay ?? 1.5,
         env: env
       )
 
