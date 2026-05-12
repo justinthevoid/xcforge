@@ -146,6 +146,50 @@ MCP equivalents:
 
 Reading the snapshot: the `=== sample ===` section shows what the compiler or test runner was doing. The inline `Summary:` line in the tool result is the top 5 call frames.
 
+## Pattern 8: Bless Workflow
+
+Use this to codify a UI change as a visual baseline and confirm tests pass in one step.
+
+```bash
+xcforge bless --baseline login-screen --tests "UITests/LoginTests"
+```
+
+What it does:
+
+1. Saves the current simulator screenshot as a named visual baseline.
+2. Runs the specified tests via `build-test`.
+3. Compares the post-test screenshot against the saved baseline.
+4. Outputs a suggested commit message: `[bless] uitests-logintests`.
+
+Why this pattern works:
+
+- Collapses the save-baseline → run-tests → compare-diff → commit loop into a single command.
+- The suggested commit message creates a traceable record of intentional visual changes.
+- Returns failure if tests fail or visual diff exceeds threshold.
+
+## Pattern 9: Agent-Optimized Test Loop
+
+Use this when running tests from an AI agent context and you want minimal token overhead.
+
+```bash
+# Slim output — ≤10 fields, first-line failure messages only
+xcforge build-test --for agent
+
+# Subtract registered known-failures before reporting pass/fail
+xcforge build-test --for agent --gate
+
+# Replay only the failures from the last run
+xcforge test rerun-failed --for agent
+```
+
+The `--gate` flag reads `.xcforge/known-failures.yaml`. Format:
+
+```yaml
+known-failures:
+  - MyTests/testFlaky
+  - MyTests/testEnvironmentDependent
+```
+
 ## MCP Equivalents
 
 Every workflow above has MCP equivalents. For parity details and caveats, see [CLI and MCP Parity](/docs/reference/cli-mcp-parity/).

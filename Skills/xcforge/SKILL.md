@@ -1,11 +1,11 @@
 ---
 name: xcforge
-description: Complete reference for xcforge — 106 MCP tools + 111 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, and full CLI parity across 18 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, iterating with visual poses, or any xcforge tool.
+description: Complete reference for xcforge — 109 MCP tools + 113 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, bless workflow, agent-optimized test output, and full CLI parity across 19 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, iterating with visual poses, or any xcforge tool.
 ---
 
 # xcforge — iOS Development MCP Server & CLI
 
-xcforge is a native Swift MCP server and CLI for iOS development. 106 MCP tools, 111 CLI commands across 18 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, multi-step plan execution, and visual pose iteration. Every MCP tool has a CLI equivalent.
+xcforge is a native Swift MCP server and CLI for iOS development. 109 MCP tools, 113 CLI commands across 19 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, multi-step plan execution, visual pose iteration, bless (baseline+test+diff in one call), agent-optimized test output with known-failures gating, and test plan inspection. Every MCP tool has a CLI equivalent.
 
 **Key advantages over alternatives:**
 - Screenshots in 0.3s (44x faster) via CoreSimulator IOSurface API
@@ -31,7 +31,7 @@ xcforge is a native Swift MCP server and CLI for iOS development. 106 MCP tools,
 | **[Device Tools](references/device-tools.md)** | Physical iOS devices — list, info, install, uninstall, launch, terminate, list apps via devicectl |
 | **[SPM Tools](references/spm-tools.md)** | Swift packages — build, test, run, list dependencies, clean |
 | **[UI Automation](references/ui-automation.md)** | Finding/clicking elements, alerts, typing, gestures, drag & drop, view hierarchy, clipboard, native HID taps/swipes |
-| **[Screenshot & Visual](references/screenshot-visual.md)** | Taking screenshots, saving baselines, comparing visual regressions, multi-device checks |
+| **[Screenshot & Visual](references/screenshot-visual.md)** | Taking screenshots, saving baselines, comparing visual regressions, multi-device checks, bless workflow |
 | **[Accessibility & Localization](references/cli-commands.md#xcforge-accessibility)** | Dynamic Type size checks, localization layout checks, RTL rendering validation |
 | **[Log & Console](references/log-console.md)** | Capturing logs, topic filtering, waiting for patterns, stdout/stderr capture |
 | **[Git Tools](references/git-tools.md)** | Git status, diff, log, commit, branch operations |
@@ -82,11 +82,23 @@ test_sim(filter: "MyClass/testFoo")           → run specific test (auto-resolv
 xcforge build run                             → Cmd+R equivalent: build + boot + install + launch
 xcforge build-test                            → build + test in one step (preferred for TDD)
 xcforge build-test --filter "testFoo"         → build + run specific test
+xcforge build-test --env BLESS_BASELINE=1     → inject TEST_RUNNER_BLESS_BASELINE=1 into test process
+xcforge build-test --for agent                → slim ≤10-field JSON (agent-safe output)
+xcforge build-test --gate                     → subtract .xcforge/known-failures.yaml from pass/fail
 xcforge test list                             → list all test identifiers
 xcforge test --filter "MyTests/testFoo"       → run specific test (auto-resolves target)
+xcforge test rerun-failed                     → replay only failures from last run (.xcforge/last-failures.json)
+xcforge test plan inspect --plan AllTests     → inspect .xctestplan configurations + targets
 xcforge test failures --include-console       → drill into failures
 xcforge test coverage --file Foo.swift        → per-function coverage
 xcforge build diagnose                        → structured diagnostics from last build's xcresult
+```
+
+### Bless Workflow (baseline + tests + diff in one call)
+```bash
+xcforge bless --baseline login-screen --tests "UITests/LoginTests"
+# MCP:
+bless(baseline: "login-screen", tests: "UITests/LoginTests")
 ```
 
 ### UI Automation Flow

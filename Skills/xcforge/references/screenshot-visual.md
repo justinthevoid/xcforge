@@ -1,4 +1,4 @@
-# Screenshot & Visual Tools (4 tools)
+# Screenshot & Visual Tools (5 tools)
 
 ## screenshot
 
@@ -73,3 +73,27 @@ Run visual checks across multiple simulators in parallel. Installs and launches 
 - Layout Score (consistency metric across devices)
 
 **Use case:** Verify a UI change looks correct on iPhone SE, iPhone 16 Pro Max, and iPad simultaneously with Dark Mode variants.
+
+---
+
+## bless
+
+Codify the baseline-write → test → diff → commit cycle in one call. Saves a visual baseline, runs the specified tests, compares the result against the saved baseline, and suggests a git commit message.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `baseline` | **Yes** | — | Name to use for the visual baseline |
+| `tests` | **Yes** | — | Test filter, e.g. `MyTarget/MyTests`. Passed to `build_and_test` |
+| `project` | No | Auto-detect | Path to .xcodeproj or .xcworkspace |
+| `scheme` | No | Auto-detect | Scheme name |
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+
+**Steps performed:**
+1. Saves a visual baseline via `save_visual_baseline`
+2. Runs tests via `build_and_test` with the provided filter
+3. Compares current screenshot against the saved baseline
+4. Suggests a commit message: `[bless] <test-slug>`
+
+**Returns:** Pass/fail status, baseline path, test result summary, visual diff result, and suggested commit message. Returns failure if any test fails.
+
+**CLI:** `xcforge bless --baseline <name> --tests <filter>`

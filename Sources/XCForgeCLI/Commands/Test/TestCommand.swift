@@ -6,9 +6,47 @@ struct Test: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "test",
     abstract: "Run tests on simulator, inspect failures, and report coverage.",
-    subcommands: [TestRun.self, TestFailures.self, TestCoverage.self, TestList.self],
+    subcommands: [
+      TestRun.self, TestFailures.self, TestCoverage.self, TestList.self, TestRerunFailed.self,
+      TestPlan.self,
+    ],
     defaultSubcommand: TestRun.self
   )
+}
+
+struct TestPlan: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "plan",
+    abstract: "Inspect test plans.",
+    subcommands: [TestPlanInspect.self],
+    defaultSubcommand: TestPlanInspect.self
+  )
+}
+
+struct TestPlanInspect: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "inspect",
+    abstract: "Parse and display a .xctestplan file without running tests."
+  )
+
+  @Option(help: "Test plan name, with or without the .xctestplan extension.")
+  var plan: String
+
+  @Option(help: "Path to .xcodeproj or .xcworkspace. Auto-detected if omitted.")
+  var project: String?
+
+  mutating func run() async throws {
+    let env = Environment.live
+    let resolvedProject = try await env.session.resolveProject(project)
+    do {
+      let summary = try await TestPlanInspector.inspectTestPlan(
+        name: plan, project: resolvedProject, env: env)
+      print(summary)
+    } catch {
+      fputs("\(error)\n", stderr)
+      throw ExitCode.failure
+    }
+  }
 }
 
 struct TestRun: AsyncParsableCommand {
@@ -50,8 +88,20 @@ struct TestRun: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @Option(
+    name: [.customLong("for")],
+    help: "Output audience: 'human' (default) or 'agent'. 'agent' implies --json with a slim shape."
+  )
+  var forMode: OutputAudience = .human
+
+  @Flag(
+    help:
+      "Subtract IDs listed in .xcforge/known-failures.yaml when computing succeeded:. Opt-in; raw failure list is unchanged."
+  )
+  var gate = false
+
   mutating func run() async throws {
-    let useJSON = shouldOutputJSON(flag: json)
+    let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
     let configuration = self.configuration ?? "Debug"
     let recoveryMode = SimRecoveryMode(rawValue: simRecovery) ?? .off
 
@@ -65,11 +115,13 @@ struct TestRun: AsyncParsableCommand {
       coverage: coverage,
       long: long,
       diagnose: diagnose,
-      simRecovery: recoveryMode
+      simRecovery: recoveryMode,
+      gate: gate,
+      forMode: forMode
     )
 
     if useJSON {
-      print(try WorkflowJSONRenderer.renderJSON(execution))
+      print(try WorkflowJSONRenderer.renderTestJSON(execution, forAgent: forMode == .agent))
     } else {
       print(TestRenderer.renderTest(execution))
     }

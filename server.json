@@ -7,15 +7,15 @@
     "url": "https://github.com/justinthevoid/xcforge",
     "source": "github"
   },
-  "version": "1.3.0",
+  "version": "1.5.0",
   "version_detail": {
-    "version": "1.4.6"
+    "version": "1.5.0"
   },
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/justinthevoid/xcforge/releases/download/v1.4.6/xcforge-v1.4.6.mcpb",
-      "fileSha256": "35ebf3e5e91689451eee9368b6fb866cd7b1a3e1daecdebb4fcaf469d5ad5a33",
+      "identifier": "https://github.com/justinthevoid/xcforge/releases/download/v1.5.0/xcforge-v1.5.0.mcpb",
+      "fileSha256": "afab68316b39dbe39b5d9a5e22e61b9cd13eae44bd4f0d904d114964864b2975",
       "transport": {
         "type": "stdio"
       }

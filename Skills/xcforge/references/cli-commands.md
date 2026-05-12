@@ -8,7 +8,7 @@ xcforge operates in two modes:
 
 ```bash
 xcforge                    # MCP server mode
-xcforge build ...          # CLI mode — 18 command groups
+xcforge build ...          # CLI mode — 19 command groups
 xcforge test ...           # CLI mode
 xcforge sim ...            # CLI mode
 xcforge device ...         # CLI mode
@@ -23,6 +23,8 @@ xcforge defaults ...       # CLI mode
 xcforge diagnose ...       # CLI mode
 xcforge plan ...           # CLI mode
 xcforge pose ...           # CLI mode
+xcforge bless ...          # CLI mode
+xcforge debug ...          # CLI mode
 ```
 
 ---
@@ -144,6 +146,8 @@ xcforge test run                                 # Auto-detect everything
 xcforge test --scheme MyApp --filter "MyTests/testLogin"
 xcforge test --testplan AllTests
 xcforge test --coverage                          # Enable code coverage collection
+xcforge test --for agent                         # Slim ≤10-field JSON output for agents
+xcforge test --gate                              # Subtract known-failures.yaml from pass/fail
 xcforge test --json                              # Machine-readable JSON output
 ```
 
@@ -154,13 +158,58 @@ xcforge test --json                              # Machine-readable JSON output
 | `--simulator <name\|udid>` | Simulator name or UDID. Auto-detected from booted simulator |
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
 | `--testplan <name>` | Test plan name |
-| `--filter <pattern>` | Test filter — accepts `testMethod`, `Class/testMethod`, or `Target/Class/testMethod` (target auto-resolved) |
+| `--filter <pattern>` | Test filter — accepts `testMethod`, `Class/testMethod`, or `Target/Class/testMethod` (target auto-resolved). Typos surface "Did you mean: ...?" suggestions |
 | `--coverage` | Enable code coverage collection |
+| `--for <audience>` | Output audience: `human` (default) or `agent`. `agent` implies `--json` with a slim shape |
+| `--gate` | Subtract IDs in `.xcforge/known-failures.yaml` from `succeeded` count |
 | `--json` | Machine-readable JSON output |
 
 **Output:** Pass/fail/skip/expected-failure counts, elapsed time, device info, failure summaries with test names, screenshot paths. xcresult path for follow-up commands.
 
 **Exit code:** 0 when all tests pass, 1 when any test fails.
+
+### test rerun-failed
+
+Rerun only the tests that failed in the most recent run. Reads failure IDs from `.xcforge/last-failures.json` (written automatically by `test run` and `build-test`).
+
+```bash
+xcforge test rerun-failed
+xcforge test rerun-failed --scheme MyApp --simulator "iPhone 16 Pro"
+xcforge test rerun-failed --for agent --gate
+xcforge test rerun-failed --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--project <path>` | Auto-detected if omitted |
+| `--scheme <name>` | Auto-detected if omitted |
+| `--simulator <name\|udid>` | Auto-detected if omitted |
+| `--configuration <config>` | Build configuration. Default: Debug |
+| `--testplan <name>` | Test plan name |
+| `--long` | Use 1800s timeout instead of 180s |
+| `--for <audience>` | `human` (default) or `agent` |
+| `--gate` | Apply known-failures gate to the rerun result |
+| `--json` | Machine-readable JSON output |
+
+**Exit code:** 2 if no prior failures are recorded. 0 if rerun passes, 1 if any fail.
+
+### test plan inspect
+
+Parse and summarize a `.xctestplan` file without running tests.
+
+```bash
+xcforge test plan inspect --plan AllTests
+xcforge test plan inspect --plan AllTests --project MyApp.xcodeproj
+xcforge test plan inspect --plan AllTests --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--plan <name>` | **Required** — test plan name, with or without `.xctestplan` extension |
+| `--project <path>` | Auto-detected if omitted |
+| `--json` | Machine-readable JSON output |
+
+**Output:** Test plan name, version, default options, configurations, test targets with parallelizable flag and skipped-test counts.
 
 ### test failures
 
@@ -239,6 +288,9 @@ Build then test in one step. Short-circuits on build failure with structured dia
 xcforge build-test                               # Build + test all
 xcforge build-test --filter "MyTests/testFoo"    # Build + run specific test
 xcforge build-test --coverage                    # With code coverage
+xcforge build-test --env BLESS_BASELINE=1        # Inject TEST_RUNNER_BLESS_BASELINE=1 into test process
+xcforge build-test --for agent                   # Slim ≤10-field JSON (agent-safe output)
+xcforge build-test --gate                        # Subtract known-failures.yaml from pass/fail
 xcforge build-test --json                        # Machine-readable JSON
 ```
 
@@ -249,8 +301,11 @@ xcforge build-test --json                        # Machine-readable JSON
 | `--simulator <name\|udid>` | Auto-detected if omitted |
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
 | `--testplan <name>` | Test plan name |
-| `--filter <pattern>` | Test filter — accepts relaxed formats (auto-resolves target prefix) |
+| `--filter <pattern>` | Test filter — accepts relaxed formats (auto-resolves target prefix). Typos surface "Did you mean: ...?" suggestions |
 | `--coverage` | Enable code coverage collection |
+| `--env <KEY=VALUE>` | Repeatable. Each key is auto-prefixed with `TEST_RUNNER_` before xcodebuild. `TEST_RUNNER_XCFORGE_REPO_ROOT` is always injected; override via `--env XCFORGE_REPO_ROOT=...` |
+| `--for <audience>` | `human` (default) or `agent`. `agent` implies `--json` with a slim shape |
+| `--gate` | Subtract IDs in `.xcforge/known-failures.yaml` from `succeeded` count |
 | `--json` | Machine-readable JSON output |
 
 **Output on build failure:** Build elapsed time, structured errors with file:line, warnings. Tests are NOT run.
@@ -758,6 +813,29 @@ See the [Pose & Visual Iteration](pose.md) reference for app-side routing patter
 
 ---
 
+## xcforge bless
+
+Save a visual baseline, run tests, compare visual output, and suggest a commit message — all in one call.
+
+```bash
+xcforge bless --baseline login-screen --tests "UITests/LoginTests"
+xcforge bless --baseline home-dark --tests "SnapshotTests/HomeTests" --project MyApp.xcodeproj
+```
+
+| Flag | Description |
+|------|-------------|
+| `--baseline <name>` | **Required** — Name for the visual baseline |
+| `--tests <filter>` | **Required** — Test filter passed to `build-test` (e.g., `MyTarget/MyTests`) |
+| `--project <path>` | Auto-detected if omitted |
+| `--scheme <name>` | Auto-detected if omitted |
+| `--simulator <name\|udid>` | Auto-detected if omitted |
+
+**Steps performed:** save baseline → run tests → compare visual → suggest `[bless] <slug>` commit message.
+
+**Exit code:** 0 when all tests pass and diff is within threshold, 1 otherwise.
+
+---
+
 ## Typical CLI Workflows
 
 ### TDD Loop
@@ -774,12 +852,21 @@ xcforge test
 # Filter to specific tests
 xcforge test --filter "LoginTests/testValidCredentials"
 
+# Agent-optimized output
+xcforge test --for agent --gate
+
+# Rerun only failures
+xcforge test rerun-failed
+
 # Inspect failures with console output
 xcforge test failures --include-console
 
 # Check coverage
 xcforge test coverage --min-coverage 80
 xcforge test coverage --file LoginViewModel.swift
+
+# Bless a visual baseline + run tests in one call
+xcforge bless --baseline login-screen --tests "UITests/LoginTests"
 ```
 
 ### Simulator + App Workflow

@@ -45,11 +45,32 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Capture a diagnostic snapshot even when the build/test succeeds.")
   var diagnose = false
 
+  @Option(
+    name: .long, parsing: .singleValue,
+    help: ArgumentHelp(
+      "Environment variable for the test runner (repeatable). Format: KEY=VALUE. The key is auto-prefixed with TEST_RUNNER_; Xcode strips the prefix inside the test process, so 'BLESS_BASELINE=1' surfaces as ProcessInfo.environment[\"BLESS_BASELINE\"]. TEST_RUNNER_XCFORGE_REPO_ROOT is always injected (override with --env XCFORGE_REPO_ROOT=...).",
+      valueName: "KEY=VALUE"
+    )
+  )
+  var env: [String] = []
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @Option(
+    name: [.customLong("for")],
+    help: "Output audience: 'human' (default) or 'agent'. 'agent' implies --json with a slim shape."
+  )
+  var forMode: OutputAudience = .human
+
+  @Flag(
+    help:
+      "Subtract IDs listed in .xcforge/known-failures.yaml when computing succeeded:. Opt-in; raw failure list is unchanged."
+  )
+  var gate = false
+
   mutating func run() async throws {
-    let useJSON = shouldOutputJSON(flag: json)
+    let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
     let configuration = self.configuration ?? "Debug"
     let resolvedTimeout = timeoutSeconds.map { TimeInterval($0) }
 
@@ -63,11 +84,14 @@ struct BuildTest: AsyncParsableCommand {
       coverage: coverage,
       long: long,
       diagnose: diagnose,
-      timeoutSeconds: resolvedTimeout
+      timeoutSeconds: resolvedTimeout,
+      envEntries: env,
+      gate: gate,
+      forMode: forMode
     )
 
     if useJSON {
-      print(try WorkflowJSONRenderer.renderJSON(result))
+      print(try WorkflowJSONRenderer.renderTestJSON(result, forAgent: forMode == .agent))
     } else {
       print(BuildTestRenderer.render(result))
     }

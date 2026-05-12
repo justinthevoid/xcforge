@@ -199,6 +199,35 @@ enum GitTools {
         if result.succeeded {
           return .ok("Committed: \(result.stdout)")
         }
+
+        // Hook retry: if hook-modified tracked files exist, re-stage them and retry once
+        if result.exitCode != 0 && !result.stderr.contains("nothing to commit") {
+          let statusResult = try await env.shell.git(
+            ["status", "--porcelain"], workingDirectory: input.path)
+          let hookModified = statusResult.stdout.split(separator: "\n")
+            .compactMap { line -> String? in
+              let s = String(line)
+              guard s.count >= 3 else { return nil }
+              let workingTree = s[s.index(s.startIndex, offsetBy: 1)]
+              return workingTree == "M" ? String(s.dropFirst(3)) : nil
+            }
+
+          if !hookModified.isEmpty {
+            let addArgs = ["add"] + hookModified
+            let addResult = try await env.shell.git(addArgs, workingDirectory: input.path)
+            if !addResult.succeeded {
+              return .fail("Commit failed: \(result.stderr)")
+            }
+            let retryResult = try await env.shell.git(
+              ["commit", "-m", input.message], workingDirectory: input.path)
+            if retryResult.succeeded {
+              return .ok(
+                "Committed (after hook reformat of \(hookModified)): \(retryResult.stdout)")
+            }
+            return .fail("Commit failed (retry after hook reformat also failed): \(retryResult.stderr)")
+          }
+        }
+
         return .fail("Commit failed: \(result.stderr)")
       } catch {
         return .fail("Error: \(error)")

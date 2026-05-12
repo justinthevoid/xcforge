@@ -237,17 +237,14 @@ public enum RepoConfig {
   public static func discover(from startDir: String) -> PersistedDefaults? {
     guard !startDir.isEmpty else { return nil }
     let fm = FileManager.default
+    let repoRoot = RepoRoot.discover(from: startDir)
     var dir = startDir
-
-    // Walk up, but stop at repo root (.git boundary) or filesystem root
     while dir != "/" {
       let candidate = (dir as NSString).appendingPathComponent(fileName)
       if fm.fileExists(atPath: candidate) {
         return load(from: candidate, configDir: dir)
       }
-      // Stop at repo root — don't walk above .git
-      let gitPath = (dir as NSString).appendingPathComponent(".git")
-      if fm.fileExists(atPath: gitPath) {
+      if let repoRoot, dir == repoRoot {
         break
       }
       dir = (dir as NSString).deletingLastPathComponent
