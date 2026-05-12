@@ -24,6 +24,12 @@ Most build/test/simulator/diagnosis actions have both:
 | Fast compile check | `xcforge build compile` | `build_compile` |
 | Build and launch | `xcforge build run` | `build_run_sim` |
 | Build then test | `xcforge build-test` | `build_and_test` |
+| Build-test with env var | `xcforge build-test --env KEY=VAL` | `build_and_test` with `env: ["KEY=VAL"]` |
+| Agent-optimized test output | `xcforge test --for agent` | `test_sim` with `for: "agent"` |
+| Known-failures gate | `xcforge test --gate` | `test_sim` / `build_and_test` with `gate: true` |
+| Rerun last failures | `xcforge test rerun-failed` | — (CLI-only) |
+| Inspect test plan | `xcforge test plan inspect --plan X` | `test_plan_inspect` |
+| Bless (baseline+test+diff) | `xcforge bless --baseline X --tests Y` | `bless` |
 | Booted simulator info | `xcforge sim info` | `sim_info` |
 | Test failures | `xcforge test failures` | `test_failures` |
 | Coverage report | `xcforge test coverage` | `test_coverage` |

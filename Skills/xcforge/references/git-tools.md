@@ -44,6 +44,8 @@ Commit staged changes.
 | `message` | **Yes** | — | Commit message |
 | `add_all` | No | false | Stage all changes before committing |
 
+**Hook retry:** If a pre-commit hook reformats files (e.g., swift-format), `git_commit` detects the modified files via `git status --porcelain`, auto-restages them, and retries the commit once before surfacing the failure.
+
 ---
 
 ## git_branch

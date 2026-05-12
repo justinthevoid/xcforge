@@ -1,4 +1,4 @@
-# Test Tools (6 tools)
+# Test Tools (7 tools)
 
 All test tools parse `.xcresult` bundles for structured results — no raw xcodebuild output parsing.
 
@@ -15,11 +15,15 @@ Run tests and return structured xcresult summary.
 | `testplan` | No | — | Test plan name (if project uses test plans) |
 | `filter` | No | — | Test filter — accepts relaxed formats (see below) |
 | `coverage` | No | false | Enable code coverage collection |
+| `for` | No | `human` | Output audience: `human` preserves full JSON; `agent` returns a slim ≤10-field projection |
+| `gate` | No | false | Subtract IDs in `.xcforge/known-failures.yaml` when computing `succeeded`. Raw failure list unchanged |
 
 **Filter auto-resolution:** The test target prefix is auto-resolved when omitted. All these formats work:
 - `testMethodName` → auto-prefixes `TestTarget/testMethodName`
 - `TestClass/testMethodName` → auto-prefixes `TestTarget/TestClass/testMethodName`
 - `TestTarget/TestClass/testMethodName` → passed through as-is
+
+**Filter typo suggestions:** If the filter doesn't match any test ID, xcforge runs a Levenshtein fuzzy match and surfaces "Did you mean: ...?" suggestions in the result.
 
 Use `list_tests` to discover available identifiers if unsure.
 
@@ -104,6 +108,9 @@ Build then test in one call. Short-circuits on build failure with structured dia
 | `testplan` | No | — | Test plan name |
 | `filter` | No | — | Test filter — accepts relaxed formats (auto-resolves target prefix) |
 | `coverage` | No | false | Enable code coverage collection |
+| `env` | No | — | Array of `KEY=VALUE` strings. Each key is auto-prefixed with `TEST_RUNNER_` before xcodebuild runs (Xcode strips the prefix inside tests). `TEST_RUNNER_XCFORGE_REPO_ROOT` is always injected. |
+| `for` | No | `human` | Output audience: `human` preserves full JSON; `agent` returns a slim ≤10-field projection |
+| `gate` | No | false | Subtract IDs in `.xcforge/known-failures.yaml` when computing `succeeded`. Raw failure list unchanged |
 
 **Behavior:**
 1. Builds with structured diagnostics (Phase 1)
@@ -111,6 +118,8 @@ Build then test in one call. Short-circuits on build failure with structured dia
 3. If build succeeds → runs tests (Phase 2), returns pass/fail summary
 
 **Returns:** Phase indicator (`build` or `test`), build elapsed time, build diagnostics (on failure), test execution result (on success).
+
+**Failure persistence:** On a failing run, failure IDs are saved to `.xcforge/last-failures.json` (cleared on green). Use `xcforge test rerun-failed` to replay exactly those IDs.
 
 ---
 
@@ -127,3 +136,16 @@ List available test identifiers for a scheme. Use to discover the correct filter
 **Returns:** List of test identifiers in `Target/Class/method` format, grouped by target and class. Includes counts of targets, classes, and test methods.
 
 **Note:** Requires a build-for-testing step (does not run tests). First call may take time to build.
+
+---
+
+## test_plan_inspect
+
+Parse and summarize a `.xctestplan` file without running tests.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `plan` | **Yes** | — | Test plan name, with or without `.xctestplan` extension |
+| `project` | No | Auto-detect | Path to .xcodeproj or .xcworkspace |
+
+**Returns:** Test plan name, version, default options (coverage, sanitizers), configurations list, test targets with parallelizable flag and skipped-test counts. Searches `xcshareddata/xctestplans/` and recursively under the project directory.

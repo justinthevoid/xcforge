@@ -15,8 +15,9 @@ For day-to-day usage, rely on the concrete subcommands shown by `xcforge --help`
 | Group | Primary use |
 | --- | --- |
 | `build` | Build + install + launch (Cmd+R), fast compile check, clean, diagnose, discover projects, list schemes |
-| `test` | Run tests, inspect failures, inspect coverage, list test identifiers |
-| `build-test` | Build then test in one command for TDD loops |
+| `test` | Run tests, inspect failures, inspect coverage, list test identifiers, rerun failures, inspect test plans |
+| `build-test` | Build then test in one command for TDD loops; supports `--env`, `--for agent`, `--gate` |
+| `bless` | Save visual baseline, run tests, diff, and suggest a commit message in one call |
 | `sim` | Simulator lifecycle, app launch/install, info query, video, location, appearance, status bar |
 | `device` | Physical device management via `devicectl` |
 | `spm` | Swift Package Manager build, test, run, list, clean |
