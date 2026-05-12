@@ -8,9 +8,45 @@ struct Test: ParsableCommand {
     abstract: "Run tests on simulator, inspect failures, and report coverage.",
     subcommands: [
       TestRun.self, TestFailures.self, TestCoverage.self, TestList.self, TestRerunFailed.self,
+      TestPlan.self,
     ],
     defaultSubcommand: TestRun.self
   )
+}
+
+struct TestPlan: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "plan",
+    abstract: "Inspect test plans.",
+    subcommands: [TestPlanInspect.self],
+    defaultSubcommand: TestPlanInspect.self
+  )
+}
+
+struct TestPlanInspect: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "inspect",
+    abstract: "Parse and display a .xctestplan file without running tests."
+  )
+
+  @Option(help: "Test plan name, with or without the .xctestplan extension.")
+  var plan: String
+
+  @Option(help: "Path to .xcodeproj or .xcworkspace. Auto-detected if omitted.")
+  var project: String?
+
+  mutating func run() async throws {
+    let env = Environment.live
+    let resolvedProject = try await env.session.resolveProject(project)
+    do {
+      let summary = try await TestPlanInspector.inspectTestPlan(
+        name: plan, project: resolvedProject, env: env)
+      print(summary)
+    } catch {
+      fputs("\(error)\n", stderr)
+      throw ExitCode.failure
+    }
+  }
 }
 
 struct TestRun: AsyncParsableCommand {

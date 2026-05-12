@@ -744,6 +744,30 @@ public enum TestTools {
         ]),
       ])
     ),
+    Tool(
+      name: "test_plan_inspect",
+      description: """
+        Parse and summarise a .xctestplan file without running tests. \
+        Returns configurations, defaultOptions, and test targets with skipped-test counts. \
+        Project path is auto-detected if omitted.
+        """,
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "plan": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Test plan name, with or without the .xctestplan extension."
+            ),
+          ]),
+          "project": .object([
+            "type": .string("string"),
+            "description": .string("Path to .xcodeproj or .xcworkspace. Auto-detected if omitted."),
+          ]),
+        ]),
+        "required": .array([.string("plan")]),
+      ])
+    ),
   ]
 
   // MARK: - Shared helpers
@@ -982,12 +1006,11 @@ public enum TestTools {
         hint += "\n  \(m.fullIdentifier)"
       }
     } else {
-      // Try fuzzy: check class names containing any word from the filter
-      let classNames = Set(listResult.tests.map { $0.className })
-      let suggestions = classNames.filter { $0.lowercased().contains(lowered) }
-        .sorted().prefix(5)
-      if !suggestions.isEmpty {
-        hint += "\nSimilar classes: \(suggestions.joined(separator: ", "))"
+      let ids = listResult.tests.map { $0.fullIdentifier }
+      let fuzzyResults = FuzzyMatch.fuzzyRank(needle: filter, candidates: ids)
+      if !fuzzyResults.isEmpty {
+        hint +=
+          "\nDid you mean: \(fuzzyResults.map(\.candidate).joined(separator: ", "))?"
       } else {
         hint += "\nNo similar identifiers found. Use list_tests to see all available test names."
       }
@@ -3187,6 +3210,30 @@ public enum TestTools {
     }
   }
 
+  static func testPlanInspect(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    struct Input: Decodable {
+      let plan: String
+      let project: String?
+    }
+    switch ToolInput.decode(Input.self, from: args) {
+    case .failure(let err): return err
+    case .success(let input):
+      let resolvedProject: String
+      do {
+        resolvedProject = try await env.session.resolveProject(input.project)
+      } catch {
+        return .fail("\(error)")
+      }
+      do {
+        let summary = try await TestPlanInspector.inspectTestPlan(
+          name: input.plan, project: resolvedProject, env: env)
+        return .ok(summary)
+      } catch {
+        return .fail("\(error)")
+      }
+    }
+  }
+
   static func listTests(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(ListTestsInput.self, from: args) {
     case .failure(let err): return err
@@ -3892,6 +3939,7 @@ extension TestTools: ToolProvider {
     case "build_and_diagnose": return await buildAndDiagnose(args, env: env)
     case "build_and_test": return await buildAndTest(args, env: env)
     case "list_tests": return await listTests(args, env: env)
+    case "test_plan_inspect": return await testPlanInspect(args, env: env)
     default: return nil
     }
   }

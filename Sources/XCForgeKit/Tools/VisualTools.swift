@@ -88,7 +88,7 @@ public enum VisualTools {
     }
   }
 
-  private static func saveVisualBaselineImpl(_ input: SaveBaselineInput, env: Environment) async
+  static func saveVisualBaselineImpl(_ input: SaveBaselineInput, env: Environment) async
     -> CallTool.Result
   {
     let sim: String
@@ -144,7 +144,7 @@ public enum VisualTools {
     }
   }
 
-  private static func compareVisualImpl(_ input: CompareInput, env: Environment) async
+  static func compareVisualImpl(_ input: CompareInput, env: Environment) async
     -> CallTool.Result
   {
     let sim: String
