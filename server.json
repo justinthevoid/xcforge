@@ -15,7 +15,7 @@
     {
       "registryType": "mcpb",
       "identifier": "https://github.com/justinthevoid/xcforge/releases/download/v1.5.0/xcforge-v1.5.0.mcpb",
-      "fileSha256": "afab68316b39dbe39b5d9a5e22e61b9cd13eae44bd4f0d904d114964864b2975",
+      "fileSha256": "e180ee432d5f4da40dd5dda6c6e7faf71e79d27f72528bd2e44675a54bbfac90",
       "transport": {
         "type": "stdio"
       }
