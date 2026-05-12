@@ -45,6 +45,15 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Capture a diagnostic snapshot even when the build/test succeeds.")
   var diagnose = false
 
+  @Option(
+    name: .long, parsing: .singleValue,
+    help: ArgumentHelp(
+      "Environment variable for the test runner (repeatable). Format: KEY=VALUE. The key is auto-prefixed with TEST_RUNNER_; Xcode strips the prefix inside the test process, so 'BLESS_BASELINE=1' surfaces as ProcessInfo.environment[\"BLESS_BASELINE\"]. TEST_RUNNER_XCFORGE_REPO_ROOT is always injected (override with --env XCFORGE_REPO_ROOT=...).",
+      valueName: "KEY=VALUE"
+    )
+  )
+  var env: [String] = []
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -63,7 +72,8 @@ struct BuildTest: AsyncParsableCommand {
       coverage: coverage,
       long: long,
       diagnose: diagnose,
-      timeoutSeconds: resolvedTimeout
+      timeoutSeconds: resolvedTimeout,
+      envEntries: env
     )
 
     if useJSON {

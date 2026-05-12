@@ -311,6 +311,44 @@ public enum TestTools {
     var diagnose: Bool?
     var simRecovery: String?
     var timeoutSeconds: Int?
+    // Each entry is KEY=VALUE; KEY is auto-prefixed with TEST_RUNNER_ before reaching xcodebuild.
+    var env: [String]?
+  }
+
+  /// Error for malformed --env / env: entries.
+  public struct TestRunnerEnvError: Error, CustomStringConvertible {
+    public let description: String
+    init(_ message: String) { self.description = message }
+  }
+
+  /// Validate, auto-prefix, and inject defaults for the `--env` / `env:` test-runner channel.
+  ///
+  /// Each `userEntry` is `KEY=VALUE` (first `=` only); the resulting child-process env contains
+  /// `TEST_RUNNER_<KEY>=<VALUE>`. Duplicate keys: last wins. `TEST_RUNNER_XCFORGE_REPO_ROOT` is
+  /// injected from `repoRoot` only if the user did not already supply `XCFORGE_REPO_ROOT`.
+  static func buildTestRunnerEnvironment(
+    userEntries: [String],
+    repoRoot: String
+  ) throws -> [String: String] {
+    var out: [String: String] = [:]
+    for raw in userEntries {
+      guard let eq = raw.firstIndex(of: "=") else {
+        throw TestRunnerEnvError("invalid --env value \"\(raw)\": expected KEY=VALUE")
+      }
+      let key = String(raw[..<eq])
+      let value = String(raw[raw.index(after: eq)...])
+      if key.isEmpty {
+        throw TestRunnerEnvError("invalid --env value \"\(raw)\": key must be non-empty")
+      }
+      if key.rangeOfCharacter(from: .whitespacesAndNewlines) != nil {
+        throw TestRunnerEnvError("invalid --env key \"\(key)\": no whitespace allowed")
+      }
+      out["TEST_RUNNER_\(key)"] = value
+    }
+    if out["TEST_RUNNER_XCFORGE_REPO_ROOT"] == nil {
+      out["TEST_RUNNER_XCFORGE_REPO_ROOT"] = repoRoot
+    }
+    return out
   }
 
   struct ListTestsInput: Decodable {
@@ -625,6 +663,13 @@ public enum TestTools {
               "Override the xcodebuild timeout in seconds. Takes precedence over 'long'. Default: 180 (or 1800 with long: true)."
             ),
           ]),
+          "env": .object([
+            "type": .string("array"),
+            "items": .object(["type": .string("string")]),
+            "description": .string(
+              "Environment variables for the test runner. Each entry is KEY=VALUE; the key is auto-prefixed with TEST_RUNNER_ before xcodebuild runs (Xcode strips the prefix inside the test process). Example: 'BLESS_BASELINE=1' surfaces as ProcessInfo.environment[\"BLESS_BASELINE\"] in tests. TEST_RUNNER_XCFORGE_REPO_ROOT is always injected; override by supplying 'XCFORGE_REPO_ROOT=...'."
+            ),
+          ]),
         ]),
       ])
     ),
@@ -895,6 +940,7 @@ public enum TestTools {
     configuration: String, testplan: String?, filter: String?,
     coverage: Bool, resultPath: String,
     long: Bool = false, diagnose: Bool = false, udid: String? = nil,
+    childEnvironment: [String: String]? = nil,
     env: Environment
   ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
     // Remove old xcresult if exists
@@ -923,7 +969,9 @@ public enum TestTools {
     let timeout = resolveTestTimeout(long: long)
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
-    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
+    let result = try await env.shell.run(
+      "/usr/bin/xcodebuild", arguments: args,
+      environment: childEnvironment, timeout: timeout)
     watchdog.cancel()
     let diagResult = await resolvedDiagResult(
       result: result, diagnose: diagnose, watchdog: watchdog,
@@ -968,6 +1016,7 @@ public enum TestTools {
     configuration: String, coverage: Bool, resultPath: String,
     long: Bool = false, diagnose: Bool = false, udid: String? = nil,
     timeoutOverride: TimeInterval? = nil,
+    childEnvironment: [String: String]? = nil,
     env: Environment
   ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
@@ -986,7 +1035,9 @@ public enum TestTools {
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
-    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
+    let result = try await env.shell.run(
+      "/usr/bin/xcodebuild", arguments: args,
+      environment: childEnvironment, timeout: timeout)
     watchdog.cancel()
     let diagResult = await resolvedDiagResult(
       result: result, diagnose: diagnose, watchdog: watchdog,
@@ -1001,6 +1052,7 @@ public enum TestTools {
     coverage: Bool, resultPath: String,
     long: Bool = false, diagnose: Bool = false, udid: String? = nil,
     timeoutOverride: TimeInterval? = nil,
+    childEnvironment: [String: String]? = nil,
     env: Environment
   ) async throws -> (ShellResult, String, DiagnosticSnapshot.Result?) {
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
@@ -1025,7 +1077,9 @@ public enum TestTools {
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
-    let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
+    let result = try await env.shell.run(
+      "/usr/bin/xcodebuild", arguments: args,
+      environment: childEnvironment, timeout: timeout)
     watchdog.cancel()
     let diagResult = await resolvedDiagResult(
       result: result, diagnose: diagnose, watchdog: watchdog,
@@ -1841,8 +1895,13 @@ public enum TestTools {
     diagnose: Bool = false,
     simRecovery: SimRecoveryMode = .auto,
     timeoutSeconds: TimeInterval? = nil,
+    envEntries: [String] = [],
     env: Environment = .live
   ) async throws -> BuildAndTestResult {
+    let cwd = env.currentDirectoryPath()
+    let repoRoot = AutoDetect.repoRoot(from: cwd) ?? cwd
+    let childEnvironment = try buildTestRunnerEnvironment(
+      userEntries: envEntries, repoRoot: repoRoot)
     let resolvedProject = try await env.session.resolveProject(project)
     let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
     let resolvedSimulator = try await env.session.resolveSimulator(simulator)
@@ -1893,6 +1952,7 @@ public enum TestTools {
         project: resolvedProject, scheme: resolvedScheme, destination: destination,
         configuration: configuration, coverage: coverage, resultPath: resultPath,
         long: long, diagnose: diagnose, udid: udidForDest, timeoutOverride: timeoutSeconds,
+        childEnvironment: childEnvironment,
         env: env
       )
     }
@@ -1907,6 +1967,7 @@ public enum TestTools {
         configuration: configuration, testplan: testplan, filter: resolvedFilter,
         coverage: coverage, resultPath: resultPath,
         long: long, diagnose: diagnose, udid: udidForDest, timeoutOverride: timeoutSeconds,
+        childEnvironment: childEnvironment,
         env: env
       )
     }
@@ -2877,6 +2938,7 @@ public enum TestTools {
           diagnose: input.diagnose ?? false,
           simRecovery: recoveryMode,
           timeoutSeconds: input.timeoutSeconds.map { TimeInterval($0) },
+          envEntries: input.env ?? [],
           env: env
         )
         // Generate zero-match hint before formatting (avoids Content extraction)
