@@ -6,7 +6,9 @@ struct Test: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "test",
     abstract: "Run tests on simulator, inspect failures, and report coverage.",
-    subcommands: [TestRun.self, TestFailures.self, TestCoverage.self, TestList.self],
+    subcommands: [
+      TestRun.self, TestFailures.self, TestCoverage.self, TestList.self, TestRerunFailed.self,
+    ],
     defaultSubcommand: TestRun.self
   )
 }
@@ -50,8 +52,20 @@ struct TestRun: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @Option(
+    name: [.customLong("for")],
+    help: "Output audience: 'human' (default) or 'agent'. 'agent' implies --json with a slim shape."
+  )
+  var forMode: OutputAudience = .human
+
+  @Flag(
+    help:
+      "Subtract IDs listed in .xcforge/known-failures.yaml when computing succeeded:. Opt-in; raw failure list is unchanged."
+  )
+  var gate = false
+
   mutating func run() async throws {
-    let useJSON = shouldOutputJSON(flag: json)
+    let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
     let configuration = self.configuration ?? "Debug"
     let recoveryMode = SimRecoveryMode(rawValue: simRecovery) ?? .off
 
@@ -65,11 +79,13 @@ struct TestRun: AsyncParsableCommand {
       coverage: coverage,
       long: long,
       diagnose: diagnose,
-      simRecovery: recoveryMode
+      simRecovery: recoveryMode,
+      gate: gate,
+      forMode: forMode
     )
 
     if useJSON {
-      print(try WorkflowJSONRenderer.renderJSON(execution))
+      print(try WorkflowJSONRenderer.renderTestJSON(execution, forAgent: forMode == .agent))
     } else {
       print(TestRenderer.renderTest(execution))
     }

@@ -57,8 +57,20 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @Option(
+    name: [.customLong("for")],
+    help: "Output audience: 'human' (default) or 'agent'. 'agent' implies --json with a slim shape."
+  )
+  var forMode: OutputAudience = .human
+
+  @Flag(
+    help:
+      "Subtract IDs listed in .xcforge/known-failures.yaml when computing succeeded:. Opt-in; raw failure list is unchanged."
+  )
+  var gate = false
+
   mutating func run() async throws {
-    let useJSON = shouldOutputJSON(flag: json)
+    let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
     let configuration = self.configuration ?? "Debug"
     let resolvedTimeout = timeoutSeconds.map { TimeInterval($0) }
 
@@ -73,11 +85,13 @@ struct BuildTest: AsyncParsableCommand {
       long: long,
       diagnose: diagnose,
       timeoutSeconds: resolvedTimeout,
-      envEntries: env
+      envEntries: env,
+      gate: gate,
+      forMode: forMode
     )
 
     if useJSON {
-      print(try WorkflowJSONRenderer.renderJSON(result))
+      print(try WorkflowJSONRenderer.renderTestJSON(result, forAgent: forMode == .agent))
     } else {
       print(BuildTestRenderer.render(result))
     }

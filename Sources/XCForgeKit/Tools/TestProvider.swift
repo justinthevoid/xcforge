@@ -147,6 +147,9 @@ public enum TestTools {
     public let xcforgeTimedOut: Bool
     /// Up to 10 slowest tests by elapsed time, sorted descending. Empty when timing data is unavailable.
     public let slowestTests: [SlowTest]
+    /// Test IDs the run treated as known-failing via `.xcforge/known-failures.yaml`.
+    /// Non-nil only when the gate was requested for this run.
+    public let knownFailures: [String]?
 
     init(
       succeeded: Bool,
@@ -170,7 +173,8 @@ public enum TestTools {
       hangDiagnosticSummary: String? = nil,
       xcresultParseError: String? = nil,
       xcforgeTimedOut: Bool = false,
-      slowestTests: [SlowTest] = []
+      slowestTests: [SlowTest] = [],
+      knownFailures: [String]? = nil
     ) {
       self.succeeded = succeeded
       self.elapsed = elapsed
@@ -194,6 +198,7 @@ public enum TestTools {
       self.xcresultParseError = xcresultParseError
       self.xcforgeTimedOut = xcforgeTimedOut
       self.slowestTests = slowestTests
+      self.knownFailures = knownFailures
     }
   }
 
@@ -273,6 +278,8 @@ public enum TestTools {
     var long: Bool?
     var diagnose: Bool?
     var simRecovery: String?
+    var `for`: String?
+    var gate: Bool?
   }
 
   struct TestFailuresInput: Decodable {
@@ -313,6 +320,8 @@ public enum TestTools {
     var timeoutSeconds: Int?
     // Each entry is KEY=VALUE; KEY is auto-prefixed with TEST_RUNNER_ before reaching xcodebuild.
     var env: [String]?
+    var `for`: String?
+    var gate: Bool?
   }
 
   /// Error for malformed --env / env: entries.
@@ -377,6 +386,8 @@ public enum TestTools {
     public let simHealthCheckDetail: String?
     /// `true` when xcforge's watchdog killed xcodebuild during the build phase (exit code -1).
     public let xcforgeTimedOut: Bool
+    /// Test IDs gated via `.xcforge/known-failures.yaml`. Non-nil only when gating was requested.
+    public let knownFailures: [String]?
 
     init(
       phase: String,
@@ -389,7 +400,8 @@ public enum TestTools {
       recoveryReason: String? = nil,
       recoveryFailureReason: String? = nil,
       simHealthCheckDetail: String? = nil,
-      xcforgeTimedOut: Bool = false
+      xcforgeTimedOut: Bool = false,
+      knownFailures: [String]? = nil
     ) {
       self.phase = phase
       self.buildSucceeded = buildSucceeded
@@ -402,6 +414,7 @@ public enum TestTools {
       self.recoveryFailureReason = recoveryFailureReason
       self.simHealthCheckDetail = simHealthCheckDetail
       self.xcforgeTimedOut = xcforgeTimedOut
+      self.knownFailures = knownFailures
     }
   }
 
@@ -481,6 +494,19 @@ public enum TestTools {
               "Simulator recovery mode: 'off' (default) skips probe; 'auto' probes bootstatus before run and erases+reboots if unhealthy."
             ),
             "enum": .array([.string("auto"), .string("off")]),
+          ]),
+          "for": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Output audience. 'human' (default) preserves the full JSON shape; 'agent' returns a slim ≤10-field projection."
+            ),
+            "enum": .array([.string("human"), .string("agent")]),
+          ]),
+          "gate": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Subtract IDs listed in .xcforge/known-failures.yaml when computing succeeded:. Opt-in; raw failure list is unchanged."
+            ),
           ]),
         ]),
       ])
@@ -670,6 +696,19 @@ public enum TestTools {
               "Environment variables for the test runner. Each entry is KEY=VALUE; the key is auto-prefixed with TEST_RUNNER_ before xcodebuild runs (Xcode strips the prefix inside the test process). Example: 'BLESS_BASELINE=1' surfaces as ProcessInfo.environment[\"BLESS_BASELINE\"] in tests. TEST_RUNNER_XCFORGE_REPO_ROOT is always injected; override by supplying 'XCFORGE_REPO_ROOT=...'."
             ),
           ]),
+          "for": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Output audience. 'human' (default) preserves the full JSON shape; 'agent' returns a slim ≤10-field projection."
+            ),
+            "enum": .array([.string("human"), .string("agent")]),
+          ]),
+          "gate": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Subtract IDs listed in .xcforge/known-failures.yaml when computing succeeded:. Opt-in; raw failure list is unchanged."
+            ),
+          ]),
         ]),
       ])
     ),
@@ -774,6 +813,34 @@ public enum TestTools {
     return nil
   }
 
+  /// Split a comma-separated filter list into individual `-only-testing` identifiers.
+  /// Single-identifier filters (the common case) pass through unchanged. Commas that
+  /// appear inside `[...]` parameterized-test brackets or `(...)` argument groups are
+  /// preserved — Swift Testing identifiers like `Suite/test(arg1,arg2)` must not be
+  /// split.
+  static func splitFilterList(_ filter: String) -> [String] {
+    var out: [String] = []
+    var current = ""
+    var bracketDepth = 0
+    var parenDepth = 0
+    for ch in filter {
+      if ch == "[" { bracketDepth += 1 }
+      if ch == "]" && bracketDepth > 0 { bracketDepth -= 1 }
+      if ch == "(" { parenDepth += 1 }
+      if ch == ")" && parenDepth > 0 { parenDepth -= 1 }
+      if ch == "," && bracketDepth == 0 && parenDepth == 0 {
+        let t = current.trimmingCharacters(in: .whitespaces)
+        if !t.isEmpty { out.append(t) }
+        current = ""
+        continue
+      }
+      current.append(ch)
+    }
+    let last = current.trimmingCharacters(in: .whitespaces)
+    if !last.isEmpty { out.append(last) }
+    return out
+  }
+
   /// Resolve a partial test filter into the full `-only-testing` format.
   /// Agents often pass `ClassName/testMethod` or just `testMethod` without the test target prefix.
   /// This discovers the test target(s) and prepends when missing.
@@ -782,6 +849,16 @@ public enum TestTools {
   ) async -> String {
     let trimmedFilter = filter.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedFilter.isEmpty else { return filter }
+
+    // Comma-separated list: resolve each entry independently and rejoin.
+    let parts = splitFilterList(trimmedFilter)
+    if parts.count > 1 {
+      var resolved: [String] = []
+      for part in parts {
+        resolved.append(await resolveFilter(part, project: project, env: env))
+      }
+      return resolved.joined(separator: ",")
+    }
 
     let componentCount = slashComponentCount(trimmedFilter)
 
@@ -961,7 +1038,9 @@ public enum TestTools {
     }
 
     if let f = filter {
-      args += ["-only-testing", f]
+      for id in splitFilterList(f) {
+        args += ["-only-testing", id]
+      }
     }
 
     args += ["test"]
@@ -1069,7 +1148,9 @@ public enum TestTools {
       args += ["-testPlan", plan]
     }
     if let f = filter {
-      args += ["-only-testing", f]
+      for id in splitFilterList(f) {
+        args += ["-only-testing", id]
+      }
     }
     args += ["test-without-building"]
 
@@ -1456,17 +1537,30 @@ public enum TestTools {
     configuration: String = "Debug",
     testplan: String? = nil,
     filter: String? = nil,
+    filterIDs: [String]? = nil,
     coverage: Bool = false,
     long: Bool = false,
     diagnose: Bool = false,
     simRecovery: SimRecoveryMode = .off,
+    gate: Bool = false,
+    forMode: OutputAudience = .human,
     env: Environment = .live
   ) async throws -> TestExecution {
     let resolvedProject = try await env.session.resolveProject(project)
     let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
     let resolvedSimulator = try await env.session.resolveSimulator(simulator)
     let resolvedFilter: String?
-    if let filter {
+    if let ids = filterIDs, !ids.isEmpty {
+      // Pre-split list path: avoid `splitFilterList` rejoin/re-split which mangles IDs
+      // containing commas inside parens (e.g. parameterized Swift Testing arguments).
+      // Rejoin with comma so existing downstream consumers see one filter string;
+      // `splitFilterList` is paren-aware so the round-trip is lossless.
+      var resolved: [String] = []
+      for id in ids {
+        resolved.append(await resolveFilter(id, project: resolvedProject, env: env))
+      }
+      resolvedFilter = resolved.joined(separator: ",")
+    } else if let filter {
       resolvedFilter = await resolveFilter(filter, project: resolvedProject, env: env)
     } else {
       resolvedFilter = nil
@@ -1664,8 +1758,28 @@ public enum TestTools {
     // Filter matched nothing → treat as failure so agents don't assume tests passed
     let zeroMatchWithFilter = totalTestCount == 0 && filter != nil
 
+    let cwd = env.currentDirectoryPath()
+    let repoRoot = RepoRoot.discover(from: cwd) ?? cwd
+    let gating = applyGating(
+      gate: gate, failures: failures, failedTestCount: failedTestCount, repoRoot: repoRoot)
+    let rawSucceeded = testShellResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter
+    let gatedSucceeded = gate ? (rawSucceeded || gating.allKnown) : rawSucceeded
+
+    if gate, let warning = gating.warning, forMode == .human {
+      FileHandle.standardError.write(Data("xcforge: \(warning)\n".utf8))
+    }
+
+    persistLastFailures(
+      failures: failures,
+      succeeded: rawSucceeded,
+      scheme: resolvedScheme,
+      simulator: resolvedSimulator,
+      repoRoot: repoRoot,
+      gateAllKnown: gate && gating.allKnown,
+      forMode: forMode)
+
     return TestExecution(
-      succeeded: testShellResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter,
+      succeeded: gatedSucceeded,
       elapsed: elapsed,
       xcresultPath: path,
       scheme: resolvedScheme,
@@ -1683,8 +1797,74 @@ public enum TestTools {
       buildFailed: buildFailed,
       buildDiagnostics: buildDiagnostics,
       hangDiagnosticPath: diagResult?.filePath,
-      hangDiagnosticSummary: diagResult?.summaryLine
+      hangDiagnosticSummary: diagResult?.summaryLine,
+      knownFailures: (gate && !gating.matchedIDs.isEmpty) ? gating.matchedIDs : nil
     )
+  }
+
+  /// Result of applying the known-failures gate. `allKnown` is true when every
+  /// real test failure (excluding xcodebuild infra failures) is listed in the
+  /// registry. `matchedIDs` is the sorted list of registry hits.
+  struct GatingOutcome {
+    let matchedIDs: [String]
+    let allKnown: Bool
+    let warning: String?
+  }
+
+  static func applyGating(
+    gate: Bool, failures: [TestFailureObservation], failedTestCount: Int = -1,
+    repoRoot: String
+  ) -> GatingOutcome {
+    guard gate else { return GatingOutcome(matchedIDs: [], allKnown: false, warning: nil) }
+    let loaded = KnownFailuresStore.load(repoRoot: repoRoot)
+    let testFailures = failures.filter { $0.testIdentifier != "xcodebuild" }
+    let matched = testFailures.map { $0.testIdentifier }.filter { loaded.ids.contains($0) }
+    let unmatched = testFailures.contains { !loaded.ids.contains($0.testIdentifier) }
+    // `allKnown` requires: every observed test-level failure is in the registry AND
+    // the parsed failure list covers the reported failure count. The second clause
+    // prevents falsely rescuing a run whose xcresult parse dropped some failures
+    // (failedTestCount > matched.count): we never gate what we couldn't see.
+    let coversAll = failedTestCount < 0 || matched.count == failedTestCount
+    let allKnown = !testFailures.isEmpty && !unmatched && coversAll
+    return GatingOutcome(
+      matchedIDs: matched.sorted(),
+      allKnown: allKnown,
+      warning: loaded.warning
+    )
+  }
+
+  static func persistLastFailures(
+    failures: [TestFailureObservation],
+    succeeded: Bool,
+    scheme: String,
+    simulator: String,
+    repoRoot: String,
+    gateAllKnown: Bool = false,
+    forMode: OutputAudience = .human
+  ) {
+    let testFailureIDs =
+      failures
+      .filter { $0.testIdentifier != "xcodebuild" }
+      .map { $0.testIdentifier }
+    // When gate is on and every observed failure is in the registry, treat the
+    // run as green for persistence purposes — otherwise `rerun-failed` would
+    // replay gated tests every cycle.
+    if testFailureIDs.isEmpty && succeeded {
+      LastFailuresStore.clear(at: repoRoot)
+      return
+    }
+    if gateAllKnown {
+      LastFailuresStore.clear(at: repoRoot)
+      return
+    }
+    if !testFailureIDs.isEmpty {
+      let wrote = LastFailuresStore.write(
+        failures: testFailureIDs, scheme: scheme, simulator: simulator, at: repoRoot)
+      if !wrote && forMode == .human {
+        FileHandle.standardError.write(
+          Data("xcforge: failed to write .xcforge/last-failures.json\n".utf8))
+      }
+    }
   }
 
   public static func extractFailures(
@@ -1896,6 +2076,8 @@ public enum TestTools {
     simRecovery: SimRecoveryMode = .auto,
     timeoutSeconds: TimeInterval? = nil,
     envEntries: [String] = [],
+    gate: Bool = false,
+    forMode: OutputAudience = .human,
     env: Environment = .live
   ) async throws -> BuildAndTestResult {
     let cwd = env.currentDirectoryPath()
@@ -2123,6 +2305,8 @@ public enum TestTools {
         resolvedSimulator: resolvedSimulator,
         elapsed: testElapsed,
         filter: filter,
+        gate: gate,
+        forMode: forMode,
         env: env
       )
       return BuildAndTestResult(
@@ -2135,7 +2319,8 @@ public enum TestTools {
         recoveryAttempts: recoveryAttempts,
         recoveryReason: recoveryReason,
         recoveryFailureReason: recoveryFailureReason,
-        simHealthCheckDetail: simHealthCheckDetail
+        simHealthCheckDetail: simHealthCheckDetail,
+        knownFailures: testExecution.knownFailures
       )
     } catch {
       return BuildAndTestResult(
@@ -2246,6 +2431,8 @@ public enum TestTools {
     resolvedSimulator: String,
     elapsed: String,
     filter: String?,
+    gate: Bool = false,
+    forMode: OutputAudience = .human,
     env: Environment
   ) async throws -> TestExecution {
     let xcforgeTimedOut = shellResult.exitCode == -1
@@ -2340,8 +2527,28 @@ public enum TestTools {
     let expectedFailureCount = parsedSummary?.expectedFailureCount ?? 0
     let zeroMatchWithFilter = totalTestCount == 0 && filter != nil
 
+    let cwd = env.currentDirectoryPath()
+    let repoRoot = RepoRoot.discover(from: cwd) ?? cwd
+    let gating = applyGating(
+      gate: gate, failures: failures, failedTestCount: failedTestCount, repoRoot: repoRoot)
+    let rawSucceeded = shellResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter
+    let gatedSucceeded = gate ? (rawSucceeded || gating.allKnown) : rawSucceeded
+
+    if gate, let warning = gating.warning, forMode == .human {
+      FileHandle.standardError.write(Data("xcforge: \(warning)\n".utf8))
+    }
+
+    persistLastFailures(
+      failures: failures,
+      succeeded: rawSucceeded,
+      scheme: resolvedScheme,
+      simulator: resolvedSimulator,
+      repoRoot: repoRoot,
+      gateAllKnown: gate && gating.allKnown,
+      forMode: forMode)
+
     return TestExecution(
-      succeeded: shellResult.succeeded && failedTestCount == 0 && !zeroMatchWithFilter,
+      succeeded: gatedSucceeded,
       elapsed: elapsed,
       xcresultPath: resultPath,
       scheme: resolvedScheme,
@@ -2362,7 +2569,8 @@ public enum TestTools {
       hangDiagnosticSummary: diagResult?.summaryLine,
       xcresultParseError: xcresultParseError,
       xcforgeTimedOut: xcforgeTimedOut,
-      slowestTests: slowestTests
+      slowestTests: slowestTests,
+      knownFailures: (gate && !gating.matchedIDs.isEmpty) ? gating.matchedIDs : nil
     )
   }
 
@@ -2581,6 +2789,8 @@ public enum TestTools {
           + " Tests not matching the filter will be skipped regardless of testplan.\n"
       }
 
+      let forMode: OutputAudience =
+        (input.for?.lowercased() == "agent") ? .agent : .human
       do {
         let execution = try await executeTest(
           project: input.project,
@@ -2593,8 +2803,15 @@ public enum TestTools {
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
           simRecovery: recoveryMode,
+          gate: input.gate ?? false,
+          forMode: forMode,
           env: env
         )
+
+        if forMode == .agent {
+          let json = (try? WorkflowJSONRenderer.renderTestJSON(execution, forAgent: true)) ?? "{}"
+          return execution.succeeded ? .ok(json) : .fail(json)
+        }
 
         // Format result
         var lines = [preamble.trimmingCharacters(in: .newlines)]
@@ -2925,6 +3142,8 @@ public enum TestTools {
       } else {
         recoveryMode = .auto
       }
+      let forMode: OutputAudience =
+        (input.for?.lowercased() == "agent") ? .agent : .human
       do {
         let result = try await executeBuildAndTest(
           project: project,
@@ -2939,8 +3158,15 @@ public enum TestTools {
           simRecovery: recoveryMode,
           timeoutSeconds: input.timeoutSeconds.map { TimeInterval($0) },
           envEntries: input.env ?? [],
+          gate: input.gate ?? false,
+          forMode: forMode,
           env: env
         )
+        if forMode == .agent {
+          let json = (try? WorkflowJSONRenderer.renderTestJSON(result, forAgent: true)) ?? "{}"
+          let ok = result.buildSucceeded && (result.testResult?.succeeded ?? false)
+          return ok ? .ok(json) : .fail(json)
+        }
         // Generate zero-match hint before formatting (avoids Content extraction)
         var zeroHint = ""
         if let testResult = result.testResult,
