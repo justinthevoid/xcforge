@@ -63,9 +63,18 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          # Re-apply the jq patch on the freshly checked-out main
+          jq \
+            --arg ver "${GITHUB_REF_NAME#v}" \
+            --arg url "https://github.com/justinthevoid/xcforge/releases/download/${GITHUB_REF_NAME}/xcforge-${GITHUB_REF_NAME}.mcpb" \
+            --arg sha "$MCPB_SHA" \
+            '.version = $ver | .version_detail.version = $ver | .packages[0].identifier = $url | .packages[0].fileSha256 = $sha' \
+            server.json > server.json.tmp && mv server.json.tmp server.json
           git add server.json
           git diff --cached --quiet || git commit -m "chore: update server.json for ${GITHUB_REF_NAME}"
-          git push origin HEAD:main
+          git push origin main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
