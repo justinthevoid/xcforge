@@ -44,11 +44,10 @@ public actor SessionState {
   // Repo-level config (.xcforge.yaml) — repo-scoped, outranks persisted.
   private var repoDefaults: RepoConfig.Values?
 
-  // Persisted defaults loaded from ~/.xcforge/defaults.json. Consulted by the
-  // resolvers *below* repo config. These are NOT the session cache — the
-  // session cache is `project`/`scheme`/`simulator` above, which now start nil
-  // and are populated by the first resolution this session.
-  private var persistedProject: String?
+  // Per-project persisted record. Loaded lazily after the active project is
+  // resolved (canonical-keyed in `~/.xcforge/defaults.json`). Cached so we do
+  // not re-read disk every resolution.
+  private var loadedRecordForProject: String?
   private var persistedScheme: String?
   private var persistedSimulator: String?
 
@@ -62,42 +61,64 @@ public actor SessionState {
     let startDir = cwd ?? FileManager.default.currentDirectoryPath
     self.repoDefaults = RepoConfig.discover(from: startDir)
 
-    // Load persisted defaults from disk. Build info (bundleId/appPath/
-    // buildScheme) is still applied eagerly so install/launch keep working.
-    // project/scheme/simulator are NOT pre-loaded into the session cache —
-    // they only feed the resolvers below repo config (see resolve* methods).
-    let persisted = defaultsStore.load()
-    self.persistedProject = persisted?.project
-    self.persistedScheme = persisted?.scheme
-    self.persistedSimulator = persisted?.simulator
-    self.bundleId = persisted?.bundleId
-    self.appPath = persisted?.appPath
-    self.buildScheme = persisted?.buildScheme
+    // Persisted project/scheme/simulator + build info are NOT pre-loaded.
+    // They are resolved per-project after `resolveProject` settles, so an
+    // App A build cannot bleed bundleId/appPath into an App B session.
+  }
+
+  /// Lazy-load the persisted record for the currently active project. Cached
+  /// for the rest of the session — set/clear/buildInfo paths refresh it.
+  private func loadRecordIfNeeded(forProject project: String) {
+    guard let key = DefaultsStore.validCanonicalKey(project) else {
+      Log.debug("loadRecordIfNeeded: rejecting invalid project key '\(project)'")
+      return
+    }
+    if loadedRecordForProject == key { return }
+    let record = defaultsStore.load(forProject: key)
+    loadedRecordForProject = key
+    persistedScheme = record?.scheme
+    persistedSimulator = record?.simulator
+    bundleId = record?.bundleId
+    appPath = record?.appPath
+    buildScheme = record?.buildScheme
+  }
+
+  /// Returns the canonical key for the currently active project, or nil when
+  /// no project has been resolved yet OR when the resolved project canonicalizes
+  /// to an invalid sentinel (empty input, `/`). Used by setBuildInfo / persist paths.
+  private func activeProjectKey() -> String? {
+    if let p = project, let key = DefaultsStore.validCanonicalKey(p) { return key }
+    if let cached = loadedRecordForProject, !cached.isEmpty { return cached }
+    return nil
   }
 
   // MARK: - Resolution (explicit → default → auto-detect)
 
   /// Resolve project path. Caches auto-detected result for the session.
+  /// Order: explicit → session cache → `.xcforge.yaml` → AutoDetect.
+  /// There is no longer a "global persisted project" fallback — project
+  /// identity must come from a source the user controls.
   public func resolveProject(_ explicit: String?) async throws -> String {
     if let explicit {
       trackUsage(value: explicit, streak: &projectStreak, stored: &project, source: &projectSource)
+      loadRecordIfNeeded(forProject: explicit)
       return explicit
     }
-    if let stored = project { return stored }
+    if let stored = project {
+      loadRecordIfNeeded(forProject: stored)
+      return stored
+    }
     if let repo = repoDefaults?.project {
       self.project = repo
       self.projectSource = .repoConfig
+      loadRecordIfNeeded(forProject: repo)
       return repo
-    }
-    if let persisted = persistedProject {
-      self.project = persisted
-      self.projectSource = .persisted
-      return persisted
     }
 
     let detected = try await AutoDetect.project()
     self.project = detected
     self.projectSource = .autoDetected
+    loadRecordIfNeeded(forProject: detected)
     Log.warn("Auto-detected project: \((detected as NSString).lastPathComponent)")
     return detected
   }
@@ -114,6 +135,7 @@ public actor SessionState {
       self.schemeSource = .repoConfig
       return repo
     }
+    loadRecordIfNeeded(forProject: project)
     if let persisted = persistedScheme {
       self.scheme = persisted
       self.schemeSource = .persisted
@@ -162,6 +184,26 @@ public actor SessionState {
     explicit ?? repoDefaults?.testPlan
   }
 
+  /// Resolve test watchdog timeout (seconds). Repo-only — never persisted.
+  ///
+  /// Order: explicit > `.xcforge.yaml` `testTimeout` > `long ? 1800 : 180`.
+  ///
+  /// `explicit` must be a positive integer. A value `<= 0` is symmetric with the
+  /// YAML path's rejection of non-positive values: it falls through to the
+  /// repo default and then to the long/short baseline, with a warning. (P8)
+  public func resolveTestTimeout(explicit: Int?, long: Bool) -> TimeInterval {
+    if let explicit {
+      if explicit > 0 {
+        return TimeInterval(explicit)
+      }
+      Log.warn(
+        "resolveTestTimeout: ignoring non-positive explicit timeout \(explicit); falling back."
+      )
+    }
+    if let repo = repoDefaults?.testTimeout { return TimeInterval(repo) }
+    return long ? 1800 : 180
+  }
+
   /// Resolve simulator and return both its display name and UDID.
   ///
   /// Calls `resolveSimulator` first, then resolves to a UDID via `AutoDetect.resolveSimulatorNameAndUDID`.
@@ -179,8 +221,19 @@ public actor SessionState {
     self.bundleId = bundleId
     self.appPath = appPath
     self.buildScheme = scheme
+    // Build product info is *always* keyed to the active project. If no
+    // project has been resolved yet, this is a programmer error in the caller
+    // (build paths resolve project before bundleId), so we no-op rather than
+    // write an unkeyed blob.
+    guard let key = activeProjectKey() else {
+      Log.warn("setBuildInfo called with no active project; skipping persist")
+      return
+    }
     defaultsStore.save(
-      PersistedDefaults(bundleId: bundleId, appPath: appPath, buildScheme: scheme))
+      PersistedDefaults(
+        project: key, bundleId: bundleId, appPath: appPath, buildScheme: scheme),
+      forProject: key
+    )
   }
 
   public func resolveBundleId(_ explicit: String?) -> String? {
@@ -205,7 +258,11 @@ public actor SessionState {
     bundleId = nil
     appPath = nil
     buildScheme = nil
-    defaultsStore.clearBuildInfo()
+    if let key = activeProjectKey() {
+      defaultsStore.clearBuildInfo(forProject: key)
+    } else {
+      Log.debug("clearBuildInfo with no active project; in-memory only")
+    }
   }
 
   func workflowDefaultsSnapshot() -> WorkflowDefaultsSnapshot {
@@ -220,32 +277,48 @@ public actor SessionState {
 
   // MARK: - Manual defaults (set_defaults escape hatch)
 
-  public func setDefaults(project: String?, scheme: String?, simulator: String?) {
+  /// Set one or more session defaults explicitly. Returns `true` when the
+  /// values were persisted to disk, `false` when no active project key could
+  /// be resolved (the values still apply in-memory for this session). Handlers
+  /// surface the `false` case so the user is not silently misled. (P7)
+  ///
+  /// Resetting matching streaks (P9): explicitly overriding a field zeroes the
+  /// auto-promotion streak for that field so an accidental future use of the
+  /// *old* value does not immediately re-promote it.
+  @discardableResult
+  public func setDefaults(project: String?, scheme: String?, simulator: String?) -> Bool {
     if let p = project {
       self.project = p
       self.projectSource = .explicit
+      projectStreak = ("", 0)
+      loadRecordIfNeeded(forProject: p)
     }
     if let s = scheme {
       self.scheme = s
       self.schemeSource = .explicit
+      schemeStreak = ("", 0)
     }
     if let sim = simulator {
       self.simulator = sim
       self.simulatorSource = .explicit
+      simulatorStreak = ("", 0)
     }
-    persistCurrentDefaults()
+    return persistCurrentDefaults()
   }
 
   public func showDefaults() -> String {
     // When the session cache is empty, surface what *would* resolve next
     // (repo config outranks persisted) so labels stay accurate before the
     // first build/test resolves and caches a value.
-    let projectEffective = effective(project, projectSource, repoDefaults?.project, persistedProject)
+    let projectEffective = effectiveProject(cached: project, source: projectSource)
     let schemeEffective = effective(scheme, schemeSource, repoDefaults?.scheme, persistedScheme)
     let simulatorEffective = effective(
       simulator, simulatorSource, repoDefaults?.simulator, persistedSimulator)
 
     var lines = ["Session defaults:"]
+    if let key = activeProjectKey() {
+      lines.append("  active project key: \(key)")
+    }
     lines.append("  project:   \(annotated(projectEffective.0, source: projectEffective.1))")
     lines.append("  scheme:    \(annotated(schemeEffective.0, source: schemeEffective.1))")
     lines.append(
@@ -259,17 +332,42 @@ public actor SessionState {
     if let plan = repoDefaults?.testPlan {
       lines.append("  test_plan: \(plan) (repo-config)")
     }
+    if let t = repoDefaults?.testTimeout {
+      lines.append("  test_timeout: \(t)s (repo-config)")
+    }
+    if let ap = repoDefaults?.autoPromote {
+      lines.append("  auto_promote: \(ap) (repo-config)")
+    }
+    if projectSource == .autoPromoted || schemeSource == .autoPromoted
+      || simulatorSource == .autoPromoted
+    {
+      lines.append(
+        "  note: one or more defaults were auto-promoted from repeated explicit use.")
+    }
     return lines.joined(separator: "\n")
   }
 
-  /// Pick the value/source to display: a cached session value (with its
-  /// tracked source) wins; otherwise fall back to repo config, then persisted.
+  /// Pick the value/source to display for scheme/simulator: a cached session
+  /// value (with its tracked source) wins; otherwise fall back to repo config,
+  /// then to this project's persisted record.
   private func effective(
     _ cached: String?, _ cachedSource: DefaultsSource, _ repo: String?, _ persisted: String?
   ) -> (String?, DefaultsSource) {
     if let cached { return (cached, cachedSource) }
     if let repo { return (repo, .repoConfig) }
     if let persisted { return (persisted, .persisted) }
+    return (nil, .autoDetected)
+  }
+
+  /// Project-effective resolution does NOT have a persisted-per-project layer:
+  /// project identity is what we look records up *by*, so a persisted-project
+  /// fallback would be circular. Explicit overload to keep that invariant
+  /// from being silently reintroduced. (P12)
+  private func effectiveProject(
+    cached: String?, source cachedSource: DefaultsSource
+  ) -> (String?, DefaultsSource) {
+    if let cached { return (cached, cachedSource) }
+    if let repo = repoDefaults?.project { return (repo, .repoConfig) }
     return (nil, .autoDetected)
   }
 
@@ -284,38 +382,73 @@ public actor SessionState {
   /// falsely claim pure auto-detection while repo config still applies.
   public func hasRepoConfig() -> Bool { repoDefaults != nil }
 
+  /// Clear the *active* project's persisted record (and in-memory caches).
+  /// Other projects' records on disk are not touched.
   public func clearDefaults() {
+    let activeKey = activeProjectKey()
     project = nil
     scheme = nil
     simulator = nil
-    persistedProject = nil
     persistedScheme = nil
     persistedSimulator = nil
-    clearBuildInfo()
+    loadedRecordForProject = nil
+    bundleId = nil
+    appPath = nil
+    buildScheme = nil
     projectStreak = ("", 0)
     schemeStreak = ("", 0)
     simulatorStreak = ("", 0)
     projectSource = .autoDetected
     schemeSource = .autoDetected
     simulatorSource = .autoDetected
-    defaultsStore.clear()
+    if let key = activeKey {
+      defaultsStore.clear(forProject: key)
+    }
+  }
+
+  /// Clear every project's record (the entire defaults file).
+  public func clearAllDefaults() {
+    project = nil
+    scheme = nil
+    simulator = nil
+    persistedScheme = nil
+    persistedSimulator = nil
+    loadedRecordForProject = nil
+    bundleId = nil
+    appPath = nil
+    buildScheme = nil
+    projectStreak = ("", 0)
+    schemeStreak = ("", 0)
+    simulatorStreak = ("", 0)
+    projectSource = .autoDetected
+    schemeSource = .autoDetected
+    simulatorSource = .autoDetected
+    defaultsStore.clearAll()
   }
 
   // MARK: - Persistence write-through
 
-  private func persistCurrentDefaults() {
-    // Only persist the three user-managed fields. Build info (bundleId/appPath)
-    // is set by workflow execution and must not leak into persisted defaults.
+  /// Persist the three user-managed fields. Returns `true` when the write
+  /// reached disk, `false` when no active project key could be resolved (the
+  /// in-memory session state still applies). Build info (bundleId/appPath) is
+  /// set by workflow execution and must not leak into persisted defaults. (P7)
+  @discardableResult
+  private func persistCurrentDefaults() -> Bool {
+    guard let key = activeProjectKey() else {
+      Log.warn("persistCurrentDefaults: no active project; defaults applied in-memory only")
+      return false
+    }
     let defaults = PersistedDefaults(
-      project: project,
+      project: key,
       scheme: scheme,
       simulator: simulator
     )
-    if defaults.isEmpty {
-      defaultsStore.clear()
+    if defaults.scheme == nil && defaults.simulator == nil {
+      defaultsStore.clear(forProject: key)
     } else {
-      defaultsStore.save(defaults)
+      defaultsStore.save(defaults, forProject: key)
     }
+    return true
   }
 
   // MARK: - Named Profiles
@@ -350,20 +483,46 @@ public actor SessionState {
       if names.isEmpty { return "Profile '\(name)' not found. No profiles saved yet." }
       return "Profile '\(name)' not found. Available: \(names.joined(separator: ", "))"
     }
+
+    // P6: switching projects must invalidate any per-project caches inherited
+    // from the previous active project. Without this, `resolveBundleId(nil)`
+    // after switching from A to B would return A's bundleId — the precise
+    // cross-project bleed the v2 envelope is designed to prevent. We clear
+    // every per-project cached field BEFORE installing the new project, and
+    // re-prime via `loadRecordIfNeeded` so persistedScheme/persistedSimulator
+    // for the *new* project are filled in.
+    if loaded.project != nil {
+      bundleId = nil
+      appPath = nil
+      buildScheme = nil
+      persistedScheme = nil
+      persistedSimulator = nil
+      loadedRecordForProject = nil
+    }
+
     if let p = loaded.project {
       self.project = p
       self.projectSource = .persisted
+      projectStreak = ("", 0)
+      loadRecordIfNeeded(forProject: p)
     }
     if let s = loaded.scheme {
       self.scheme = s
       self.schemeSource = .persisted
+      schemeStreak = ("", 0)
     }
     if let sim = loaded.simulator {
       self.simulator = sim
       self.simulatorSource = .persisted
+      simulatorStreak = ("", 0)
     }
-    persistCurrentDefaults()
-    return "Switched to profile '\(name)': \(profileSummary(loaded))"
+
+    let persisted = persistCurrentDefaults()
+    var msg = "Switched to profile '\(name)': \(profileSummary(loaded))"
+    if !persisted {
+      msg += "\nNote: no active project detected, defaults applied in-memory only."
+    }
+    return msg
   }
 
   public func profileList() -> String {
@@ -397,6 +556,15 @@ public actor SessionState {
     value: String, streak: inout (value: String, count: Int), stored: inout String?,
     source: inout DefaultsSource
   ) {
+    // `.xcforge.yaml autoPromote: false` opts out of the 3-strikes promotion.
+    // When disabled, do not touch the streak counter at all (P10): toggling
+    // autoPromote on later — or persisting/reloading state — would otherwise
+    // trip the threshold from a single use.
+    let autoPromoteEnabled = repoDefaults?.autoPromote ?? true
+    guard autoPromoteEnabled else {
+      streak = ("", 0)
+      return
+    }
     if value == streak.value {
       streak.count += 1
     } else {
@@ -526,9 +694,14 @@ public actor SessionState {
           return .ok(await state.showDefaults())
         }
 
-        await state.setDefaults(
+        let persisted = await state.setDefaults(
           project: input.project, scheme: input.scheme, simulator: input.simulator)
-        return .ok(await state.showDefaults())
+        var body = await state.showDefaults()
+        if !persisted {
+          body +=
+            "\nNote: no active project detected, defaults applied in-memory only."
+        }
+        return .ok(body)
       }
     }
   }

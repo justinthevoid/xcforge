@@ -67,13 +67,43 @@ struct DefaultsSet: AsyncParsableCommand {
 struct DefaultsClear: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "clear",
-    abstract: "Clear all persisted workflow defaults."
+    abstract: "Clear persisted defaults for the active project (or all with --all)."
   )
+
+  @Flag(help: "Clear every project's record, not just the active project.")
+  var all = false
 
   mutating func run() async throws {
     let env = Environment.live
+    if all {
+      await env.session.clearAllDefaults()
+      print("All persisted defaults cleared (every project's record removed).")
+      return
+    }
+
+    // P5: in a fresh CLI invocation the SessionState has no resolved project
+    // yet, so `clearDefaults()` would no-op the disk write while we printed a
+    // misleading "cleared" message. Best-effort resolve the project (explicit
+    // nil → repo config → autodetect) before clearing. If no project can be
+    // detected, tell the user accurately and exit cleanly.
+    let resolved: String?
+    do {
+      resolved = try await env.session.resolveProject(nil)
+    } catch {
+      resolved = nil
+    }
+
+    guard resolved != nil else {
+      print(
+        "No active project detected; nothing cleared. Use --all to wipe every project's record."
+      )
+      return
+    }
+
     await env.session.clearDefaults()
-    print("Defaults cleared. Auto-detection will be used for all parameters.")
+    print(
+      "Active project's defaults cleared. Other projects' records on disk are untouched."
+    )
   }
 }
 

@@ -3,6 +3,11 @@ import Foundation
 /// Persists lightweight workflow defaults to disk so they survive process restarts.
 /// Storage location: `{baseDir}/defaults.json` where baseDir defaults to `~/.xcforge/`.
 ///
+/// On disk we keep a v2 envelope keyed by canonical project path so that running
+/// builds for different apps from different working directories cannot stomp on
+/// each other's bundleId / appPath / buildScheme. The legacy flat shape (v1) is
+/// migrated on first load.
+///
 /// All reads and writes use POSIX advisory file locking (`flock`) to prevent
 /// cross-process race conditions between the long-running MCP server and CLI invocations.
 public struct DefaultsStore: Sendable {
@@ -27,15 +32,423 @@ public struct DefaultsStore: Sendable {
     self.fileURL = base.appendingPathComponent("defaults.json", isDirectory: false)
   }
 
-  public func load() -> PersistedDefaults? {
-    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+  // MARK: - Canonicalization
+
+  /// Sentinel returned by `canonicalKey(_:)` when the input cannot be turned into
+  /// a usable project key (empty string, or normalizes to `/`). Callers MUST
+  /// treat this as "no active project" and refuse to read/write the file under it.
+  static let invalidCanonicalKey: String = ""
+
+  /// Canonical key for a project/workspace path. Used as the dictionary key for
+  /// the v2 envelope.
+  ///
+  /// Algorithm:
+  /// 1. Reject `""` and post-normalization `"/"` (return the empty sentinel — the
+  ///    cwd-bleed footgun if we let `URL(fileURLWithPath:)` fall through).
+  /// 2. Resolve symlinks + standardize (collapses `/./`, `/foo/../`, trailing `/`).
+  /// 3. For paths that exist on disk, ask the filesystem for the canonical
+  ///    casing via `URL.canonicalPath` (a no-op on case-sensitive volumes; on
+  ///    APFS-default case-insensitive volumes this returns the on-disk casing
+  ///    so two casings of the same project collapse to one key).
+  /// 4. For paths that do NOT exist (tests, freshly-typed paths), walk up to
+  ///    the nearest existing ancestor: if that ancestor lives on a
+  ///    case-insensitive volume, lowercase the remaining tail so the key still
+  ///    collapses across casings; otherwise leave the tail as typed.
+  /// 5. Apply Unicode NFC (`precomposedStringWithCanonicalMapping`) so a path
+  ///    typed in NFC and one returned from APFS in NFD produce the same key.
+  /// 6. Strip a redundant trailing slash (already handled by `standardizedFileURL`
+  ///    but defensive for the symlink-resolved string path).
+  public static func canonicalKey(_ rawPath: String) -> String {
+    if rawPath.isEmpty { return invalidCanonicalKey }
+    let url = URL(fileURLWithPath: rawPath).standardizedFileURL.resolvingSymlinksInPath()
+    var path = url.path
+    while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+    if path.isEmpty || path == "/" { return invalidCanonicalKey }
+
+    let fm = FileManager.default
+    if fm.fileExists(atPath: path) {
+      // Existing path: prefer the on-disk canonical casing.
+      let resolvedURL = URL(fileURLWithPath: path)
+      if let values = try? resolvedURL.resourceValues(forKeys: [.canonicalPathKey]),
+        let canonical = values.canonicalPath, !canonical.isEmpty
+      {
+        path = canonical
+      }
+    } else {
+      // Non-existing path: walk up to find a real ancestor whose volume we can
+      // inspect. If the volume is case-insensitive, lowercase the synthetic tail.
+      var anchor = (path as NSString).deletingLastPathComponent
+      var tailParts: [String] = [(path as NSString).lastPathComponent]
+      while !anchor.isEmpty, anchor != "/", !fm.fileExists(atPath: anchor) {
+        tailParts.insert((anchor as NSString).lastPathComponent, at: 0)
+        anchor = (anchor as NSString).deletingLastPathComponent
+      }
+      let anchorURL = URL(fileURLWithPath: anchor.isEmpty ? "/" : anchor)
+      let caseSensitive: Bool = {
+        if let v = try? anchorURL.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]),
+          let supported = v.volumeSupportsCaseSensitiveNames
+        {
+          return supported
+        }
+        // Conservative default for macOS: APFS is case-insensitive by default.
+        return false
+      }()
+      if !caseSensitive {
+        let tail = tailParts.map { $0.lowercased() }.joined(separator: "/")
+        let base = anchor.isEmpty || anchor == "/" ? "" : anchor
+        path = base + "/" + tail
+        while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+      }
+    }
+
+    // Unicode NFC: collapse precomposed/decomposed variants.
+    path = path.precomposedStringWithCanonicalMapping
+    return path
+  }
+
+  /// Returns `nil` if `rawPath` cannot be turned into a valid canonical key
+  /// (empty input or normalizes to `/`). Use this at any boundary that accepts
+  /// a user-supplied path and must refuse to act on a pathological key.
+  static func validCanonicalKey(_ rawPath: String) -> String? {
+    let key = canonicalKey(rawPath)
+    return key == invalidCanonicalKey ? nil : key
+  }
+
+  // MARK: - Per-project load/save/clear
+
+  /// Load the persisted record for `project` (canonical-keyed) and apply the
+  /// stale-path filter. Returns `nil` if the file is missing or contains no
+  /// record for that project.
+  public func load(forProject project: String) -> PersistedDefaults? {
+    guard let key = Self.validCanonicalKey(project) else {
+      Log.debug("DefaultsStore.load: rejecting invalid project key '\(project)'")
       return nil
     }
-    let raw =
-      withFileLock(.shared) { _ in
-        readFromDisk()
-      } ?? nil
-    return raw.map(filteringStalePaths)
+    guard let envelope = loadEnvelope() else { return nil }
+    guard let record = envelope.projects[key] else { return nil }
+    return filteringStalePaths(record)
+  }
+
+  /// Merge `defaults` into the record stored under `project`'s canonical key.
+  /// Other projects' records are untouched. Performed atomically under an
+  /// exclusive POSIX file lock.
+  public func save(_ defaults: PersistedDefaults, forProject project: String) {
+    guard let key = Self.validCanonicalKey(project) else {
+      Log.warn("DefaultsStore.save: refusing to save under invalid project key '\(project)'")
+      return
+    }
+    do {
+      let dir = fileURL.deletingLastPathComponent()
+      try FileManager.default.createDirectory(
+        at: dir, withIntermediateDirectories: true, attributes: nil
+      )
+    } catch {
+      Log.warn(
+        "Failed to create directory for defaults at \(fileURL.path): \(error.localizedDescription)")
+      return
+    }
+
+    withFileLock(.exclusive) { _ in
+      let readResult = readEnvelopeFromDisk()
+      switch readResult {
+      case .envelope(let env):
+        var envelope = env
+        let existing = envelope.projects[key] ?? PersistedDefaults()
+        var merged = existing.merging(defaults)
+        // Always pin the in-record `project` to its canonical key for parity
+        // with the envelope key (helps round-trip + debugging).
+        merged.project = key
+        envelope.projects[key] = merged
+        writeEnvelope(envelope)
+      case .empty:
+        var envelope = StoredEnvelope.empty
+        var merged = defaults
+        merged.project = key
+        envelope.projects[key] = merged
+        writeEnvelope(envelope)
+      case .unrecognized:
+        // P2: refuse to overwrite an unreadable / forward-version file. Back
+        // it up first so future xcforge versions (or human inspection) can
+        // recover, then write the new envelope. If backup fails, abort the
+        // write to preserve the original bytes.
+        if backupUnrecognizedFile() {
+          var envelope = StoredEnvelope.empty
+          var merged = defaults
+          merged.project = key
+          envelope.projects[key] = merged
+          writeEnvelope(envelope)
+        } else {
+          Log.warn(
+            "DefaultsStore.save: backup of unrecognized defaults.json failed; refusing to overwrite."
+          )
+        }
+      }
+    }
+  }
+
+  /// Remove the persisted build info (bundleId, appPath, buildScheme) for
+  /// `project` only. Other projects' records are untouched.
+  public func clearBuildInfo(forProject project: String) {
+    guard let key = Self.validCanonicalKey(project) else {
+      Log.debug(
+        "DefaultsStore.clearBuildInfo: rejecting invalid project key '\(project)'")
+      return
+    }
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+    withFileLock(.exclusive) { _ in
+      guard case .envelope(var envelope) = readEnvelopeFromDisk(),
+        var record = envelope.projects[key]
+      else {
+        return
+      }
+      record.bundleId = nil
+      record.appPath = nil
+      record.buildScheme = nil
+      if record.isEmpty {
+        envelope.projects.removeValue(forKey: key)
+      } else {
+        envelope.projects[key] = record
+      }
+      if envelope.projects.isEmpty {
+        removeFileLogging()
+      } else {
+        writeEnvelope(envelope)
+      }
+    }
+  }
+
+  /// Remove only `project`'s record from the envelope. Other projects survive.
+  public func clear(forProject project: String) {
+    guard let key = Self.validCanonicalKey(project) else {
+      Log.debug("DefaultsStore.clear: rejecting invalid project key '\(project)'")
+      return
+    }
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+    withFileLock(.exclusive) { _ in
+      guard case .envelope(var envelope) = readEnvelopeFromDisk() else { return }
+      envelope.projects.removeValue(forKey: key)
+      if envelope.projects.isEmpty {
+        removeFileLogging()
+      } else {
+        writeEnvelope(envelope)
+      }
+    }
+  }
+
+  /// Remove the entire defaults file (every project's record). Equivalent to
+  /// the historical `clear()` behavior.
+  public func clearAll() {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+    withFileLock(.exclusive) { _ in
+      removeFileLogging()
+    }
+  }
+
+  // MARK: - Legacy compatibility shims (no project context)
+
+  /// Legacy single-record load. Returns the first record in the envelope when
+  /// exactly one project is stored, else nil. Preferred call site is
+  /// `load(forProject:)`; this exists for code paths that need a peek without
+  /// having resolved a project yet (currently none in production code).
+  public func load() -> PersistedDefaults? {
+    guard let envelope = loadEnvelope() else { return nil }
+    guard envelope.projects.count == 1, let only = envelope.projects.first else { return nil }
+    return filteringStalePaths(only.value)
+  }
+
+  /// Legacy whole-file delete preserved for callers that genuinely want to
+  /// nuke everything. Use `clear(forProject:)` for the per-project semantics.
+  public func clear() { clearAll() }
+
+  // MARK: - Envelope read/write
+
+  /// Result of a single read attempt against `defaults.json`.
+  ///
+  /// `unrecognized` lets write-side callers tell the difference between
+  /// "file doesn't exist / decoded cleanly as v2" (safe to overwrite) and
+  /// "file exists but we can't decode it" (must back up before overwriting,
+  /// or refuse the write entirely — see P2).
+  enum ReadResult {
+    case envelope(StoredEnvelope)
+    case empty
+    case unrecognized
+  }
+
+  /// Two-phase load with promotion: a shared-lock read decides whether the
+  /// file is already v2 (fast path) or needs v1 migration. If v1, drop the
+  /// shared lock, re-acquire `.exclusive`, re-read (in case another process
+  /// migrated it in the gap), then migrate+write under the exclusive hold.
+  ///
+  /// This is the P1 fix: writing under a shared lock allows concurrent
+  /// readers to both attempt the migration and race the rewrite.
+  func loadEnvelope() -> StoredEnvelope? {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+
+    // Phase 1: shared lock, read-only decode. `withFileLock` returns `T?`
+    // (nil only when the lock itself fails), so flat-map the inner result.
+    let firstRead: RawReadResult? = withFileLock(.shared) { _ in readRawEnvelopeFromDisk() }
+    guard let firstRead else { return nil }
+
+    switch firstRead {
+    case .envelope(let env):
+      return env
+    case .unrecognized, .empty:
+      // `empty` happens only when the file disappeared between exists() and
+      // open(); `unrecognized` means a v3+/garbled shape. Both are "no v2
+      // envelope to return" — callers should treat as nil from a read-side
+      // perspective. (Save paths re-check via readEnvelopeFromDisk and act on
+      // the .unrecognized case explicitly.)
+      return nil
+    case .needsV1Migration(let v1, let v1Project):
+      // Phase 2: drop the shared lock and re-acquire `.exclusive`. We must
+      // re-read once we hold it — the file may have been migrated by another
+      // process in the gap between the two acquisitions.
+      let migrated: StoredEnvelope? = withFileLock(.exclusive) { _ in
+        if case .envelope(let env) = readEnvelopeFromDisk() {
+          // Another process migrated it while we were promoting — no-op.
+          return env
+        }
+        let key = Self.canonicalKey(v1Project)
+        guard key != Self.invalidCanonicalKey else {
+          Log.warn(
+            "DefaultsStore: v1 project '\(v1Project)' canonicalized to invalid key; discarding."
+          )
+          return Optional<StoredEnvelope>.none
+        }
+        var migratedRecord = v1
+        migratedRecord.project = key
+        var envelope = StoredEnvelope.empty
+        envelope.projects[key] = migratedRecord
+        writeEnvelope(envelope)
+        return envelope
+      }.flatMap { $0 }
+      return migrated
+    }
+  }
+
+  /// Phase-1 read variant: returns the same v2 envelope a normal read would,
+  /// but flags v1-needing-migration separately so the caller can drop the
+  /// shared lock and re-acquire exclusively. Caller must hold *some* lock.
+  private enum RawReadResult {
+    case envelope(StoredEnvelope)
+    case needsV1Migration(PersistedDefaults, v1Project: String)
+    case unrecognized
+    case empty
+  }
+
+  private func readRawEnvelopeFromDisk() -> RawReadResult {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return .empty }
+    let data: Data
+    do {
+      data = try Data(contentsOf: fileURL)
+    } catch {
+      Log.warn(
+        "Failed to read defaults from \(fileURL.path): \(error.localizedDescription)."
+      )
+      return .unrecognized
+    }
+
+    let decoder = JSONDecoder()
+    if let envelope = try? decoder.decode(StoredEnvelope.self, from: data), envelope.version == 2 {
+      return .envelope(envelope)
+    }
+
+    // v1 fallback: require a non-nil `project` field. `PersistedDefaults` has
+    // every field optional, so `{}` and forward-version v3 shapes would
+    // otherwise decode successfully and invite a clobber. (P2)
+    if let v1 = try? decoder.decode(PersistedDefaults.self, from: data),
+      let v1Project = v1.project, !v1Project.isEmpty
+    {
+      return .needsV1Migration(v1, v1Project: v1Project)
+    }
+
+    Log.warn(
+      "defaults.json at \(fileURL.path) is not recognizable v1 or v2; treating as unrecognized."
+    )
+    return .unrecognized
+  }
+
+  /// Decode the file under an *exclusive* lock, returning a structured result.
+  /// Used by save / clear paths that may need to act on the `.unrecognized`
+  /// case (back up the file rather than blindly overwrite). Caller must hold
+  /// the exclusive lock.
+  private func readEnvelopeFromDisk() -> ReadResult {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else { return .empty }
+    switch readRawEnvelopeFromDisk() {
+    case .envelope(let env): return .envelope(env)
+    case .needsV1Migration(let v1, let v1Project):
+      // Caller holds the exclusive lock — safe to migrate in place.
+      let key = Self.canonicalKey(v1Project)
+      guard key != Self.invalidCanonicalKey else {
+        Log.warn(
+          "DefaultsStore: v1 project '\(v1Project)' canonicalized to invalid key; discarding."
+        )
+        return .unrecognized
+      }
+      var migrated = v1
+      migrated.project = key
+      var envelope = StoredEnvelope.empty
+      envelope.projects[key] = migrated
+      writeEnvelope(envelope)
+      return .envelope(envelope)
+    case .unrecognized: return .unrecognized
+    case .empty: return .empty
+    }
+  }
+
+  /// Move the current `defaults.json` to a timestamped `defaults.json.unrecognized-*`
+  /// sibling so a forward-version or corrupt file isn't silently lost when a
+  /// later save needs to write a fresh envelope. Returns true on success or
+  /// when there's nothing to back up (no file).
+  private func backupUnrecognizedFile() -> Bool {
+    let fm = FileManager.default
+    guard fm.fileExists(atPath: fileURL.path) else { return true }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+    let stamp = formatter.string(from: Date())
+    let dest = fileURL.deletingLastPathComponent()
+      .appendingPathComponent("defaults.json.unrecognized-\(stamp)", isDirectory: false)
+    do {
+      // Use copy + remove rather than move so a partial failure leaves the
+      // original intact (we'll just refuse the write upstream).
+      try fm.copyItem(at: fileURL, to: dest)
+      Log.warn(
+        "DefaultsStore: backed up unrecognized defaults.json to \(dest.lastPathComponent)"
+      )
+      return true
+    } catch {
+      Log.warn(
+        "DefaultsStore: failed to back up unrecognized defaults.json: \(error.localizedDescription)"
+      )
+      return false
+    }
+  }
+
+  /// Remove the defaults file and log on failure (rather than swallowing via `try?`).
+  /// Caller must hold the exclusive lock when applicable.
+  private func removeFileLogging() {
+    let fm = FileManager.default
+    guard fm.fileExists(atPath: fileURL.path) else { return }
+    do {
+      try fm.removeItem(at: fileURL)
+    } catch {
+      Log.warn(
+        "Failed to remove defaults file at \(fileURL.path): \(error.localizedDescription)")
+    }
+  }
+
+  /// Encode and atomically write the envelope. Caller must hold the lock.
+  private func writeEnvelope(_ envelope: StoredEnvelope) {
+    do {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+      let data = try encoder.encode(envelope)
+      try data.write(to: fileURL, options: .atomic)
+    } catch {
+      Log.warn("Failed to save defaults to \(fileURL.path): \(error.localizedDescription)")
+    }
   }
 
   /// Drops `project` and `appPath` when those paths no longer exist on disk so
@@ -55,70 +468,6 @@ public struct DefaultsStore: Sendable {
       out.appPath = nil
     }
     return out
-  }
-
-  public func save(_ defaults: PersistedDefaults) {
-    do {
-      let dir = fileURL.deletingLastPathComponent()
-      try FileManager.default.createDirectory(
-        at: dir, withIntermediateDirectories: true, attributes: nil
-      )
-    } catch {
-      Log.warn(
-        "Failed to create directory for defaults at \(fileURL.path): \(error.localizedDescription)")
-      return
-    }
-
-    withFileLock(.exclusive) { lockFD in
-      // Re-read current disk state under the lock to avoid clobbering
-      // concurrent writes from other processes.
-      let existing = readFromDisk() ?? PersistedDefaults()
-      let merged = existing.merging(defaults)
-
-      do {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(merged)
-        try data.write(to: fileURL, options: .atomic)
-      } catch {
-        Log.warn("Failed to save defaults to \(fileURL.path): \(error.localizedDescription)")
-      }
-    }
-  }
-
-  /// Removes persisted build info (bundleId, appPath, buildScheme) from disk
-  /// while preserving user-managed defaults (project, scheme, simulator).
-  public func clearBuildInfo() {
-    guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
-    withFileLock(.exclusive) { _ in
-      guard var existing = readFromDisk() else { return }
-      existing.bundleId = nil
-      existing.appPath = nil
-      existing.buildScheme = nil
-      if existing.isEmpty {
-        try? FileManager.default.removeItem(at: fileURL)
-      } else {
-        do {
-          let encoder = JSONEncoder()
-          encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-          let data = try encoder.encode(existing)
-          try data.write(to: fileURL, options: .atomic)
-        } catch {
-          Log.warn("Failed to clear build info from \(fileURL.path): \(error.localizedDescription)")
-        }
-      }
-    }
-  }
-
-  public func clear() {
-    guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
-    withFileLock(.exclusive) { _ in
-      do {
-        try FileManager.default.removeItem(at: fileURL)
-      } catch {
-        Log.warn("Failed to remove defaults file at \(fileURL.path): \(error.localizedDescription)")
-      }
-    }
   }
 
   // MARK: - File locking
@@ -153,22 +502,6 @@ public struct DefaultsStore: Sendable {
       return nil
     }
     return body(fd)
-  }
-
-  /// Reads and decodes the defaults file without locking (caller must hold lock).
-  private func readFromDisk() -> PersistedDefaults? {
-    guard FileManager.default.fileExists(atPath: fileURL.path) else {
-      return nil
-    }
-    do {
-      let data = try Data(contentsOf: fileURL)
-      return try JSONDecoder().decode(PersistedDefaults.self, from: data)
-    } catch {
-      Log.warn(
-        "Failed to read defaults from \(fileURL.path): \(error.localizedDescription). Starting with empty defaults."
-      )
-      return nil
-    }
   }
 
   // MARK: - Named Profiles
@@ -246,25 +579,36 @@ public enum RepoConfig {
     public var simulator: String?
     public var configuration: String?
     public var testPlan: String?
+    /// Default test watchdog timeout in seconds, applied when no explicit
+    /// `timeoutSeconds` is passed. Overrides the built-in 180s/1800s bimodal.
+    public var testTimeout: Int?
+    /// When `false`, suppresses the 3-strikes silent promotion of explicit
+    /// values to sticky session defaults. Defaults to `true` (legacy behavior)
+    /// when the key is omitted.
+    public var autoPromote: Bool?
 
     public init(
       project: String? = nil,
       scheme: String? = nil,
       simulator: String? = nil,
       configuration: String? = nil,
-      testPlan: String? = nil
+      testPlan: String? = nil,
+      testTimeout: Int? = nil,
+      autoPromote: Bool? = nil
     ) {
       self.project = project
       self.scheme = scheme
       self.simulator = simulator
       self.configuration = configuration
       self.testPlan = testPlan
+      self.testTimeout = testTimeout
+      self.autoPromote = autoPromote
     }
 
     /// True when every field is nil (nothing to apply).
     public var isEmpty: Bool {
       project == nil && scheme == nil && simulator == nil && configuration == nil
-        && testPlan == nil
+        && testPlan == nil && testTimeout == nil && autoPromote == nil
     }
   }
 
@@ -317,6 +661,7 @@ public enum RepoConfig {
 
     let allowedKeys: Set<String> = [
       "project", "scheme", "simulator", "configuration", "testPlan",
+      "testTimeout", "autoPromote",
     ]
     for key in dict.keys where !allowedKeys.contains(key) {
       Log.warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'")
@@ -337,12 +682,38 @@ public enum RepoConfig {
       }
     }
 
+    // testTimeout: positive integer seconds. Anything non-numeric or <= 0
+    // is warned + dropped, so a typo never silently becomes a 0-second watchdog.
+    var testTimeout: Int?
+    if let raw = dict["testTimeout"] {
+      if let parsed = Int(raw), parsed > 0 {
+        testTimeout = parsed
+      } else {
+        Log.warn(
+          "\(RepoConfig.fileName): ignoring non-numeric or non-positive testTimeout '\(raw)'")
+      }
+    }
+
+    // autoPromote: strict true/false. Other values warn + drop.
+    var autoPromote: Bool?
+    if let raw = dict["autoPromote"] {
+      switch raw.lowercased() {
+      case "true": autoPromote = true
+      case "false": autoPromote = false
+      default:
+        Log.warn(
+          "\(RepoConfig.fileName): ignoring non-boolean autoPromote '\(raw)' (expected true/false)")
+      }
+    }
+
     let result = Values(
       project: project,
       scheme: dict["scheme"],
       simulator: dict["simulator"],
       configuration: dict["configuration"],
-      testPlan: dict["testPlan"]
+      testPlan: dict["testPlan"],
+      testTimeout: testTimeout,
+      autoPromote: autoPromote
     )
     return result.isEmpty ? nil : result
   }
@@ -397,6 +768,18 @@ public enum RepoConfig {
     lines.append(
       entry("testPlan", nil, "Default .xctestplan name for test runs.")
         .trimmingCharacters(in: .newlines))
+    lines.append("")
+    lines.append(
+      entry(
+        "testTimeout", nil,
+        "Default test watchdog timeout in seconds (e.g. 600). Overrides 180s/1800s bimodal."
+      ).trimmingCharacters(in: .newlines))
+    lines.append("")
+    lines.append(
+      entry(
+        "autoPromote", nil,
+        "Set to false to disable 3-strikes auto-promotion of explicit values. Default: true."
+      ).trimmingCharacters(in: .newlines))
     return lines.joined(separator: "\n") + "\n"
   }
 }
@@ -471,4 +854,19 @@ public struct PersistedDefaults: Codable, Sendable, Equatable {
       buildScheme: other.buildScheme ?? buildScheme
     )
   }
+}
+
+// MARK: - v2 on-disk envelope
+
+/// On-disk shape of `defaults.json` for schema version 2. Each project's
+/// `PersistedDefaults` record is stored under its canonical path key so two
+/// apps built from the same machine cannot stomp on each other's build info.
+///
+/// Internal by design: external code goes through `DefaultsStore`'s
+/// per-project APIs. Test code reaches in via `@testable import`.
+struct StoredEnvelope: Codable, Equatable {
+  var version: Int
+  var projects: [String: PersistedDefaults]
+
+  static let empty = StoredEnvelope(version: 2, projects: [:])
 }

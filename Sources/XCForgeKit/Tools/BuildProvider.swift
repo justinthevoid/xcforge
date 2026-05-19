@@ -383,7 +383,7 @@ public enum BuildTools {
     buildArgs += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
 
     let start = CFAbsoluteTimeGetCurrent()
-    let buildTimeout = TestTools.resolveTestTimeout(long: long)
+    let buildTimeout = await TestTools.resolveTestTimeout(long: long, env: env)
     let snapshotPath = TestTools.diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
@@ -874,7 +874,7 @@ public enum BuildTools {
     // Build is the critical path (~10-60s). Settings extraction, simulator boot,
     // and Simulator.app launch run concurrently — they complete while the build
     // is still compiling, adding zero wall-clock overhead.
-    let buildTimeout = TestTools.resolveTestTimeout(long: input.long ?? false)
+    let buildTimeout = await TestTools.resolveTestTimeout(long: input.long ?? false, env: env)
     let buildSnapshotPath = TestTools.diagnosticSnapshotPath()
     let buildWatchdog = HangWatchdog(
       udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], env: env)

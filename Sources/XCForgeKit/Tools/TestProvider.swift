@@ -778,8 +778,14 @@ public enum TestTools {
     return "/tmp/xcf-\(prefix)-\(ts).xcresult"
   }
 
-  static func resolveTestTimeout(long: Bool) -> TimeInterval {
-    long ? 1800 : 180
+  /// Resolve the test watchdog timeout via the session actor.
+  /// Precedence: explicit `timeoutSeconds` > `.xcforge.yaml` `testTimeout`
+  /// > `long ? 1800 : 180`. Centralized so every test/build path picks up
+  /// the same configurable default.
+  static func resolveTestTimeout(
+    explicit: Int? = nil, long: Bool, env: Environment
+  ) async -> TimeInterval {
+    await env.session.resolveTestTimeout(explicit: explicit, long: long)
   }
 
   static func diagnosticSnapshotPath() -> String {
@@ -1068,7 +1074,7 @@ public enum TestTools {
 
     args += ["test"]
 
-    let timeout = resolveTestTimeout(long: long)
+    let timeout = await resolveTestTimeout(long: long, env: env)
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
     let result = try await env.shell.run(
@@ -1101,7 +1107,7 @@ public enum TestTools {
     ]
     args += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
 
-    let timeout = resolveTestTimeout(long: long)
+    let timeout = await resolveTestTimeout(long: long, env: env)
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
     let result = try await env.shell.run("/usr/bin/xcodebuild", arguments: args, timeout: timeout)
@@ -1133,7 +1139,12 @@ public enum TestTools {
     }
     args += ["build-for-testing"]
 
-    let timeout = timeoutOverride ?? resolveTestTimeout(long: long)
+    let timeout: TimeInterval
+    if let override = timeoutOverride {
+      timeout = override
+    } else {
+      timeout = await resolveTestTimeout(long: long, env: env)
+    }
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
@@ -1177,7 +1188,12 @@ public enum TestTools {
     }
     args += ["test-without-building"]
 
-    let timeout = timeoutOverride ?? resolveTestTimeout(long: long)
+    let timeout: TimeInterval
+    if let override = timeoutOverride {
+      timeout = override
+    } else {
+      timeout = await resolveTestTimeout(long: long, env: env)
+    }
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
