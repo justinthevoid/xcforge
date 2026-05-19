@@ -667,9 +667,10 @@ enum UITools {
     }
   }
 
-  static func wdaCreateSession(_ args: [String: Value]?, wdaClient: WDAClient) async
+  static func wdaCreateSession(_ args: [String: Value]?, env: Environment) async
     -> CallTool.Result
   {
+    let wdaClient = env.wdaClient
     switch ToolInput.decode(SessionInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
@@ -704,20 +705,35 @@ enum UITools {
         }
       }
 
-      // Default path: ensureWDARunning + createSession
-      do {
-        try await wdaClient.ensureWDARunning()
-
-        let sid = try await wdaClient.createSession(bundleId: bundleId)
-        var msg = "Session created: \(sid)"
-
-        if let warning = await wdaClient.sessionWarning {
-          msg += "\n\(warning)"
-        }
-        return .ok(msg)
-      } catch {
-        return .fail("Session creation failed: \(error)")
+      // Default path: shared classification + bounded one-shot auto-heal.
+      // Mirrors the `ui session` CLI envelope (error/cause/detail/
+      // remediation/recovered/appForeground) so the opaque
+      // `Session creation failed: ExitCode(rawValue: 1)` is gone.
+      let attempt = await WDASessionRepair.createSession(
+        bundleId: bundleId,
+        autoHeal: true,
+        relaunchApp: false,
+        ensureRunning: true,
+        env: env
+      )
+      var lines: [String] = [attempt.message]
+      if let warning = await wdaClient.sessionWarning, attempt.succeeded {
+        lines.append(warning)
       }
+      if !attempt.succeeded {
+        if let err = attempt.error { lines.append("error: \(err)") }
+        if let cause = attempt.cause { lines.append("cause: \(cause.rawValue)") }
+        if let detail = attempt.detail { lines.append("detail: \(detail)") }
+        if let remediation = attempt.remediation {
+          lines.append("remediation: \(remediation)")
+        }
+      }
+      if let recovered = attempt.recovered { lines.append("recovered: \(recovered)") }
+      if let foreground = attempt.appForeground {
+        lines.append("appForeground: \(foreground)")
+      }
+      let body = lines.joined(separator: "\n")
+      return attempt.succeeded ? .ok(body) : .fail(body)
     }
   }
 
@@ -763,6 +779,8 @@ enum UITools {
         if swipes > 0 {
           msg += " — scrolled \(swipes) time(s) \(direction)"
         }
+        let fg = await WDASessionRepair.appForeground(requested: nil, env: env)
+        if let fg { msg += " appForeground=\(fg)" }
         return .ok(msg)
       } catch {
         return .fail("Element not found: \(error)")
@@ -798,7 +816,9 @@ enum UITools {
         do {
           try await env.axpBridge.performClick(handle: handle)
           let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-          return .ok("Clicked element \(input.element_id) (axp, \(elapsed)ms)")
+          let fg = await WDASessionRepair.appForeground(requested: nil, env: env)
+          let fgToken = fg.map { " appForeground=\($0)" } ?? ""
+          return .ok("Clicked element \(input.element_id) (axp, \(elapsed)ms)\(fgToken)")
         } catch {
           Log.warn("AXPBridge click failed, falling back to WDA: \(error)")
         }
@@ -809,7 +829,9 @@ enum UITools {
         let start = CFAbsoluteTimeGetCurrent()
         try await env.wdaClient.click(elementId: input.element_id)
         let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-        return .ok("Clicked element \(input.element_id) (wda, \(elapsed)ms)")
+        let fg = await WDASessionRepair.appForeground(requested: nil, env: env)
+        let fgToken = fg.map { " appForeground=\($0)" } ?? ""
+        return .ok("Clicked element \(input.element_id) (wda, \(elapsed)ms)\(fgToken)")
       } catch {
         return .fail("Click failed: \(error)")
       }
@@ -1485,7 +1507,10 @@ enum UITools {
         let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
         let suffix = retried ? " (retried)" : ""
         let token = retried ? " retried=true" : " retried=false"
-        return .ok("Tapped '\(trimmedId)' → \(elementId) (\(elapsed)ms)\(suffix)\(token)")
+        let fg = await WDASessionRepair.appForeground(requested: nil, env: env)
+        let fgToken = fg.map { " appForeground=\($0)" } ?? ""
+        return .ok(
+          "Tapped '\(trimmedId)' → \(elementId) (\(elapsed)ms)\(suffix)\(token)\(fgToken)")
       } catch {
         return .fail("tap-by-id failed: \(error)")
       }
@@ -1509,8 +1534,11 @@ enum UITools {
         let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
         let suffix = retried ? " (retried)" : ""
         let token = retried ? " retried=true" : " retried=false"
+        let fg = await WDASessionRepair.appForeground(requested: nil, env: env)
+        let fgToken = fg.map { " appForeground=\($0)" } ?? ""
         return .ok(
-          "Tapped \(trimmedUsing)='\(trimmedValue)' → \(elementId) (\(elapsed)ms)\(suffix)\(token)")
+          "Tapped \(trimmedUsing)='\(trimmedValue)' → \(elementId) (\(elapsed)ms)\(suffix)\(token)\(fgToken)"
+        )
       } catch {
         return .fail("tap-by failed: \(error)")
       }
@@ -1648,7 +1676,7 @@ extension UITools: ToolProvider {
     case "handle_alert":
       return await handleAlert(args, session: env.session, wdaClient: env.wdaClient)
     case "wda_status": return await wdaStatus(args, session: env.session, wdaClient: env.wdaClient)
-    case "wda_create_session": return await wdaCreateSession(args, wdaClient: env.wdaClient)
+    case "wda_create_session": return await wdaCreateSession(args, env: env)
     case "find_element": return await findElement(args, env: env)
     case "find_elements": return await findElements(args, wdaClient: env.wdaClient)
     case "click_element": return await clickElement(args, env: env)

@@ -22,6 +22,7 @@ public enum ToolRegistry {
     DebuggerProvider.self,
     PoseTools.self,
     BlessTools.self,
+    WaitReadyTools.self,
   ]
 
   // MARK: - Tool Group Management (runtime-only, not persisted)

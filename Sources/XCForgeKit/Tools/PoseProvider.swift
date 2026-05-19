@@ -74,6 +74,18 @@ public enum PoseTools {
               "Ceiling (seconds) for the post-launch wait before screenshot. Polls WDA for active CFBundleIdentifier and proceeds as soon as the app is foreground; falls back to sleeping the residual budget if WDA is unreachable. Default 2.5. Pass 0 to capture immediately."
             ),
           ]),
+          "waitFor": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Readiness signal(s), comma-separated (all must hold): `launch-complete`, `a11y:<id>`, `text:<substring>`. When set, replaces the screenshotDelay poll/sleep with a real element-presence gate (AXP-first, WDA fallback). Warn-only — never fails the pose."
+            ),
+          ]),
+          "timeout": .object([
+            "type": .string("number"),
+            "description": .string(
+              "Ceiling in seconds for `waitFor`. Capture happens the instant the signal holds, so a high ceiling costs nothing on the fast path. Default 20."
+            ),
+          ]),
         ]),
         "required": .array([.string("name")]),
       ])
@@ -91,6 +103,8 @@ public enum PoseTools {
     let configuration: String?
     let screenshot: String?
     let screenshotDelay: Double?
+    let waitFor: String?
+    let timeout: Double?
   }
 
   // MARK: - Execution
@@ -104,6 +118,8 @@ public enum PoseTools {
     configuration: String = "Debug",
     screenshotPath: String? = nil,
     screenshotDelay: Double = 2.5,
+    waitFor: String? = nil,
+    waitTimeout: Double? = nil,
     env: Environment = .live
   ) async -> PoseExecution {
     let start = CFAbsoluteTimeGetCurrent()
@@ -235,21 +251,44 @@ public enum PoseTools {
     var screenshotResultPath: String?
     var screenshotWarning: String?
     if let path = screenshotPath {
-      // Wait for the app to actually become foreground before capture. Sanitize: reject
-      // NaN/inf (would trap the UInt64 cast) and clamp to a sane upper bound so a typo
-      // can't strand the process for hours. Explicit 0 skips both poll and sleep.
-      let delay: Double = {
-        guard screenshotDelay.isFinite, screenshotDelay > 0 else { return 0 }
-        return min(screenshotDelay, 60)
-      }()
-      if delay > 0 {
-        let pollStart = CFAbsoluteTimeGetCurrent()
-        let matched = await env.wdaClient.pollForActiveBundleId(
-          target: bundleId, budget: delay)
-        if !matched {
-          let remaining = delay - (CFAbsoluteTimeGetCurrent() - pollStart)
-          if remaining > 0 {
-            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+      // New explicit gate (raises the ceiling only via an explicit flag — the
+      // default path below is unchanged for callers passing no new flags).
+      // Readiness failure is warn-only: it NEVER hard-fails the pose, it
+      // degrades and reports the mode in the warning line.
+      if let waitFor, !waitFor.trimmingCharacters(in: .whitespaces).isEmpty {
+        let timeout = waitTimeout ?? 20
+        let parsed = ReadinessProbe.Signal.parseSpec(waitFor)
+        let probe = await ReadinessProbe.waitReady(
+          signals: parsed.signals,
+          timeout: timeout,
+          specWasUnparseable: parsed.allUnparseable,
+          simulator: simulator,
+          env: env
+        )
+        if !probe.ready {
+          let why = probe.reason ?? "signal(s) not satisfied before timeout"
+          screenshotWarning =
+            "Readiness gate not satisfied (mode: \(probe.mode.rawValue), "
+            + "\(probe.elapsedMs)ms): \(why) — capturing anyway"
+        }
+      } else {
+        // Legacy path — unchanged. Wait for the app to actually become
+        // foreground before capture. Sanitize: reject NaN/inf (would trap the
+        // UInt64 cast) and clamp so a typo can't strand the process for hours.
+        // Explicit 0 skips both poll and sleep.
+        let delay: Double = {
+          guard screenshotDelay.isFinite, screenshotDelay > 0 else { return 0 }
+          return min(screenshotDelay, 60)
+        }()
+        if delay > 0 {
+          let pollStart = CFAbsoluteTimeGetCurrent()
+          let matched = await env.wdaClient.pollForActiveBundleId(
+            target: bundleId, budget: delay)
+          if !matched {
+            let remaining = delay - (CFAbsoluteTimeGetCurrent() - pollStart)
+            if remaining > 0 {
+              try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            }
           }
         }
       }
@@ -295,6 +334,8 @@ public enum PoseTools {
         configuration: input.configuration ?? "Debug",
         screenshotPath: input.screenshot,
         screenshotDelay: input.screenshotDelay ?? 2.5,
+        waitFor: input.waitFor,
+        waitTimeout: input.timeout,
         env: env
       )
 

@@ -1086,6 +1086,60 @@ public actor WDAClient {
 
 // MARK: - Errors
 
+/// Enumerated, machine-actionable root cause for a WDA session-create failure.
+///
+/// Surfaced in the structured `error/cause/detail/remediation` envelope so an
+/// autonomous agent can recover instead of seeing the opaque
+/// `ExitCode(rawValue: 1)`. Classification is by *cheap* state checks at the
+/// failure site (DerivedData present? booted sim? :8100 reachable?) — see
+/// `WDAClient.classifySessionCreateFailure`.
+public enum WDASessionCause: String, Codable, Sendable {
+  case wdaRunnerNotRunning = "wda_runner_not_running"
+  case wdaRunnerBuildFailed = "wda_runner_build_failed"
+  case noBootedSimulator = "no_booted_simulator"
+  case bundleNotInstalled = "bundle_not_installed"
+  case sessionBindRejected = "session_bind_rejected"
+  case unknown = "unknown"
+
+  /// A copy-pasteable remediation command for this cause.
+  public var remediation: String {
+    switch self {
+    case .wdaRunnerNotRunning:
+      return "xcforge ui status   # then re-run; auto-heal rebuilds & relaunches the WDA runner"
+    case .wdaRunnerBuildFailed:
+      return
+        "rm -rf ~/Library/Developer/Xcode/DerivedData/xcforgeWDA-deploy && xcforge ui session"
+    case .noBootedSimulator:
+      return "xcforge sim boot <name-or-udid>   # boot a simulator, then retry"
+    case .bundleNotInstalled:
+      return "xcforge build run --simulator <sim>   # install the app, then retry"
+    case .sessionBindRejected:
+      return
+        "Verify the bundle id is installed and runnable on the booted simulator, then retry"
+    case .unknown:
+      return "xcforge ui status   # inspect WDA; attach the raw detail when filing an issue"
+    }
+  }
+}
+
+/// Structured WDA session-create failure. Carries the enumerated cause, a
+/// human detail (raw stderr/error when `unknown`), and a remediation command.
+public struct WDASessionCreateError: Error, CustomStringConvertible, Sendable {
+  public let cause: WDASessionCause
+  public let detail: String
+
+  public init(cause: WDASessionCause, detail: String) {
+    self.cause = cause
+    self.detail = detail
+  }
+
+  public var remediation: String { cause.remediation }
+
+  public var description: String {
+    "wda_session_create_failed (cause: \(cause.rawValue)) — \(detail). Remediation: \(remediation)"
+  }
+}
+
 enum WDAError: Error, CustomStringConvertible {
   case invalidURL(String)
   case invalidResponse(String)

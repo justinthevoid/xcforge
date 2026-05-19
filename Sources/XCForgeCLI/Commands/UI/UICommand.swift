@@ -8,19 +8,39 @@ struct UIResult: Codable {
   let elementId: String?
   let elementCount: Int?
   let retried: Bool?
+  // Structured WDA session-create failure envelope (additive; all nil →
+  // omitted, so existing JSON shape is unchanged for callers that don't hit
+  // the session path).
+  let error: String?
+  let cause: String?
+  let detail: String?
+  let remediation: String?
+  let recovered: Bool?
+  /// nil → omitted; false only when WDA confirmed the app is NOT foreground;
+  /// null when WDA unreachable (never a false negative).
+  let appForeground: Bool?
 
   init(
-    succeeded: Bool, message: String, elementId: String?, elementCount: Int?, retried: Bool? = nil
+    succeeded: Bool, message: String, elementId: String?, elementCount: Int?,
+    retried: Bool? = nil, error: String? = nil, cause: String? = nil, detail: String? = nil,
+    remediation: String? = nil, recovered: Bool? = nil, appForeground: Bool? = nil
   ) {
     self.succeeded = succeeded
     self.message = message
     self.elementId = elementId
     self.elementCount = elementCount
     self.retried = retried
+    self.error = error
+    self.cause = cause
+    self.detail = detail
+    self.remediation = remediation
+    self.recovered = recovered
+    self.appForeground = appForeground
   }
 
   enum CodingKeys: String, CodingKey {
     case succeeded, message, elementId, elementCount, retried
+    case error, cause, detail, remediation, recovered, appForeground
   }
 
   func encode(to encoder: Encoder) throws {
@@ -30,6 +50,12 @@ struct UIResult: Codable {
     try c.encodeIfPresent(elementId, forKey: .elementId)
     try c.encodeIfPresent(elementCount, forKey: .elementCount)
     try c.encodeIfPresent(retried, forKey: .retried)
+    try c.encodeIfPresent(error, forKey: .error)
+    try c.encodeIfPresent(cause, forKey: .cause)
+    try c.encodeIfPresent(detail, forKey: .detail)
+    try c.encodeIfPresent(remediation, forKey: .remediation)
+    try c.encodeIfPresent(recovered, forKey: .recovered)
+    try c.encodeIfPresent(appForeground, forKey: .appForeground)
   }
 }
 
@@ -120,50 +146,87 @@ struct UISession: AsyncParsableCommand {
   @Option(help: "WDA base URL. Default: http://localhost:8100")
   var wdaUrl: String?
 
+  @Flag(
+    name: .customLong("no-autoheal"),
+    help: "Disable the bounded one-shot WDA-runner auto-heal — preserve fail-fast for debugging.")
+  var noAutoheal = false
+
+  @Flag(
+    name: .customLong("relaunch-app"),
+    help:
+      "Allow auto-heal to relaunch the user app (off by default — the agent may have intentional app state).")
+  var relaunchApp = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
+
+  /// Render a `WDASessionRepair.SessionAttempt` and exit non-zero on failure.
+  private func emit(
+    _ attempt: WDASessionRepair.SessionAttempt, useJSON: Bool, urlSuffix: String = ""
+  ) throws {
+    let message =
+      attempt.succeeded ? attempt.message + urlSuffix : attempt.message
+    if useJSON {
+      print(
+        try WorkflowJSONRenderer.renderJSON(
+          UIResult(
+            succeeded: attempt.succeeded,
+            message: message,
+            elementId: nil,
+            elementCount: nil,
+            error: attempt.error,
+            cause: attempt.cause?.rawValue,
+            detail: attempt.detail,
+            remediation: attempt.remediation,
+            recovered: attempt.recovered,
+            appForeground: attempt.appForeground)))
+    } else {
+      print(message)
+      if !attempt.succeeded, let cause = attempt.cause {
+        print("cause: \(cause.rawValue)")
+        if let detail = attempt.detail { print("detail: \(detail)") }
+        if let remediation = attempt.remediation { print("remediation: \(remediation)") }
+      }
+    }
+    if !attempt.succeeded {
+      throw ExitCode.failure
+    }
+  }
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     if let url = wdaUrl {
+      // Custom-URL override: never deploy/auto-heal against a foreign WDA. The
+      // overridden base URL must be restored on the SUCCESS path AND on ANY
+      // thrown error (incl. a non-ExitCode JSON-render throw), not just the
+      // ExitCode catch — otherwise the shared actor leaks the foreign URL into
+      // every subsequent operation. We capture the result/throw, restore the
+      // URL synchronously (awaited) exactly once, THEN act on it.
       let previousURL = await env.wdaClient.getBaseURL()
       await env.wdaClient.setBaseURL(url)
-
+      let thrown: Error?
       do {
-        let sid = try await env.wdaClient.createSession(bundleId: bundleId)
-        if let requested = bundleId {
-          let bound = try await env.wdaClient.verifyActiveBundleId()
-          if bound != requested {
-            let message =
-              "Session created: \(sid) (custom WDA: \(url)) but bundleId binding failed "
-              + "(requested=\(requested), reported=\(bound ?? "<none>")). "
-              + "WDA may not have activated the app — ensure it is installed and runnable."
-            if useJSON {
-              print(
-                try WorkflowJSONRenderer.renderJSON(
-                  UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
-            } else {
-              print(message)
-            }
-            throw ExitCode.failure
-          }
-        }
-        let message = "Session created: \(sid) (custom WDA: \(url))"
-        if useJSON {
-          print(
-            try WorkflowJSONRenderer.renderJSON(
-              UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
-        } else {
-          print(message)
-        }
-      } catch let exit as ExitCode {
-        await env.wdaClient.setBaseURL(previousURL)
-        throw exit
+        let attempt = await WDASessionRepair.createSession(
+          bundleId: bundleId,
+          autoHeal: false,
+          relaunchApp: relaunchApp,
+          ensureRunning: false,
+          env: env
+        )
+        try emit(attempt, useJSON: useJSON, urlSuffix: " (custom WDA: \(url))")
+        thrown = nil
       } catch {
-        await env.wdaClient.setBaseURL(previousURL)
+        thrown = error
+      }
+      // Single restore on every exit path (success, ExitCode, other throw).
+      await env.wdaClient.setBaseURL(previousURL)
+      if let thrown {
+        if let exit = thrown as? ExitCode {
+          throw exit
+        }
         let message =
-          "Connection to \(url) failed: \(error). Default URL (\(previousURL)) restored."
+          "Connection to \(url) failed: \(thrown). Default URL (\(previousURL)) restored."
         if useJSON {
           print(
             try WorkflowJSONRenderer.renderJSON(
@@ -174,45 +237,20 @@ struct UISession: AsyncParsableCommand {
         throw ExitCode.failure
       }
     } else {
-      do {
-        try await env.wdaClient.ensureWDARunning()
-        let sid = try await env.wdaClient.createSession(bundleId: bundleId)
-        if let requested = bundleId {
-          let bound = try await env.wdaClient.verifyActiveBundleId()
-          if bound != requested {
-            let message =
-              "Session created: \(sid) but bundleId binding failed "
-              + "(requested=\(requested), reported=\(bound ?? "<none>")). "
-              + "WDA may not have activated the app — ensure it is installed and runnable."
-            if useJSON {
-              print(
-                try WorkflowJSONRenderer.renderJSON(
-                  UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
-            } else {
-              print(message)
-            }
-            throw ExitCode.failure
-          }
-        }
-        let message = "Session created: \(sid)"
-        if useJSON {
-          print(
-            try WorkflowJSONRenderer.renderJSON(
-              UIResult(succeeded: true, message: message, elementId: nil, elementCount: nil)))
-        } else {
-          print(message)
-        }
-      } catch {
-        let message = "Session creation failed: \(error)"
-        if useJSON {
-          print(
-            try WorkflowJSONRenderer.renderJSON(
-              UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
-        } else {
-          print(message)
-        }
-        throw ExitCode.failure
-      }
+      // Default path. The shared orchestrator classifies failures into a
+      // structured envelope and (unless --no-autoheal) attempts exactly one
+      // bounded auto-heal. The prior `catch { ... ExitCode 1 }` scope bug —
+      // which swallowed the real bind-mismatch message — is gone: failures
+      // flow through `emit`, which re-throws ExitCode after printing the
+      // structured cause.
+      let attempt = await WDASessionRepair.createSession(
+        bundleId: bundleId,
+        autoHeal: !noAutoheal,
+        relaunchApp: relaunchApp,
+        ensureRunning: true,
+        env: env
+      )
+      try emit(attempt, useJSON: useJSON)
     }
   }
 }
@@ -256,10 +294,13 @@ struct UIFind: AsyncParsableCommand {
       if swipes > 0 {
         message += " — scrolled \(swipes) time(s) \(direction)"
       }
+      let appForeground = await WDASessionRepair.appForeground(requested: nil, env: env)
       if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
-            UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
+            UIResult(
+              succeeded: true, message: message, elementId: elementId, elementCount: nil,
+              appForeground: appForeground)))
       } else {
         print(message)
       }
@@ -348,10 +389,13 @@ struct UIClick: AsyncParsableCommand {
       try await env.wdaClient.click(elementId: elementId)
       let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
       let message = "Clicked element \(elementId) (\(elapsed)ms)"
+      let appForeground = await WDASessionRepair.appForeground(requested: nil, env: env)
       if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
-            UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
+            UIResult(
+              succeeded: true, message: message, elementId: elementId, elementCount: nil,
+              appForeground: appForeground)))
       } else {
         print(message)
       }
@@ -1034,12 +1078,13 @@ struct UITapByID: AsyncParsableCommand {
       let elapsed = String(format: "%.0f", elapsedMs)
       let suffix = retried ? " (retried)" : ""
       let message = "Tapped '\(id)' → \(elementId) (\(elapsed)ms)\(suffix)"
+      let appForeground = await WDASessionRepair.appForeground(requested: nil, env: env)
       if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(
               succeeded: true, message: message, elementId: elementId, elementCount: nil,
-              retried: retried)))
+              retried: retried, appForeground: appForeground)))
       } else {
         print(message)
       }
@@ -1091,12 +1136,13 @@ struct UITapBy: AsyncParsableCommand {
       let elapsed = String(format: "%.0f", elapsedMs)
       let suffix = retried ? " (retried)" : ""
       let message = "Tapped \(using)='\(value)' → \(elementId) (\(elapsed)ms)\(suffix)"
+      let appForeground = await WDASessionRepair.appForeground(requested: nil, env: env)
       if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
             UIResult(
               succeeded: true, message: message, elementId: elementId, elementCount: nil,
-              retried: retried)))
+              retried: retried, appForeground: appForeground)))
       } else {
         print(message)
       }

@@ -19,6 +19,33 @@ struct ScreenshotResult: Codable {
   let path: String
   let format: String
   let sizeKB: Int
+  /// nil → omitted entirely (JSON shape unchanged for callers passing no new
+  /// flags). false only when WDA confirmed the app is NOT foreground; null
+  /// when WDA is unreachable (never a false negative).
+  let appForeground: Bool?
+
+  init(
+    succeeded: Bool, path: String, format: String, sizeKB: Int, appForeground: Bool? = nil
+  ) {
+    self.succeeded = succeeded
+    self.path = path
+    self.format = format
+    self.sizeKB = sizeKB
+    self.appForeground = appForeground
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case succeeded, path, format, sizeKB, appForeground
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encode(succeeded, forKey: .succeeded)
+    try c.encode(path, forKey: .path)
+    try c.encode(format, forKey: .format)
+    try c.encode(sizeKB, forKey: .sizeKB)
+    try c.encodeIfPresent(appForeground, forKey: .appForeground)
+  }
 }
 
 struct VisualCompareResult: Codable {
@@ -55,6 +82,19 @@ struct ScreenshotCapture: AsyncParsableCommand {
   )
   var grid = false
 
+  @Option(
+    name: .customLong("wait-for"),
+    help:
+      "Readiness signal(s), comma-separated (all must hold): launch-complete, a11y:<id>, text:<substring>. Gates the capture on a real signal (AXP-first, WDA fallback). Warn-only — never fails the screenshot."
+  )
+  var waitFor: String?
+
+  @Option(
+    help:
+      "Ceiling in seconds for --wait-for. Capture happens the instant the signal holds. Default 20."
+  )
+  var timeout: Double?
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -64,6 +104,27 @@ struct ScreenshotCapture: AsyncParsableCommand {
 
     let env = Environment.live
     let sim = try await env.session.resolveSimulator(simulator)
+
+    // Optional readiness gate — warn-only, NEVER hard-fails the screenshot.
+    if let waitFor, !waitFor.trimmingCharacters(in: .whitespaces).isEmpty {
+      let parsed = ReadinessProbe.Signal.parseSpec(waitFor)
+      let probe = await ReadinessProbe.waitReady(
+        signals: parsed.signals,
+        timeout: timeout ?? 20,
+        specWasUnparseable: parsed.allUnparseable,
+        simulator: simulator,
+        env: env
+      )
+      if !probe.ready {
+        let why = probe.reason ?? "signal(s) not satisfied before timeout"
+        fputs(
+          "warning: readiness gate not satisfied (mode: \(probe.mode), "
+            + "\(probe.elapsedMs)ms): \(why); capturing anyway\n", stderr)
+      }
+    }
+    // appForeground: derived from verifyActiveBundleId; nil when WDA
+    // unreachable (omitted from JSON — shape unchanged for legacy callers).
+    let appForeground = await WDASessionRepair.appForeground(requested: nil, env: env)
 
     if grid {
       // Capture CGImage → overlay → encode → write. On any failure, fall back
@@ -86,7 +147,8 @@ struct ScreenshotCapture: AsyncParsableCommand {
           let attrs = try FileManager.default.attributesOfItem(atPath: output)
           let fileSize = (attrs[.size] as? Int) ?? 0
           let result = ScreenshotResult(
-            succeeded: true, path: output, format: format, sizeKB: fileSize / 1024)
+            succeeded: true, path: output, format: format, sizeKB: fileSize / 1024,
+            appForeground: appForeground)
           if useJSON {
             print(try WorkflowJSONRenderer.renderJSON(result))
           } else {
@@ -127,7 +189,8 @@ struct ScreenshotCapture: AsyncParsableCommand {
       succeeded: true,
       path: output,
       format: format,
-      sizeKB: sizeKB
+      sizeKB: sizeKB,
+      appForeground: appForeground
     )
 
     if useJSON {

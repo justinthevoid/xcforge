@@ -448,6 +448,37 @@ xcforge screenshot compare --name login-screen --threshold 1.0
 
 All subcommands support `--json`. `--format` defaults to png. `--threshold` defaults to 0.5%. `--grid` overlays 50pt minor grid lines and 100pt labeled divisions for coordinate verification.
 
+`screenshot capture` also accepts `--wait-for <signal>` / `--timeout <sec>` (same grammar as `wait-ready`/`pose`): gate the capture on a real signal instead of capturing whatever is on screen. Warn-only — a missed gate prints a warning and captures anyway, it never fails the command. `--timeout 0` skips the gate (pass-through) and captures immediately. The JSON result carries an `appForeground` field (`true`/`false`) whenever WDA can resolve the foreground bundle; it is **null/omitted only** when WDA is unreachable or the foreground bundle is unresolvable (never a false `false`). It is additive (`encodeIfPresent`), so existing JSON consumers that ignore unknown keys are unaffected.
+
+```bash
+xcforge screenshot capture --output /tmp/s.png --wait-for a11y:home.title
+xcforge screenshot capture --wait-for "launch-complete" --timeout 25 --json
+```
+
+---
+
+## xcforge wait-ready
+
+Standalone launch-readiness gate. Blocks until the screen is *actually* ready, gating on a real signal instead of a blind sleep. Script-friendly: **exits non-zero on timeout**, so `xcforge wait-ready --for a11y:home.title && xcforge screenshot capture` composes correctly.
+
+```bash
+xcforge wait-ready                                      # default: --for launch-complete, 20s
+xcforge wait-ready --for a11y:home.newspaperCard        # element-presence gate
+xcforge wait-ready --for "launch-complete,text:Welcome" # all must hold
+xcforge wait-ready --for a11y:x --timeout 30 --poll-ms 100
+xcforge wait-ready --for a11y:x --json
+```
+
+| Flag | Description |
+|------|-------------|
+| `--for <signal>` | Signal(s), comma-separated, **all must hold**: `launch-complete` (app foreground, WDA-derived), `a11y:<accessibilityId>` (element present — the real "right screen is up"), `text:<substring>` (any label/value contains it). Default: `launch-complete`. |
+| `--timeout <sec>` | Ceiling. Capture-equivalent fires the instant the signal holds, so a high ceiling costs nothing on the fast path. `0` skips the gate (pass-through): the command reports `ready` and **exits 0**, so `wait-ready --timeout 0 && …` composes. Default `20`. |
+| `--poll-ms <ms>` | Poll cadence. Default `150` (mirrors the proven `pollForActiveBundleId` contract). |
+| `--simulator <name\|udid>` | Scope AXP/WDA queries. Auto-detected if omitted. |
+| `--json` | Emit `{ ready, mode, elapsedMs, satisfied, signals, reason }`. |
+
+**Detection order:** AXP first (reads Simulator.app's accessibility tree directly — **no WDA session required**), WDA fallback (`findElement` / `verifyActiveBundleId`), then a reported degraded wait. `mode` (`axp` \| `wda` \| `degraded`) tells an agent whether it got a real gate or a degraded sleep — `degraded` always prints a one-line `reason` (never silently degrade). `a11y:`/`text:` are the strong signals; `launch-complete` only proves the app is foreground (true at the launch splash, *before* a deep-link nav push). MCP tool: `wait_ready` (params `simulator`, `for`, `timeout`).
+
 ---
 
 ## xcforge ui
@@ -492,6 +523,32 @@ app's bundle id walk every window. `xcforge ui *` commands auto-create a session
 and the bound bundle id is now persisted across recreates (mid-call retry,
 WDA restart). `ui session --bundle-id` verifies binding via `GET /session/<sid>`
 and exits non-zero if WDA reports a different `CFBundleIdentifier`.
+
+**Structured session errors + bounded auto-heal.** A failing `ui session` no
+longer emits the opaque `Session creation failed: ExitCode(rawValue: 1)`. The
+result now carries a structured envelope: `error: "wda_session_create_failed"`,
+an enumerated `cause` (`wda_runner_not_running`, `wda_runner_build_failed`,
+`no_booted_simulator`, `bundle_not_installed`, `session_bind_rejected`,
+`unknown`), a human `detail`, and a copy-pasteable `remediation`. On a
+**recoverable** cause (runner not running / build failed) it attempts **exactly
+one** bounded rebuild+relaunch+rebind via the existing WDA orchestrator and
+reports `recovered: true` (or fails with `cause: wda_runner_build_failed` + the
+exact repair command). The CLI still exits non-zero with the readable cause.
+
+| Flag | Description |
+|------|-------------|
+| `--no-autoheal` | Disable the bounded auto-heal — preserve today's fail-fast for debugging. The structured error is still emitted. |
+| `--relaunch-app` | Allow auto-heal to relaunch the user app (off by default — the agent may have intentional app state; runner repair is safe, app relaunch is not). |
+
+**`appForeground` on interaction results.** `ui tap-by-id`, `ui tap-by`,
+`ui click`, `ui find`, and `screenshot capture` JSON include `appForeground`
+(`true`/`false`) **whenever WDA can resolve the foreground bundle** — so an
+agent can tell from a command result that the app it thinks it is driving is
+actually backgrounded, without inferring it from a screenshot. It is
+**null/omitted only** when WDA is unreachable or the foreground bundle is
+unresolvable (never a false `false`). The field is additive (`encodeIfPresent`;
+old consumers ignore unknown keys), keeping existing JSON shapes
+backward-compatible.
 
 **ui ls source selection.** `--source auto` (default) picks WDA when any iOS sim
 is booted, AXP otherwise. Use `--source wda` to force the iOS app's tree when
@@ -804,10 +861,17 @@ xcforge pose dark-theme --json
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
 | `--key <str>` | Argument key to prepend to pose name. Default: `-pose`. Use `--key=-myValue` for values starting with `-` (bare `--key -myValue` is parsed as a missing value). |
 | `--screenshot <path>` | Optional file path to capture screenshot after launch |
-| `--screenshot-delay <sec>` | Seconds to wait after launch before capturing, so the iOS launch zoom can settle. Default `1.5`; pass `0` for legacy immediate-capture. |
+| `--screenshot-delay <sec>` | Seconds to wait after launch before capturing, so the iOS launch zoom can settle. Default `1.5`; pass `0` for legacy immediate-capture. **Unchanged** when `--wait-for` is not passed. |
+| `--wait-for <signal>` | Readiness signal(s), comma-separated (all must hold): `launch-complete`, `a11y:<id>`, `text:<substring>`. Replaces the `--screenshot-delay` poll/sleep with a real element-presence gate (AXP-first, WDA fallback). Capture fires the instant the signal holds — stop racing cold launch onto the splash/Home. Warn-only: never fails the pose. |
+| `--timeout <sec>` | Ceiling for `--wait-for`. Default `20`. A high ceiling is free on the fast path. |
 | `--json` | Machine-readable JSON output |
 
-**Returns:** Build status, install confirmation, launch status, app PID. If `--screenshot` provided, also returns image data.
+```bash
+xcforge pose daily-calendar --screenshot /tmp/p.png --wait-for a11y:dailyCalendar.title
+xcforge pose home --screenshot /tmp/p.png --wait-for "launch-complete,text:Welcome" --timeout 30
+```
+
+**Returns:** Build status, install confirmation, launch status, app PID. If `--screenshot` provided, also returns image data. With `--wait-for`, an unsatisfied gate adds a warning naming the readiness `mode` (`axp` \| `wda` \| `degraded`).
 
 See the [Pose & Visual Iteration](pose.md) reference for app-side routing patterns and visual iteration workflows.
 

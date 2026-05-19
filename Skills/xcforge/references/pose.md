@@ -15,9 +15,13 @@ Launch an app into a named visual state (pose) for rapid design iteration. Inter
 | `configuration` | No | Debug | Build configuration |
 | `key` | No | `-pose` | Argument key to prepend to pose name (e.g., `-pose dark-theme` or `--state onboarding-step-2`). For values starting with `-`, use `--key=-myValue` (ArgumentParser parses bare `--key -myValue` as a missing value). |
 | `screenshot` | No | — | Optional file path to capture screenshot after launch |
-| `screenshotDelay` (`--screenshot-delay`) | No | `1.5` | Seconds to wait after launch before capturing the screenshot, so the iOS launch-zoom animation can settle. Pass `0` for legacy immediate-capture. Clamped to `[0, 60]`; NaN/inf are treated as `0`. |
+| `screenshotDelay` (`--screenshot-delay`) | No | `1.5` | Seconds to wait after launch before capturing the screenshot, so the iOS launch-zoom animation can settle. Pass `0` for legacy immediate-capture. Clamped to `[0, 60]`; NaN/inf are treated as `0`. **Unchanged** — the default path still polls WDA for the active bundle id then sleeps the residual budget. |
+| `waitFor` (`--wait-for`) | No | — | Readiness signal(s), comma-separated (all must hold): `launch-complete`, `a11y:<id>`, `text:<substring>`. When set, **replaces** the `screenshotDelay` poll/sleep with a real element-presence gate (AXP-first — no WDA session needed — then WDA fallback, then a reported degraded wait). Capture happens the instant the signal holds, so it never races a slow cold launch onto the splash/Home. Warn-only: a readiness failure degrades and reports `mode` in the warning, it **never** fails the pose. |
+| `timeout` (`--timeout`) | No | `20` | Ceiling in seconds for `waitFor`. A high ceiling costs nothing on the fast path because capture fires the moment the signal holds. `0` skips the gate (pass-through) — capture proceeds immediately without waiting (it never fails the pose). |
 
-**Returns:** Build status, install confirmation, launch status, app PID. If `screenshot` provided, also returns image data (capture failure only warns, does not fail the pose).
+**Returns:** Build status, install confirmation, launch status, app PID. If `screenshot` provided, also returns image data (capture failure only warns, does not fail the pose). When `--wait-for` is set and the gate is not satisfied, the `screenshotWarning` reports the readiness `mode` (`axp` \| `wda` \| `degraded`) and elapsed ms.
+
+> **Readiness, not a blind sleep.** Prefer `--wait-for a11y:<stableId>` over a larger `--screenshot-delay`. `a11y:`/`text:` are the strong signals (the real "right screen is up"); `launch-complete` only proves the app is foreground (true at the launch splash, *before* a deep-link nav push). See `wait-ready` in `cli-commands.md`.
 
 **MCP shape example:**
 ```json

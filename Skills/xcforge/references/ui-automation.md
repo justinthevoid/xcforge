@@ -42,6 +42,41 @@ sheet window only when the keyWindow query returns no matches, so an id that
 exists in *both* windows resolves to the keyWindow element. If `ui ls` still
 misses sheet elements, file a bug with `--source wda` output attached.
 
+**Structured failure + bounded auto-heal.** A failed default-path
+`wda_create_session` no longer returns the opaque
+`Session creation failed: ExitCode(rawValue: 1)`. It returns a structured body:
+
+- `error: "wda_session_create_failed"`
+- `cause` — one of `wda_runner_not_running`, `wda_runner_build_failed`,
+  `no_booted_simulator`, `bundle_not_installed`, `session_bind_rejected`,
+  `unknown` (with raw stderr in `detail`)
+- `detail` — human explanation
+- `remediation` — a copy-pasteable command
+- `recovered` — `true` if the bounded one-shot auto-heal succeeded
+- `appForeground` — `true`/`false` whenever WDA can resolve the foreground
+  bundle; null/omitted only when WDA is unreachable or the foreground bundle is
+  unresolvable (never a false negative). Additive (`encodeIfPresent`)
+
+Classification uses cheap state probes (booted simulator? `:8100` reachable?
+`xcforgeWDA-deploy` DerivedData present?). On a recoverable runner cause it
+attempts **exactly one** bounded rebuild+relaunch+rebind via the existing
+`ensureWDARunning()` orchestrator (its policy is *not* widened — this is only a
+one-shot wrapper at the `ui session` level, never inside the element-path
+`ensureSession()`). A `session_bind_rejected` (WDA bound a different bundle than
+requested) is **not** auto-recovered — the app/bundle is the problem, not the
+runner — and fails fast with the structured detail. The CLI form
+(`xcforge ui session`) supports `--no-autoheal` (preserve fail-fast) and
+`--relaunch-app` (opt-in; auto-heal never relaunches the user app otherwise).
+
+**`appForeground` on interaction results.** `tap_by_id`, `tap_by`,
+`click_element`, `find_element`, and `screenshot` append/emit an
+`appForeground` token (`true`/`false`) **whenever WDA can resolve the
+foreground bundle** — derived from `verifyActiveBundleId()` vs the recorded
+active bundle, **not** WDA `/status` (which reflects the WDA process, not the
+target app). It is null/omitted only when WDA is unreachable or the foreground
+bundle is unresolvable, so an agent never sees a false negative. The field is
+additive (`encodeIfPresent`; old consumers ignore unknown keys).
+
 ---
 
 ## list_elements (CLI: `xcforge ui ls`)

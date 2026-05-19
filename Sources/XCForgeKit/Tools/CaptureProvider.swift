@@ -37,6 +37,18 @@ enum ScreenshotTools {
               "Overlay a point-coordinate grid (50pt minor lines, 100pt labeled). Useful for eyeballing tap coordinates. Default: false."
             ),
           ]),
+          "waitFor": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Readiness signal(s), comma-separated (all must hold): `launch-complete`, `a11y:<id>`, `text:<substring>`. Gates the capture on a real signal (AXP-first, WDA fallback). Warn-only — never fails the screenshot."
+            ),
+          ]),
+          "timeout": .object([
+            "type": .string("number"),
+            "description": .string(
+              "Ceiling in seconds for `waitFor`. Capture happens the instant the signal holds. Default 20."
+            ),
+          ]),
         ]),
       ])
     )
@@ -48,6 +60,8 @@ enum ScreenshotTools {
     let simulator: String?
     let format: String?
     let grid: Bool?
+    let waitFor: String?
+    let timeout: Double?
   }
 
   static func screenshot(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -68,6 +82,38 @@ enum ScreenshotTools {
     }
     let format = input.format ?? "jpeg"
     let wantGrid = input.grid ?? false
+
+    // Optional readiness gate — warn-only, NEVER hard-fails the screenshot.
+    var readinessNote = ""
+    if let waitFor = input.waitFor, !waitFor.trimmingCharacters(in: .whitespaces).isEmpty {
+      let parsed = ReadinessProbe.Signal.parseSpec(waitFor)
+      let probe = await ReadinessProbe.waitReady(
+        signals: parsed.signals,
+        timeout: input.timeout ?? 20,
+        specWasUnparseable: parsed.allUnparseable,
+        simulator: input.simulator,
+        env: env
+      )
+      if !probe.ready {
+        let why = probe.reason ?? "signal(s) not satisfied before timeout"
+        Log.warn(
+          "screenshot readiness gate not satisfied (mode: \(probe.mode.rawValue)): \(why)")
+        readinessNote = " | readiness:\(probe.mode.rawValue) not-ready"
+      } else {
+        readinessNote = " | readiness:\(probe.mode.rawValue)"
+      }
+    }
+
+    // appForeground derived from verifyActiveBundleId vs the recorded active
+    // bundle — `null` (omitted) when WDA is unreachable, never a false
+    // negative. Surfaced in the trailing text so an agent can tell the app it
+    // thinks it is driving is actually backgrounded.
+    let appForeground = await WDASessionRepair.appForeground(requested: nil, env: env)
+    let fgNote: String = {
+      guard let appForeground else { return "" }
+      return " | appForeground:\(appForeground)"
+    }()
+    let trailing = readinessNote + fgNote
 
     let start = CFAbsoluteTimeGetCurrent()
 
@@ -97,7 +143,7 @@ enum ScreenshotTools {
               annotations: nil, _meta: nil),
             .text(
               text:
-                "\(ptW)×\(ptH) pt | \(pxW)x\(pxH) px | \(encoded.count / 1024)KB | \(elapsed)ms (grid)",
+                "\(ptW)×\(ptH) pt | \(pxW)x\(pxH) px | \(encoded.count / 1024)KB | \(elapsed)ms (grid)\(trailing)",
               annotations: nil, _meta: nil),
           ])
         }
@@ -122,22 +168,24 @@ enum ScreenshotTools {
             data: result.base64, mimeType: mimeType, annotations: nil, _meta: nil),
           .text(
             text:
-              "\(ptInfo)\(result.width)x\(result.height) px | \(result.dataSize / 1024)KB | \(elapsed)ms (\(result.method))",
+              "\(ptInfo)\(result.width)x\(result.height) px | \(result.dataSize / 1024)KB | \(elapsed)ms (\(result.method))\(trailing)",
             annotations: nil, _meta: nil),
         ])
       } catch {
         Log.warn("Inline screenshot failed, falling back to simctl: \(error)")
-        return await simctlScreenshot(sim: sim, format: format, start: start, env: env)
+        return await simctlScreenshot(
+          sim: sim, format: format, start: start, trailing: trailing, env: env)
       }
     }
 
-    return await simctlScreenshot(sim: sim, format: format, start: start, env: env)
+    return await simctlScreenshot(
+      sim: sim, format: format, start: start, trailing: trailing, env: env)
   }
 
   // MARK: - simctl Fallback (writes to file, returns path)
 
   private static func simctlScreenshot(
-    sim: String, format: String, start: CFAbsoluteTime, env: Environment
+    sim: String, format: String, start: CFAbsoluteTime, trailing: String, env: Environment
   ) async -> CallTool.Result {
     let outputPath = "/tmp/xcf-screenshot.\(format)"
     do {
@@ -167,11 +215,11 @@ enum ScreenshotTools {
               data: data.base64EncodedString(), mimeType: mimeType,
               annotations: nil, _meta: nil),
             .text(
-              text: "\(ptInfo)\(data.count / 1024)KB | \(elapsed)ms (simctl)",
+              text: "\(ptInfo)\(data.count / 1024)KB | \(elapsed)ms (simctl)\(trailing)",
               annotations: nil, _meta: nil),
           ])
         }
-        return .ok("Screenshot saved: \(outputPath) | \(elapsed)ms (simctl)")
+        return .ok("Screenshot saved: \(outputPath) | \(elapsed)ms (simctl)\(trailing)")
       }
       return .fail("Screenshot failed: \(result.stderr)")
     } catch {

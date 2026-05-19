@@ -47,6 +47,19 @@ struct Pose: AsyncParsableCommand {
   )
   var screenshotDelay: Double = 2.5
 
+  @Option(
+    name: .customLong("wait-for"),
+    help:
+      "Readiness signal(s), comma-separated (all must hold): launch-complete, a11y:<id>, text:<substring>. When set, replaces the --screenshot-delay poll/sleep with a real element-presence gate (AXP-first, WDA fallback). Warn-only — never fails the pose."
+  )
+  var waitFor: String?
+
+  @Option(
+    help:
+      "Ceiling in seconds for --wait-for. Capture happens the instant the signal holds, so a high ceiling costs nothing on the fast path. Default 20."
+  )
+  var timeout: Double?
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -63,6 +76,8 @@ struct Pose: AsyncParsableCommand {
       configuration: configuration ?? "Debug",
       screenshotPath: screenshot,
       screenshotDelay: screenshotDelay,
+      waitFor: waitFor,
+      waitTimeout: timeout,
       env: env
     )
 
