@@ -102,7 +102,9 @@ struct TestRun: AsyncParsableCommand {
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
-    let configuration = self.configuration ?? "Debug"
+    let env = Environment.live
+    let configuration = await env.session.resolveConfiguration(self.configuration)
+    let resolvedTestplan = await env.session.resolveTestPlan(testplan)
     let recoveryMode = SimRecoveryMode(rawValue: simRecovery) ?? .off
 
     let execution = try await TestTools.executeTest(
@@ -110,14 +112,15 @@ struct TestRun: AsyncParsableCommand {
       scheme: scheme,
       simulator: simulator,
       configuration: configuration,
-      testplan: testplan,
+      testplan: resolvedTestplan,
       filter: filter,
       coverage: coverage,
       long: long,
       diagnose: diagnose,
       simRecovery: recoveryMode,
       gate: gate,
-      forMode: forMode
+      forMode: forMode,
+      env: env
     )
 
     if useJSON {

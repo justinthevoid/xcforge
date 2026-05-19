@@ -229,12 +229,48 @@ public struct DefaultsStore: Sendable {
 
 /// Discovers and parses a `.xcforge.yaml` file by walking up from `startDir`
 /// toward the repo root (`.git` boundary). Returns repo-scoped defaults or `nil`.
+///
+/// Repo config is intentionally decoupled from `PersistedDefaults`: it carries
+/// repo-only keys (`configuration`, `testPlan`) that must never flow into
+/// `~/.xcforge/defaults.json` or named profiles.
 public enum RepoConfig {
   static let fileName = ".xcforge.yaml"
 
+  /// Repo-scoped configuration values parsed from `.xcforge.yaml`.
+  ///
+  /// Distinct from `PersistedDefaults` so that `configuration`/`testPlan`
+  /// (repo-only) cannot leak into the persisted/global JSON model or profiles.
+  public struct Values: Sendable, Equatable {
+    public var project: String?
+    public var scheme: String?
+    public var simulator: String?
+    public var configuration: String?
+    public var testPlan: String?
+
+    public init(
+      project: String? = nil,
+      scheme: String? = nil,
+      simulator: String? = nil,
+      configuration: String? = nil,
+      testPlan: String? = nil
+    ) {
+      self.project = project
+      self.scheme = scheme
+      self.simulator = simulator
+      self.configuration = configuration
+      self.testPlan = testPlan
+    }
+
+    /// True when every field is nil (nothing to apply).
+    public var isEmpty: Bool {
+      project == nil && scheme == nil && simulator == nil && configuration == nil
+        && testPlan == nil
+    }
+  }
+
   /// Discover `.xcforge.yaml` by walking up from `startDir` to the repo root.
-  /// Returns parsed defaults with relative `project` path resolved, or `nil`.
-  public static func discover(from startDir: String) -> PersistedDefaults? {
+  /// Returns parsed values with relative `project` path resolved, or `nil`.
+  public static func discover(from startDir: String) -> Values? {
     guard !startDir.isEmpty else { return nil }
     let fm = FileManager.default
     let repoRoot = RepoRoot.discover(from: startDir)
@@ -254,7 +290,7 @@ public enum RepoConfig {
 
   /// Parse flat YAML (`key: value` lines, `#` comments, blank lines skipped).
   /// Resolves relative `project` paths against `configDir`.
-  static func load(from path: String, configDir: String) -> PersistedDefaults? {
+  static func load(from path: String, configDir: String) -> Values? {
     let contents: String
     do {
       contents = try String(contentsOfFile: path, encoding: .utf8)
@@ -279,7 +315,9 @@ public enum RepoConfig {
 
     if dict.isEmpty { return nil }
 
-    let allowedKeys: Set<String> = ["project", "scheme", "simulator"]
+    let allowedKeys: Set<String> = [
+      "project", "scheme", "simulator", "configuration", "testPlan",
+    ]
     for key in dict.keys where !allowedKeys.contains(key) {
       Log.warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'")
     }
@@ -299,12 +337,94 @@ public enum RepoConfig {
       }
     }
 
-    let result = PersistedDefaults(
+    let result = Values(
       project: project,
       scheme: dict["scheme"],
-      simulator: dict["simulator"]
+      simulator: dict["simulator"],
+      configuration: dict["configuration"],
+      testPlan: dict["testPlan"]
     )
     return result.isEmpty ? nil : result
+  }
+
+  /// Build a documented `.xcforge.yaml` body with commented keys.
+  ///
+  /// Detected values are pre-filled and active; keys with no detected value are
+  /// emitted as commented placeholders so the file is valid as written.
+  public static func scaffold(
+    project: String?,
+    scheme: String?,
+    simulator: String?
+  ) -> String {
+    func entry(_ key: String, _ value: String?, _ comment: String) -> String {
+      // The flat parser splits on the first ":" and has no quoting. A value
+      // containing ":" or a newline would not round-trip, so emit it as a
+      // commented placeholder instead of writing a silently-broken file.
+      if let value, !value.isEmpty, !value.contains(":"), !value.contains("\n") {
+        return "# \(comment)\n\(key): \(value)\n"
+      }
+      return "# \(comment)\n# \(key):\n"
+    }
+
+    var lines = [
+      "# .xcforge.yaml — repo-scoped defaults for xcforge.",
+      "#",
+      "# Committed team config for THIS repo. It outranks the machine-global",
+      "# ~/.xcforge/defaults.json (precedence: explicit arg > in-session",
+      "# set_defaults > .xcforge.yaml > persisted defaults > auto-detect).",
+      "#",
+      "# Flat `key: value` syntax only — no nesting, no quoting needed.",
+      "# Lines starting with '#' are comments. Unknown keys are ignored.",
+      "",
+    ]
+    lines.append(
+      entry(
+        "project", project,
+        "Path to .xcodeproj/.xcworkspace. Relative paths resolve from this file's directory."
+      ).trimmingCharacters(in: .newlines))
+    lines.append("")
+    lines.append(
+      entry("scheme", scheme, "Xcode scheme to build/test.").trimmingCharacters(in: .newlines))
+    lines.append("")
+    lines.append(
+      entry("simulator", simulator, "Simulator name or UDID (e.g. iPhone 16 Pro).")
+        .trimmingCharacters(in: .newlines))
+    lines.append("")
+    lines.append(
+      entry("configuration", nil, "Build configuration (Debug/Release). Default: Debug.")
+        .trimmingCharacters(in: .newlines))
+    lines.append("")
+    lines.append(
+      entry("testPlan", nil, "Default .xctestplan name for test runs.")
+        .trimmingCharacters(in: .newlines))
+    return lines.joined(separator: "\n") + "\n"
+  }
+}
+
+// MARK: - Best-effort detection for `xcforge init`
+
+/// Public, non-throwing detection facade over the internal `AutoDetect`.
+///
+/// `xcforge init` pre-fills `.xcforge.yaml` with whatever can be detected and
+/// leaves the rest as commented placeholders — so detection must never throw
+/// or block the scaffold. Ambiguous/missing results simply return `nil`.
+public enum InitDetect {
+  /// Detected project/scheme/simulator (any may be nil when ambiguous/absent).
+  public struct Result: Sendable {
+    public let project: String?
+    public let scheme: String?
+    public let simulator: String?
+  }
+
+  /// Best-effort detection rooted at `startDir`. Never throws.
+  public static func detect(startDir: String) async -> Result {
+    let project = try? await AutoDetect.project()
+    var scheme: String?
+    if let project {
+      scheme = try? await AutoDetect.scheme(project: project)
+    }
+    let simulator = try? await AutoDetect.simulator()
+    return Result(project: project, scheme: scheme, simulator: simulator)
   }
 }
 

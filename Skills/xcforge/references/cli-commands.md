@@ -613,6 +613,32 @@ xcforge defaults set --project MyApp.xcodeproj --scheme MyApp --simulator "iPhon
 xcforge defaults clear     # Remove all persisted defaults
 ```
 
+> `xcforge defaults` writes the machine-global `~/.xcforge/defaults.json`,
+> which is ranked **below** a repo's committed `.xcforge.yaml`. For repo-scoped
+> team defaults use `xcforge init` / `.xcforge.yaml` instead. See
+> [Auto-Detection](auto-detection.md) for the full resolution order.
+
+---
+
+## xcforge init
+
+Scaffold a documented, repo-scoped `.xcforge.yaml` at the git repo root (CWD if
+no `.git`). Pre-fills detected `project`/`scheme`/`simulator`; undetected keys
+are commented placeholders. Supports `configuration` and `testPlan` (repo-only)
+in addition to project/scheme/simulator.
+
+```bash
+xcforge init            # write .xcforge.yaml with detected values + comments
+xcforge init --force    # overwrite an existing .xcforge.yaml
+```
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Overwrite an existing `.xcforge.yaml` (default: refuse + exit non-zero) |
+
+Repo config outranks the machine-global persisted defaults. CLI-only — there is
+no MCP `init` tool.
+
 ---
 
 ## xcforge diagnose

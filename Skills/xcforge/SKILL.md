@@ -47,9 +47,13 @@ xcforge is a native Swift MCP server and CLI for iOS development. 109 MCP tools,
 All tools that accept `project`, `scheme`, `simulator`, `bundle_id`, or `app_path` follow this resolution order:
 
 1. **Explicit parameter** — highest priority
-2. **Session default** — set via `set_defaults` tool or `xcforge defaults set` CLI
-3. **Auto-detect** — scans working directory for .xcodeproj/.xcworkspace, queries xcodebuild for schemes, finds booted simulator
-4. **Error with options** — lists available choices if detection fails
+2. **In-session value** — set this session via `set_defaults`/`profile_switch`, auto-promoted, or already resolved
+3. **Repo config** — `.xcforge.yaml` at the repo root (committed team config; `xcforge init` scaffolds it)
+4. **Persisted defaults** — machine-global `~/.xcforge/defaults.json`
+5. **Auto-detect** — scans working directory for .xcodeproj/.xcworkspace, queries xcodebuild for schemes, finds booted simulator
+6. **Error with options** — lists available choices if detection fails
+
+**Repo config beats persisted defaults** (committed `.xcforge.yaml` outranks the personal machine-global file — like git `local` > `global`). `.xcforge.yaml` also supports repo-only `configuration` and `testPlan` keys.
 
 **Auto-promotion:** 3 consecutive calls with the same explicit value auto-promotes it to a session default.
 

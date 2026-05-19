@@ -41,8 +41,16 @@ public actor SessionState {
   private var schemeSource: DefaultsSource = .autoDetected
   private var simulatorSource: DefaultsSource = .autoDetected
 
-  // Repo-level config (.xcforge.yaml)
-  private var repoDefaults: PersistedDefaults?
+  // Repo-level config (.xcforge.yaml) — repo-scoped, outranks persisted.
+  private var repoDefaults: RepoConfig.Values?
+
+  // Persisted defaults loaded from ~/.xcforge/defaults.json. Consulted by the
+  // resolvers *below* repo config. These are NOT the session cache — the
+  // session cache is `project`/`scheme`/`simulator` above, which now start nil
+  // and are populated by the first resolution this session.
+  private var persistedProject: String?
+  private var persistedScheme: String?
+  private var persistedSimulator: String?
 
   // Persistence
   private let defaultsStore: DefaultsStore
@@ -54,18 +62,17 @@ public actor SessionState {
     let startDir = cwd ?? FileManager.default.currentDirectoryPath
     self.repoDefaults = RepoConfig.discover(from: startDir)
 
-    // Load persisted defaults eagerly from disk.
-    if let persisted = defaultsStore.load() {
-      self.project = persisted.project
-      self.scheme = persisted.scheme
-      self.simulator = persisted.simulator
-      self.bundleId = persisted.bundleId
-      self.appPath = persisted.appPath
-      self.buildScheme = persisted.buildScheme
-      if persisted.project != nil { projectSource = .persisted }
-      if persisted.scheme != nil { schemeSource = .persisted }
-      if persisted.simulator != nil { simulatorSource = .persisted }
-    }
+    // Load persisted defaults from disk. Build info (bundleId/appPath/
+    // buildScheme) is still applied eagerly so install/launch keep working.
+    // project/scheme/simulator are NOT pre-loaded into the session cache —
+    // they only feed the resolvers below repo config (see resolve* methods).
+    let persisted = defaultsStore.load()
+    self.persistedProject = persisted?.project
+    self.persistedScheme = persisted?.scheme
+    self.persistedSimulator = persisted?.simulator
+    self.bundleId = persisted?.bundleId
+    self.appPath = persisted?.appPath
+    self.buildScheme = persisted?.buildScheme
   }
 
   // MARK: - Resolution (explicit → default → auto-detect)
@@ -81,6 +88,11 @@ public actor SessionState {
       self.project = repo
       self.projectSource = .repoConfig
       return repo
+    }
+    if let persisted = persistedProject {
+      self.project = persisted
+      self.projectSource = .persisted
+      return persisted
     }
 
     let detected = try await AutoDetect.project()
@@ -101,6 +113,11 @@ public actor SessionState {
       self.scheme = repo
       self.schemeSource = .repoConfig
       return repo
+    }
+    if let persisted = persistedScheme {
+      self.scheme = persisted
+      self.schemeSource = .persisted
+      return persisted
     }
 
     let detected = try await AutoDetect.scheme(project: project)
@@ -123,7 +140,26 @@ public actor SessionState {
       self.simulatorSource = .repoConfig
       return repo
     }
+    if let persisted = persistedSimulator {
+      self.simulator = persisted
+      self.simulatorSource = .persisted
+      return persisted
+    }
     return try await AutoDetect.simulator()
+  }
+
+  // MARK: - Repo-only resolvers (configuration / testPlan)
+
+  /// Resolve build configuration. Repo-only — never persisted.
+  /// Order: explicit → `.xcforge.yaml` `configuration` → `"Debug"`.
+  public func resolveConfiguration(_ explicit: String?) -> String {
+    explicit ?? repoDefaults?.configuration ?? "Debug"
+  }
+
+  /// Resolve test plan. Repo-only — never persisted.
+  /// Order: explicit → `.xcforge.yaml` `testPlan` → nil (no test plan).
+  public func resolveTestPlan(_ explicit: String?) -> String? {
+    explicit ?? repoDefaults?.testPlan
   }
 
   /// Resolve simulator and return both its display name and UDID.
@@ -149,13 +185,19 @@ public actor SessionState {
 
   public func resolveBundleId(_ explicit: String?) -> String? {
     if let explicit { return explicit }
-    if let buildScheme, let scheme, buildScheme != scheme { return nil }
+    // scheme is no longer eagerly cached from persisted at init, so the
+    // build-scheme mismatch guard must consult the effective scheme
+    // (session cache → repo config → persisted) to keep stale bundle ids
+    // from a different scheme's build from leaking into launch/install.
+    let effScheme = scheme ?? repoDefaults?.scheme ?? persistedScheme
+    if let buildScheme, let effScheme, buildScheme != effScheme { return nil }
     return bundleId
   }
 
   func resolveAppPath(_ explicit: String?) -> String? {
     if let explicit { return explicit }
-    if let buildScheme, let scheme, buildScheme != scheme { return nil }
+    let effScheme = scheme ?? repoDefaults?.scheme ?? persistedScheme
+    if let buildScheme, let effScheme, buildScheme != effScheme { return nil }
     return appPath
   }
 
@@ -195,15 +237,40 @@ public actor SessionState {
   }
 
   public func showDefaults() -> String {
+    // When the session cache is empty, surface what *would* resolve next
+    // (repo config outranks persisted) so labels stay accurate before the
+    // first build/test resolves and caches a value.
+    let projectEffective = effective(project, projectSource, repoDefaults?.project, persistedProject)
+    let schemeEffective = effective(scheme, schemeSource, repoDefaults?.scheme, persistedScheme)
+    let simulatorEffective = effective(
+      simulator, simulatorSource, repoDefaults?.simulator, persistedSimulator)
+
     var lines = ["Session defaults:"]
-    lines.append("  project:   \(annotated(project, source: projectSource))")
-    lines.append("  scheme:    \(annotated(scheme, source: schemeSource))")
+    lines.append("  project:   \(annotated(projectEffective.0, source: projectEffective.1))")
+    lines.append("  scheme:    \(annotated(schemeEffective.0, source: schemeEffective.1))")
     lines.append(
-      "  simulator: \(annotated(simulator, source: simulatorSource, nilLabel: "(auto-detect — queries booted sim each call)"))"
+      "  simulator: \(annotated(simulatorEffective.0, source: simulatorEffective.1, nilLabel: "(auto-detect — queries booted sim each call)"))"
     )
     lines.append("  bundle_id: \(bundleId ?? "(from last build)")")
     lines.append("  app_path:  \(appPath ?? "(from last build)")")
+    if let config = repoDefaults?.configuration {
+      lines.append("  configuration: \(config) (repo-config)")
+    }
+    if let plan = repoDefaults?.testPlan {
+      lines.append("  test_plan: \(plan) (repo-config)")
+    }
     return lines.joined(separator: "\n")
+  }
+
+  /// Pick the value/source to display: a cached session value (with its
+  /// tracked source) wins; otherwise fall back to repo config, then persisted.
+  private func effective(
+    _ cached: String?, _ cachedSource: DefaultsSource, _ repo: String?, _ persisted: String?
+  ) -> (String?, DefaultsSource) {
+    if let cached { return (cached, cachedSource) }
+    if let repo { return (repo, .repoConfig) }
+    if let persisted { return (persisted, .persisted) }
+    return (nil, .autoDetected)
   }
 
   private func annotated(
@@ -213,10 +280,17 @@ public actor SessionState {
     return "\(value) (\(source.rawValue))"
   }
 
+  /// True when a repo `.xcforge.yaml` is in effect. Used so `clear` does not
+  /// falsely claim pure auto-detection while repo config still applies.
+  public func hasRepoConfig() -> Bool { repoDefaults != nil }
+
   public func clearDefaults() {
     project = nil
     scheme = nil
     simulator = nil
+    persistedProject = nil
+    persistedScheme = nil
+    persistedSimulator = nil
     clearBuildInfo()
     projectStreak = ("", 0)
     schemeStreak = ("", 0)
@@ -441,6 +515,11 @@ public actor SessionState {
         return .ok(await state.showDefaults())
       case "clear":
         await state.clearDefaults()
+        if await state.hasRepoConfig() {
+          return .ok(
+            "Session defaults cleared. The repo .xcforge.yaml still applies; "
+              + "fields it does not set fall back to auto-detection.")
+        }
         return .ok("Session defaults cleared. Auto-detection will be used for all parameters.")
       default:
         if input.project == nil && input.scheme == nil && input.simulator == nil {

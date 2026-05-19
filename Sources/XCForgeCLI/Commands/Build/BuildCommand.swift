@@ -45,7 +45,8 @@ struct BuildCompile: AsyncParsableCommand {
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    let configuration = self.configuration ?? "Debug"
+    let env = Environment.live
+    let configuration = await env.session.resolveConfiguration(self.configuration)
 
     let execution = try await BuildTools.executeBuild(
       project: project,
@@ -53,7 +54,8 @@ struct BuildCompile: AsyncParsableCommand {
       simulator: simulator,
       configuration: configuration,
       long: long,
-      diagnose: diagnose
+      diagnose: diagnose,
+      env: env
     )
 
     if useJSON {
@@ -95,10 +97,10 @@ struct BuildRun: AsyncParsableCommand {
   var json = false
 
   mutating func run() async throws {
-    let configuration = self.configuration ?? "Debug"
     let useJSON = shouldOutputJSON(flag: json)
 
     let env = Environment.live
+    let configuration = await env.session.resolveConfiguration(self.configuration)
     if diagnose {
       let resolvedProject = try await env.session.resolveProject(project)
       let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)

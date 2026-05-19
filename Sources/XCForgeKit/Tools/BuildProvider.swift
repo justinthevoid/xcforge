@@ -538,7 +538,7 @@ public enum BuildTools {
           project: input.project,
           scheme: input.scheme,
           simulator: input.simulator,
-          configuration: input.configuration ?? "Debug",
+          configuration: await env.session.resolveConfiguration(input.configuration),
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
           env: env
@@ -597,7 +597,7 @@ public enum BuildTools {
           project: input.project,
           scheme: input.scheme,
           simulator: input.simulator,
-          configuration: input.configuration ?? "Debug",
+          configuration: await env.session.resolveConfiguration(input.configuration),
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
           env: env
@@ -832,7 +832,7 @@ public enum BuildTools {
       return .fail("\(error)")
     }
 
-    let configuration = input.configuration ?? "Debug"
+    let configuration = await env.session.resolveConfiguration(input.configuration)
     let isWorkspace = project.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
     let destination = await AutoDetect.buildDestination(simulator)

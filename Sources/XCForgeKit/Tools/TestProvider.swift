@@ -2799,7 +2799,7 @@ public enum TestTools {
       }
 
       // Build preamble: testplan visibility + filter/testplan conflict warning
-      let testplan = input.testplan
+      let testplan = await env.session.resolveTestPlan(input.testplan)
       var preamble = ""
       if let tp = testplan {
         preamble += "Testplan: \(tp)\n"
@@ -2819,7 +2819,7 @@ public enum TestTools {
           project: input.project,
           scheme: input.scheme,
           simulator: input.simulator,
-          configuration: input.configuration ?? "Debug",
+          configuration: await env.session.resolveConfiguration(input.configuration),
           testplan: testplan,
           filter: input.filter,
           coverage: input.coverage ?? false,
@@ -3127,7 +3127,7 @@ public enum TestTools {
         return .fail("\(error)")
       }
 
-      let configuration = input.configuration ?? "Debug"
+      let configuration = await env.session.resolveConfiguration(input.configuration)
       do {
         let execution = try await executeBuildDiagnosis(
           project: project,
@@ -3158,7 +3158,8 @@ public enum TestTools {
         return .fail("\(error)")
       }
 
-      let configuration = input.configuration ?? "Debug"
+      let configuration = await env.session.resolveConfiguration(input.configuration)
+      let testplan = await env.session.resolveTestPlan(input.testplan)
       let recoveryMode: SimRecoveryMode
       if let raw = input.simRecovery, let mode = SimRecoveryMode(rawValue: raw) {
         recoveryMode = mode
@@ -3173,7 +3174,7 @@ public enum TestTools {
           scheme: scheme,
           simulator: simulator,
           configuration: configuration,
-          testplan: input.testplan,
+          testplan: testplan,
           filter: input.filter,
           coverage: input.coverage ?? false,
           long: input.long ?? false,
@@ -3198,12 +3199,12 @@ public enum TestTools {
         {
           zeroHint = await zeroMatchHint(
             filter: f, project: input.project, scheme: input.scheme,
-            simulator: input.simulator, testplan: input.testplan, env: env
+            simulator: input.simulator, testplan: testplan, env: env
           )
         }
 
         return formatBuildAndTest(
-          result, testplan: input.testplan, filter: input.filter, suffix: zeroHint)
+          result, testplan: testplan, filter: input.filter, suffix: zeroHint)
       } catch {
         return .fail("build_and_test error: \(error)")
       }
