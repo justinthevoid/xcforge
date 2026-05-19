@@ -50,6 +50,7 @@ export default defineConfig({
 					label: 'CLI Guides',
 					items: [
 						{ label: 'CLI Command Groups', slug: 'docs/guides/cli-command-groups' },
+						{ label: 'Configuration & Defaults', slug: 'docs/guides/configuration' },
 						{ label: 'Workflow Patterns', slug: 'docs/guides/workflow-patterns' },
 					],
 				},

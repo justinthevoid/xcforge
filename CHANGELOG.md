@@ -12,14 +12,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `xcforge init` (CLI) — scaffold a documented, repo-scoped `.xcforge.yaml` at the git repo root (CWD if no repo); refuses to overwrite an existing file without `--force` (exits non-zero). CLI-only; no MCP `init` tool
 - `.xcforge.yaml` `configuration:` key — build configuration for `build_sim`/`build_compile`/`build_run_sim`/`test_sim`/`build_and_test`/`build_and_diagnose` when no `configuration` argument is given
 - `.xcforge.yaml` `testPlan:` key — default `.xctestplan` for `test_sim`/`build_and_test` when no `testplan` argument is given
+- `xcforge wait-ready` (CLI) / `wait_ready` (MCP) — WDA-independent launch/element readiness probe (AXP-first → WDA fallback → reported degraded); stops racing cold-launch and deep-link navigation
+- Additive `--wait-for` / `--timeout` flags on `pose` and `screenshot capture` (default pose/screenshot timing is unchanged when the new flags are not passed)
+- `appForeground` (`Bool?`, derived from WDA's active `CFBundleIdentifier`; `null` when WDA is unreachable) added to `tap-by-id`/`tap-by`/`click`/`find`/`screenshot` results
 
 ### Changed
 - **Repo config now outranks machine-global persisted defaults.** Parameter resolution order is now `explicit → in-session (set_defaults/profile_switch/auto-promoted) → .xcforge.yaml → ~/.xcforge/defaults.json → auto-detect`. Previously the machine-global `~/.xcforge/defaults.json` overrode a committed `.xcforge.yaml`, making the repo file effectively inert. `set_defaults`/`profile_switch` still take effect within the running session but no longer silently win over a repo file that sets the same field across restarts
 - `configuration`/`testPlan` are repo-only — never written to `~/.xcforge/defaults.json` or named profiles (new `RepoConfig.Values` type, decoupled from the persisted model)
 - `set_defaults action: clear` now states that a repo `.xcforge.yaml` still applies instead of claiming pure auto-detection
+- `ui session` creation failures now emit a structured `error` / `cause` / `detail` / `remediation` envelope with a bounded one-shot auto-heal (`--no-autoheal` restores fail-fast, `--relaunch-app` is opt-in) instead of the opaque `Session creation failed: ExitCode(rawValue: 1)`
 
 ### Fixed
 - `resolveBundleId`/`resolveAppPath` no longer return a stale bundle id / app path from a different scheme's build when the scheme has not been resolved yet this session — the build-scheme mismatch guard now consults the effective scheme (session → repo → persisted)
+- Auto-bootstrapped WDA sessions stay bound to the app under test across recreates instead of routing queries to Springboard, so `pose` → readiness → screenshot loops no longer silently target the wrong app
+
+## [1.5.0] - 2026-05-12
+
+### Added
+- `xcforge bless` — baseline + test + diff in one call (verb form of the bless workflow)
+- Agent-trust test signal — terse agent-optimized test output, `xcforge test --gate` (subtract known-failures from the pass/fail signal without hiding the raw list), and `xcforge test rerun-failed` to replay exactly the last run's failing IDs
+- `xcforge test plan inspect` — parse and summarize a `.xctestplan` (configurations, defaultOptions, test targets, skipped-test counts) without running tests
+- `xcforge build-test --env KEY=VAL` — inject environment variables into the test process, with automatic `TEST_RUNNER_` prefixing
+
+### Changed
+- Test filter mismatches now return a "did you mean?" suggestion instead of a bare zero-match result
+- Test git-hook invocations retry transient failures
+
+## [1.4.6] - 2026-05-10
+
+### Fixed
+- `ui ls --source wda` no longer backgrounds the app after a `pose` — `WDAClient` learns the launched app's bundle id (from both the `pose` and generic `launch_app`/`build_run_sim` paths) and re-targets it on every implicit session creation; switching bundles invalidates the cached session so the next request rebinds
+- `pose --screenshot-delay` is now a wallclock ceiling, not a fixed sleep — polls WDA's `verifyActiveBundleId` at ~150ms cadence and captures as soon as the launched bundle is foreground, falling back to sleeping the residual budget when WDA is unreachable; honors `Task.isCancelled`. Default raised 1.5s → 2.5s; `--screenshot-delay 0` preserves legacy immediate capture
+
+## [1.4.3] - 2026-05-10
+
+### Changed
+- **Homebrew now ships a prebuilt arm64 binary plus the bundled `xcforgeWDA` fork** — install drops from ~2 min (build from source) to ~5s, and Xcode is no longer required at install time (still required at runtime when a UI-automation tool first builds the WebDriverAgent runner)
+- `xcforgeWDA` fork vendored in-tree so the v1.4.2 SwiftUI-sheet visibility patches reach Homebrew users (the formula previously fell back to upstream Facebook WDA, which has none of the multi-window patches); see `xcforgeWDA/UPSTREAM.md`
+- `AgentClient` resolves the WDA project from `/opt/homebrew/share/xcforge/xcforgeWDA` (and `/usr/local/share/xcforge/xcforgeWDA` for Intel) in addition to `$XCFORGE_WDA_DIR` and CWD-relative paths
+
+## [1.4.2] - 2026-05-10
+
+### Fixed
+- WDA can now see and tap content inside SwiftUI `.sheet` windows. The vendored WDA fork traverses every application window when `windows.count > 1`: source dumps merge per-window snapshots under a synthetic Application root; element find retries each window when the keyWindow result is empty (with dedup); coordinate taps re-root on the topmost hittable window. All multi-window logic is gated on `windows.count > 1`, so single-window apps remain byte-identical
+
+## [1.4.1] - 2026-05-09
+
+### Fixed
+- WDA can now see SwiftUI sheets, alerts, and `fullScreenCover` — `WDAClient` remembers `activeBundleId` across recreates so auto-bootstrapped sessions stay bound to the app under test
+- `xcforge ui session --bundle-id <id>` verifies the binding via `GET /session/<sid>` and exits non-zero on mismatch instead of reporting silent success
+- `xcforge ui ls` no longer returns Simulator.app's macOS chrome when an iOS sim is booted; new `--source {auto,wda,axp}` option (`auto` prefers WDA when a sim is booted)
+- `xcforge pose --screenshot` no longer captures mid-launch animation; new `--screenshot-delay <sec>` option (default `1.5`, `0` = legacy immediate capture)
+- Stale persisted defaults no longer fail the first run — `DefaultsStore.load()` drops `project`/`appPath` entries whose paths no longer exist so autodetect wins
+- `pose --key` help documents the `--key=-myValue` form required for values starting with `-`
+
+### Added
+- `xcforge ui ls --source {auto,wda,axp}`
+- `xcforge pose --screenshot-delay <sec>`
 
 ## [1.4.0] - 2026-05-09
 

@@ -1,0 +1,86 @@
+---
+title: Configuration & Defaults
+description: How xcforge resolves project, scheme, simulator, and build settings — .xcforge.yaml repo config, persisted defaults, profiles, and precedence.
+slug: docs/guides/configuration
+---
+
+Most xcforge tools accept `project`, `scheme`, and `simulator` parameters. You
+rarely need to pass them — xcforge resolves them through a defined precedence
+chain so a committed repo file or a personal default fills in the blanks.
+
+## Parameter Resolution Order
+
+`project`, `scheme`, and `simulator` resolve in this order (first match wins):
+
+1. **Explicit parameter** — value passed directly in the tool/CLI call
+2. **In-session value** — set this session via `set_defaults` / `profile_switch`, auto-promoted (same explicit value used 3× in a row), or already resolved earlier this session
+3. **Repo config** — `.xcforge.yaml` at the repo root
+4. **Persisted defaults** — machine-global `~/.xcforge/defaults.json`
+5. **Auto-detect** — runtime detection (single `.xcodeproj`/`.xcworkspace`, single scheme, booted simulator)
+6. **Error with options** — if auto-detect is ambiguous, the available choices are returned
+
+Repo config (step 3) outranks the machine-global persisted file (step 4): the
+committed `.xcforge.yaml` is the team's source of truth for *this* repo, the
+same model as git (`local` config beats `global`). `set_defaults` /
+`profile_switch` still take effect within the running session (step 2), but no
+longer silently win over a repo file that sets the same field across restarts.
+
+`bundle_id` and `app_path` are **not** repo-config keys. They resolve via the
+explicit parameter or the cache from the last successful `build_sim` /
+`build_run_sim` only — never from `.xcforge.yaml` or `~/.xcforge/defaults.json`.
+
+## `.xcforge.yaml` (repo config)
+
+An optional, committed, repo-scoped file discovered by walking up from the
+working directory to the `.git` boundary. Its absence changes nothing.
+
+Flat `key: value` syntax only — no nesting, no quoting, no YAML library. Lines
+starting with `#` are comments. Unknown keys are warned and ignored; a malformed
+file is warned and skipped (it never crashes a command).
+
+| Key | Effect |
+|-----|--------|
+| `project` | Default `.xcodeproj`/`.xcworkspace`. Relative paths resolve from the file's directory. |
+| `scheme` | Default scheme. |
+| `simulator` | Default simulator name or UDID. |
+| `configuration` | Build configuration for `build_sim` / `build_compile` / `build_run_sim` / `test_sim` / `build_and_test` / `build_and_diagnose` when no `configuration` argument is given. Defaults to `Debug`. |
+| `testPlan` | Default `.xctestplan` for `test_sim` / `build_and_test` when no `testplan` argument is given. |
+
+`configuration` and `testPlan` are **repo-only** — they are never written to
+`~/.xcforge/defaults.json` or named profiles.
+
+```yaml
+# .xcforge.yaml — repo-scoped defaults for xcforge
+project: App.xcodeproj
+scheme: App-Dev
+simulator: iPhone 16 Pro
+configuration: Debug
+# testPlan: Smoke
+```
+
+## `xcforge init`
+
+Scaffold a documented `.xcforge.yaml` at the git repo root (the current
+directory if there is no `.git`), pre-filled with detected
+`project`/`scheme`/`simulator` and commented placeholders for the rest:
+
+```bash
+xcforge init            # write .xcforge.yaml with detected values + comments
+xcforge init --force    # overwrite an existing .xcforge.yaml
+```
+
+Without `--force` it refuses to overwrite an existing file and exits non-zero.
+`init` is CLI-only — there is no MCP `init` tool.
+
+## Persisted defaults & profiles
+
+`~/.xcforge/defaults.json` is the machine-global fallback (step 4). It is
+populated by `set_defaults`, by auto-promotion, and by build info, and survives
+across sessions. Named profiles (`profile_save` / `profile_switch` /
+`profile_list` / `profile_delete`) snapshot and swap these defaults.
+
+Because it is machine-global, it is ranked **below** a repo's committed
+`.xcforge.yaml`. For repo-scoped team defaults, prefer `xcforge init` and
+`.xcforge.yaml` over per-machine `set_defaults`. `set_defaults action: clear`
+removes the persisted/session defaults; a repo `.xcforge.yaml`, if present,
+still applies.
