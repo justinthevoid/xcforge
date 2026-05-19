@@ -1,5 +1,11 @@
 # Build Tools (6 tools)
 
+> **Defaults note:** the `Default` column shows the *fallback*. `project`,
+> `scheme`, `simulator`, and `configuration` are resolved through the parameter
+> precedence chain — a committed `.xcforge.yaml` (`configuration:` /
+> `scheme:` / …) overrides the listed fallback when the parameter is omitted.
+> See [auto-detection.md](auto-detection.md).
+
 ## build_compile
 
 Fast compile-only build without install or launch (~5s vs ~20s for full pipeline). Reuses the standard build infrastructure, skips the simulator boot/install/launch chain.

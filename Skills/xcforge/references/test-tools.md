@@ -2,6 +2,12 @@
 
 All test tools parse `.xcresult` bundles for structured results — no raw xcodebuild output parsing.
 
+> **Defaults note:** the `Default` column shows the *fallback*. `configuration`
+> and `testplan` (and `project`/`scheme`/`simulator`) are resolved through the
+> parameter precedence chain — a committed `.xcforge.yaml` (`configuration:` /
+> `testPlan:` / …) overrides the listed fallback when the parameter is omitted.
+> See [auto-detection.md](auto-detection.md).
+
 ## test_sim
 
 Run tests and return structured xcresult summary.

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-19
+
+### Added
+- `xcforge init` (CLI) — scaffold a documented, repo-scoped `.xcforge.yaml` at the git repo root (CWD if no repo); refuses to overwrite an existing file without `--force` (exits non-zero). CLI-only; no MCP `init` tool
+- `.xcforge.yaml` `configuration:` key — build configuration for `build_sim`/`build_compile`/`build_run_sim`/`test_sim`/`build_and_test`/`build_and_diagnose` when no `configuration` argument is given
+- `.xcforge.yaml` `testPlan:` key — default `.xctestplan` for `test_sim`/`build_and_test` when no `testplan` argument is given
+
+### Changed
+- **Repo config now outranks machine-global persisted defaults.** Parameter resolution order is now `explicit → in-session (set_defaults/profile_switch/auto-promoted) → .xcforge.yaml → ~/.xcforge/defaults.json → auto-detect`. Previously the machine-global `~/.xcforge/defaults.json` overrode a committed `.xcforge.yaml`, making the repo file effectively inert. `set_defaults`/`profile_switch` still take effect within the running session but no longer silently win over a repo file that sets the same field across restarts
+- `configuration`/`testPlan` are repo-only — never written to `~/.xcforge/defaults.json` or named profiles (new `RepoConfig.Values` type, decoupled from the persisted model)
+- `set_defaults action: clear` now states that a repo `.xcforge.yaml` still applies instead of claiming pure auto-detection
+
+### Fixed
+- `resolveBundleId`/`resolveAppPath` no longer return a stale bundle id / app path from a different scheme's build when the scheme has not been resolved yet this session — the build-scheme mismatch guard now consults the effective scheme (session → repo → persisted)
+
 ## [1.4.0] - 2026-05-09
 
 ### Added

@@ -292,6 +292,7 @@ Use alongside logs and screenshots for systematic root-cause analysis.
 ## CLI Examples
 
 ```bash
+xcforge init                                     # Scaffold a committed .xcforge.yaml (repo defaults)
 xcforge build                                    # Build (auto-detects project, scheme, sim)
 xcforge build compile --scheme MyApp             # Fast compile-only check (~5s)
 xcforge build --scheme MyApp --simulator "iPhone 16 Pro"
