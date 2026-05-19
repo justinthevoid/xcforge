@@ -13,21 +13,29 @@ chain so a committed repo file or a personal default fills in the blanks.
 `project`, `scheme`, and `simulator` resolve in this order (first match wins):
 
 1. **Explicit parameter** — value passed directly in the tool/CLI call
-2. **In-session value** — set this session via `set_defaults` / `profile_switch`, auto-promoted (same explicit value used 3× in a row), or already resolved earlier this session
+2. **In-session value** — set this session via `set_defaults` / `profile_switch`, auto-promoted (same explicit value used 3× in a row, unless [`autoPromote: false`](#autopromote--testtimeout)), or already resolved earlier this session
 3. **Repo config** — `.xcforge.yaml` at the repo root
-4. **Persisted defaults** — machine-global `~/.xcforge/defaults.json`
+4. **Persisted defaults (per active project)** — the active project's record in `~/.xcforge/defaults.json`
 5. **Auto-detect** — runtime detection (single `.xcodeproj`/`.xcworkspace`, single scheme, booted simulator)
 6. **Error with options** — if auto-detect is ambiguous, the available choices are returned
 
-Repo config (step 3) outranks the machine-global persisted file (step 4): the
-committed `.xcforge.yaml` is the team's source of truth for *this* repo, the
-same model as git (`local` config beats `global`). `set_defaults` /
-`profile_switch` still take effect within the running session (step 2), but no
-longer silently win over a repo file that sets the same field across restarts.
+Repo config (step 3) outranks persisted defaults (step 4): the committed
+`.xcforge.yaml` is the team's source of truth for *this* repo, the same model
+as git (`local` config beats `global`). `set_defaults` / `profile_switch` still
+take effect within the running session (step 2), but no longer silently win
+over a repo file that sets the same field across restarts.
+
+There is **no global "persisted project" fallback.** Project identity comes
+from the explicit argument, `.xcforge.yaml`, or cwd auto-detect — then *that*
+project's record in `~/.xcforge/defaults.json` supplies its scheme/simulator
+fallback and remembered build products. This is why building App A in one
+directory and then working on App B in another no longer launches A's product
+for B: each project has its own isolated record.
 
 `bundle_id` and `app_path` are **not** repo-config keys. They resolve via the
 explicit parameter or the cache from the last successful `build_sim` /
-`build_run_sim` only — never from `.xcforge.yaml` or `~/.xcforge/defaults.json`.
+`build_run_sim` for the **active project's** record only — never from
+`.xcforge.yaml`, and never from another project's record.
 
 ## `.xcforge.yaml` (repo config)
 
@@ -45,9 +53,11 @@ file is warned and skipped (it never crashes a command).
 | `simulator` | Default simulator name or UDID. |
 | `configuration` | Build configuration for `build_sim` / `build_compile` / `build_run_sim` / `test_sim` / `build_and_test` / `build_and_diagnose` when no `configuration` argument is given. Defaults to `Debug`. |
 | `testPlan` | Default `.xctestplan` for `test_sim` / `build_and_test` when no `testplan` argument is given. |
+| `testTimeout` | Per-project default test timeout (positive integer seconds) for `test_sim` / `build_and_test`. Precedence: explicit `timeoutSeconds` > `testTimeout` > `--long`/180s default. Non-positive values are rejected with a warning. |
+| `autoPromote` | `true` (default) keeps the 3-rep promotion of explicit values to session defaults. `false` opts out — useful for iterative test loops where stickiness is unwanted. |
 
-`configuration` and `testPlan` are **repo-only** — they are never written to
-`~/.xcforge/defaults.json` or named profiles.
+`configuration`, `testPlan`, `testTimeout`, and `autoPromote` are **repo-only**
+— they are never written to `~/.xcforge/defaults.json` or named profiles.
 
 ```yaml
 # .xcforge.yaml — repo-scoped defaults for xcforge
@@ -56,7 +66,20 @@ scheme: App-Dev
 simulator: iPhone 16 Pro
 configuration: Debug
 # testPlan: Smoke
+# testTimeout: 600   # 10-minute default for this repo's tests
+# autoPromote: false # disable the 3-rep auto-promotion of explicit values
 ```
+
+### `autoPromote` / `testTimeout`
+
+The 3-rep auto-promotion catches "I used `--scheme A` three times in a row, just
+remember it" — but it also bites repeated test runs where you want the explicit
+value to stay explicit. `autoPromote: false` keeps the streak counter at zero
+so an old value can't ambush a later run. `set_defaults` also resets the
+matching streak so an explicit override sticks.
+
+`testTimeout` belongs in `.xcforge.yaml` (not `defaults.json`) because per-test
+timeouts are a property of the project's test suite, not the user's machine.
 
 ## `xcforge init`
 
@@ -74,13 +97,41 @@ Without `--force` it refuses to overwrite an existing file and exits non-zero.
 
 ## Persisted defaults & profiles
 
-`~/.xcforge/defaults.json` is the machine-global fallback (step 4). It is
-populated by `set_defaults`, by auto-promotion, and by build info, and survives
-across sessions. Named profiles (`profile_save` / `profile_switch` /
-`profile_list` / `profile_delete`) snapshot and swap these defaults.
+`~/.xcforge/defaults.json` is the per-project persisted store (step 4). It uses
+a `version: 2` envelope keyed by canonical project path:
 
-Because it is machine-global, it is ranked **below** a repo's committed
-`.xcforge.yaml`. For repo-scoped team defaults, prefer `xcforge init` and
-`.xcforge.yaml` over per-machine `set_defaults`. `set_defaults action: clear`
-removes the persisted/session defaults; a repo `.xcforge.yaml`, if present,
-still applies.
+```json
+{
+  "version": 2,
+  "projects": {
+    "/Users/you/work/AppA.xcodeproj":  { "scheme": "AppA-Dev",  "simulator": "iPhone 16", "bundleId": "…", "appPath": "…", "buildScheme": "AppA-Dev" },
+    "/Users/you/work/AppB.xcworkspace": { "scheme": "AppB-Test", "simulator": "iPad Pro 13-inch (M4)" }
+  }
+}
+```
+
+Each project gets its own isolated record. Builds write back `bundleId` /
+`appPath` / `buildScheme` only into the active project's slot, so they can't
+bleed across apps. `set_defaults` and auto-promotion write into the active
+project's slot too.
+
+Named profiles (`profile_save` / `profile_switch` / `profile_list` /
+`profile_delete`) snapshot and swap a single record's `project`/`scheme`/
+`simulator` for cross-project context switching; switching also clears the
+in-memory build-info caches so the new project's `bundleId`/`appPath` are
+reloaded from its own record.
+
+Because it is machine-global, the persisted store is ranked **below** a repo's
+committed `.xcforge.yaml`. For repo-scoped team defaults, prefer `xcforge init`
+and `.xcforge.yaml` over per-machine `set_defaults`. `set_defaults action:
+clear` removes the active project's record only — pass `xcforge defaults clear
+--all` to wipe every project's record. A repo `.xcforge.yaml`, if present,
+still applies after a clear.
+
+### Migration from older xcforge
+
+Old flat `~/.xcforge/defaults.json` files (single record, no `version` field)
+auto-migrate on first read when they carry a `project:` field — the record is
+re-keyed by canonical path into the v2 envelope. Files without a `project:`
+field, or files written by a newer xcforge (`v3+`), are backed up alongside as
+`defaults.json.unrecognized-<timestamp>` rather than being overwritten.

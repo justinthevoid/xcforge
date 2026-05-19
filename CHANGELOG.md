@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-05-19
+
+### Fixed
+- **Cross-project bundle/app-path bleed.** Building App A then switching to App B's directory no longer launches or tests A's built product. `~/.xcforge/defaults.json` now uses a v2 envelope keyed by canonical project path; each project gets an isolated record, and builds write only into the active project's slot. The global "persisted project" fallback (the contamination source) is removed — project identity comes from explicit arg, `.xcforge.yaml`, or cwd auto-detect. `bundleId`/`appPath`/`buildScheme` only ever resolve from the active project's record
+- `profile_switch` now clears the in-memory build-info caches and reloads the new project's record before returning — previously, switching profiles silently retained the previous project's `bundleId`/`appPath`, reintroducing the bleed
+- Auto-promotion is no longer "sticky after the fact": `set_defaults` resets the matching streak counter so an old explicit value cannot immediately re-promote after you override it, and the streak is suppressed when `autoPromote: false`
+- Explicit `timeoutSeconds: 0` / negative on `test_sim`/`build_and_test` no longer produces a 0-second watchdog; falls through to the configured default with a warning (matches the `.xcforge.yaml` parser's guard)
+- `xcforge defaults clear` (without `--all`) now auto-resolves the active project before clearing instead of silently no-op'ing on disk while telling the user defaults were cleared
+- `set_defaults` / `profile_switch` warn loudly when no active project is resolved instead of silently applying in-memory only
+
+### Added
+- `.xcforge.yaml` `testTimeout:` key — per-project default test timeout in seconds (positive integer). Precedence: explicit `timeoutSeconds` > `.xcforge.yaml testTimeout` > `--long`/180s default. Non-positive values are rejected on both paths with a warning
+- `.xcforge.yaml` `autoPromote:` key (`true`/`false`, default `true`) — opt out of the 3-rep auto-promotion of explicit values to session defaults. Useful for repeated iterative test runs where stickiness is unwanted
+- `xcforge defaults clear --all` — wipe every project's record (the per-project default `clear` only touches the active project's slot)
+- `defaults show` now surfaces the active project key, `testTimeout`/`autoPromote` from `.xcforge.yaml` when set, and an explicit notice when any value was auto-promoted
+
+### Changed
+- On-disk `~/.xcforge/defaults.json` upgraded to a v2 envelope (`{version: 2, projects: {<canonical-path>: PersistedDefaults}}`). Old flat files with a `project:` field auto-migrate on first read; unrecognized or forward-version (`v3+`) files are backed up to `defaults.json.unrecognized-<timestamp>` instead of being overwritten
+- Canonical project keys now case-fold on case-insensitive APFS volumes, NFC-normalize unicode, and resolve symlinks — `~/work/MyApp` reached via two casings or two symlink paths is now one record instead of two
+- v1→v2 migration uses a two-phase POSIX lock (shared read decides format; exclusive re-acquired before the rewrite) so two concurrent processes can't race the migration write
+
 ## [1.6.0] - 2026-05-19
 
 ### Added

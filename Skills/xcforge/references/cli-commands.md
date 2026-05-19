@@ -586,13 +586,15 @@ All subcommands support `--json`. `--path` defaults to current directory.
 
 ## xcforge defaults
 
-Manage persisted workflow defaults (project, scheme, simulator). Defaults are used by both MCP tools and CLI commands when explicit parameters are omitted.
+Manage persisted workflow defaults (project, scheme, simulator). Defaults are used by both MCP tools and CLI commands when explicit parameters are omitted. The store at `~/.xcforge/defaults.json` is **keyed by canonical project path** — each project on this machine has its own isolated record, so building App A in one directory cannot bleed `bundleId`/`appPath` into a session for App B.
 
 ### show (default subcommand)
 ```bash
 xcforge defaults           # Same as `xcforge defaults show`
-xcforge defaults show      # Display current persisted defaults
+xcforge defaults show      # Display active project's record + repo-config keys
 ```
+
+Surfaces the active project key, its persisted fields, any `.xcforge.yaml` keys (incl. `testTimeout`, `autoPromote`), and a note when a value was auto-promoted.
 
 ### set
 ```bash
@@ -602,6 +604,8 @@ xcforge defaults set --simulator "iPhone 16 Pro"
 xcforge defaults set --project MyApp.xcodeproj --scheme MyApp --simulator "iPhone 16 Pro"
 ```
 
+`set` writes into the **active project's record** (auto-resolved from cwd or `.xcforge.yaml`). If no project can be resolved, it warns and applies in-memory only.
+
 | Flag | Description |
 |------|-------------|
 | `--project <path>` | Default .xcodeproj or .xcworkspace path |
@@ -610,8 +614,15 @@ xcforge defaults set --project MyApp.xcodeproj --scheme MyApp --simulator "iPhon
 
 ### clear
 ```bash
-xcforge defaults clear     # Remove all persisted defaults
+xcforge defaults clear     # Clear ONLY the active project's record
+xcforge defaults clear --all  # Wipe every project's record on this machine
 ```
+
+`clear` (no `--all`) auto-resolves the active project before clearing; if no project can be detected from cwd, it reports that and exits cleanly without touching disk.
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Wipe every project's persisted record (the pre-v1.6.1 default behavior) |
 
 > `xcforge defaults` writes the machine-global `~/.xcforge/defaults.json`,
 > which is ranked **below** a repo's committed `.xcforge.yaml`. For repo-scoped
@@ -624,8 +635,8 @@ xcforge defaults clear     # Remove all persisted defaults
 
 Scaffold a documented, repo-scoped `.xcforge.yaml` at the git repo root (CWD if
 no `.git`). Pre-fills detected `project`/`scheme`/`simulator`; undetected keys
-are commented placeholders. Supports `configuration` and `testPlan` (repo-only)
-in addition to project/scheme/simulator.
+are commented placeholders. Supports `configuration`, `testPlan`, `testTimeout`,
+and `autoPromote` (all repo-only) in addition to project/scheme/simulator.
 
 ```bash
 xcforge init            # write .xcforge.yaml with detected values + comments

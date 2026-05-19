@@ -7,6 +7,11 @@ All test tools parse `.xcresult` bundles for structured results — no raw xcode
 > parameter precedence chain — a committed `.xcforge.yaml` (`configuration:` /
 > `testPlan:` / …) overrides the listed fallback when the parameter is omitted.
 > See [auto-detection.md](auto-detection.md).
+>
+> **Timeout note:** `timeoutSeconds` precedence is explicit arg > `.xcforge.yaml
+> testTimeout` > `--long`/`long: true` (1800s) > default 180s. Non-positive
+> values are rejected on both the explicit and the YAML path and fall through to
+> the next layer with a warning.
 
 ## test_sim
 
