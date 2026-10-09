@@ -145,6 +145,7 @@ enum ScreenshotTools {
       return " | appForeground:\(appForeground)"
     }()
     let trailing = readinessNote + fgNote
+    let landscape = await interfaceLandscape(env: env)
 
     let start = CFAbsoluteTimeGetCurrent()
 
@@ -157,6 +158,8 @@ enum ScreenshotTools {
         let udid = try await SimTools.resolveSimulator(sim, env: env)
         let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
         var image = try await VisualTools.captureCGImage(simulator: udid, env: env)
+        let capturedWidth = image.width
+        let capturedHeight = image.height
         let points = ScreenshotShaping.orientedPointSize(
           width: info.pointSize.width, height: info.pointSize.height, pixelWidth: image.width,
           pixelHeight: image.height)
@@ -176,7 +179,12 @@ enum ScreenshotTools {
         }
         let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
         let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
-        var parts = ["\(Int(points.width))×\(Int(points.height)) pt screen"]
+        let shown = ScreenshotShaping.interfacePointSize(
+          width: info.pointSize.width, height: info.pointSize.height, pixelWidth: capturedWidth,
+          pixelHeight: capturedHeight, interfaceLandscape: landscape)
+        let size = ScreenshotShaping.pointSizeText(
+          width: Int(shown.width), height: Int(shown.height), imageRotated: shown.imageRotated)
+        var parts = ["\(size) screen"]
         var shownPointWidth = points.width
         if let crop {
           parts.append("crop \(crop.description) pt")
@@ -216,10 +224,12 @@ enum ScreenshotTools {
         let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
         let ptInfo: String
         if let screenInfo {
-          let points = ScreenshotShaping.orientedPointSize(
+          let shown = ScreenshotShaping.interfacePointSize(
             width: screenInfo.pointSize.width, height: screenInfo.pointSize.height, pixelWidth: result.width,
-            pixelHeight: result.height)
-          ptInfo = "\(Int(points.width))×\(Int(points.height)) pt | "
+            pixelHeight: result.height, interfaceLandscape: landscape)
+          let size = ScreenshotShaping.pointSizeText(
+            width: Int(shown.width), height: Int(shown.height), imageRotated: shown.imageRotated)
+          ptInfo = "\(size) | "
         } else {
           ptInfo = result.pointWidth > 0 ? "\(result.pointWidth)×\(result.pointHeight) pt | " : ""
         }
@@ -234,19 +244,31 @@ enum ScreenshotTools {
       } catch {
         Log.warn("Inline screenshot failed, falling back to simctl: \(error)")
         return await simctlScreenshot(
-          sim: sim, format: format, start: start, trailing: trailing, screenInfo: screenInfo, env: env)
+          sim: sim, format: format, start: start, trailing: trailing, screenInfo: screenInfo,
+          landscape: landscape, env: env)
       }
     }
 
     return await simctlScreenshot(
-      sim: sim, format: format, start: start, trailing: trailing, screenInfo: screenInfo, env: env)
+      sim: sim, format: format, start: start, trailing: trailing, screenInfo: screenInfo, landscape: landscape,
+      env: env)
+  }
+
+  /// Whether the app's interface is landscape, asked of WDA only when it is already running
+  /// (a screenshot never starts WDA). Nil when unknown.
+  static func interfaceLandscape(env: Environment) async -> Bool? {
+    guard await env.wdaClient.isHealthy(), let value = try? await env.wdaClient.getOrientation() else {
+      return nil
+    }
+    let orientation = IndigoHIDClient.Orientation(wdaValue: value)
+    return orientation == .landscapeLeft || orientation == .landscapeRight
   }
 
   // MARK: - simctl Fallback (writes to file, returns path)
 
   private static func simctlScreenshot(
     sim: String, format: String, start: CFAbsoluteTime, trailing: String, screenInfo: SimTools.ScreenInfo?,
-    env: Environment
+    landscape: Bool?, env: Environment
   ) async -> CallTool.Result {
     let outputPath = ScreenshotShaping.uniquePath(format: format)
     do {
@@ -265,7 +287,15 @@ enum ScreenshotTools {
           defer { try? FileManager.default.removeItem(atPath: outputPath) }
           var ptInfo = ""
           if let screenInfo {
-            ptInfo = "\(Int(screenInfo.pointSize.width))×\(Int(screenInfo.pointSize.height)) pt | "
+            let pixels = CGImageSourceCreateWithData(data as CFData, nil).flatMap {
+              CGImageSourceCreateImageAtIndex($0, 0, nil)
+            }
+            let shown = ScreenshotShaping.interfacePointSize(
+              width: screenInfo.pointSize.width, height: screenInfo.pointSize.height,
+              pixelWidth: pixels?.width ?? 0, pixelHeight: pixels?.height ?? 1, interfaceLandscape: landscape)
+            let size = ScreenshotShaping.pointSizeText(
+              width: Int(shown.width), height: Int(shown.height), imageRotated: shown.imageRotated)
+            ptInfo = "\(size) | "
           } else if #available(macOS 14.0, *) {
             if let window = try? await FramebufferCapture.findSimulatorWindow(simulator: sim) {
               let ptW = Int(window.frame.width)

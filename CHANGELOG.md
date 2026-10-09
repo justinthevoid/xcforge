@@ -109,6 +109,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Screenshots report the device's point size, not the Simulator window's, and the fallback writes a new file per capture instead of one shared `/tmp` file; CLI `screenshot capture` writes a new file unless `--output` is given
 
 ### Fixed
+- UI commands no longer boot a shut-down simulator to start WebDriverAgent (xcodebuild did this, leaving two simulators running and exhausting memory on small Macs). They fail with "Simulator <name> is shutdown; boot it first" and name any simulator already booted
+- `hid: true` taps and swipes no longer report "via IndigoHID" on Xcode 27, where the events are sent but never reach the app. HID is off there for now and WDA is used, with "HID is not yet supported on Xcode 27, used WDA" in the result (`XCFORGE_FORCE_HID=1` tries HID anyway). The HID screen-size table now knows the iPhone 16 Pro, iPhone 17 family and iPhone Air
+- `wda start` reports a busy port on the device ("Unable to start web server") at once with a `--port` hint instead of timing out, prints its errors as JSON under `--json`, and builds into the configured DerivedData folder (`--derived-data-path`, `XCFORGE_DERIVED_DATA_PATH`, `.xcforge.yaml`)
+- Starting or restarting the simulator WebDriverAgent stops any xcforgeWDA runner already on that simulator first, so two XCTest sessions can't run at once and kill the app under test. A restart now waits up to 60s before rebuilding
+- `ui source --format list` prints the flat element listing (as `get_source format: list` does); unknown formats are rejected up front with the valid ones
+- `ui tap` and other HID input no longer crash (SIGSEGV) on Xcode 27: SimulatorKit's `lookup:error:` returns a mach port, not an object, and is now called by its real signature. An unexpected signature is an error, not a crash
+- Screenshots of a landscape app report landscape point sizes even though the simulator framebuffer stays portrait (orientation read from WDA when it is running)
 - `build typecheck --target` works with a configured DerivedData folder: `-target` builds use SYMROOT/OBJROOT inside it instead of `-derivedDataPath`, which xcodebuild rejects. An xcodebuild usage error is reported as `xcodebuild_usage`, not a compile failure
 - Coordinate taps and swipes use HID input on Xcode 27, which moved SimulatorKit to `Contents/SharedFrameworks`. When they fall back to WDA the result says why HID wasn't used
 - Launches watch the app for 8s (was 2s) and wait up to 15s for a late crash report; an exit without a report says how long after launch it died and where reports land

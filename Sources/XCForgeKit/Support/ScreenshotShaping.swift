@@ -96,6 +96,28 @@ public enum ScreenshotShaping {
     return imageLandscape == sizeLandscape ? (width, height) : (height, width)
   }
 
+  /// The point size an agent taps in: the interface's orientation when WDA knows it, else the
+  /// image's. The simulator framebuffer stays portrait when the app rotates, so a landscape app
+  /// captures as a portrait image; `imageRotated` says so.
+  public static func interfacePointSize(
+    width: Double, height: Double, pixelWidth: Int, pixelHeight: Int, interfaceLandscape: Bool?
+  ) -> (width: Double, height: Double, imageRotated: Bool) {
+    let image = orientedPointSize(width: width, height: height, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
+    guard let interfaceLandscape else { return (image.width, image.height, false) }
+    let long = max(width, height)
+    let short = min(width, height)
+    let imageLandscape = pixelWidth > pixelHeight
+    return interfaceLandscape
+      ? (long, short, !imageLandscape)
+      : (short, long, imageLandscape)
+  }
+
+  /// "402×874 pt", plus a note when the image is turned relative to the interface.
+  public static func pointSizeText(width: Int, height: Int, imageRotated: Bool) -> String {
+    let size = "\(width)×\(height) pt"
+    return imageRotated ? size + " (interface rotated; image is in framebuffer orientation)" : size
+  }
+
   /// How many device points one output pixel covers, for mapping a downscaled image back to taps.
   public static func pointsPerPixel(outputWidth: Int, croppedPointWidth: Double) -> Double {
     guard outputWidth > 0 else { return 0 }

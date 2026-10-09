@@ -193,7 +193,8 @@ enum UITools {
           ]),
           "hid": .object([
             "type": .string("boolean"),
-            "description": .string("Swipe with native HID events on a simulator (bypasses WDA, falls back to it)."),
+            "description": .string(
+              "Swipe with native HID events on a simulator (falls back to WDA; not yet supported on Xcode 27)."),
           ]),
         ]),
         "required": .array([
@@ -1763,6 +1764,7 @@ enum UITools {
     case .failure(let err): return err
     case .success(let input):
       let format = input.format ?? "json"
+      if let problem = WDAClient.sourceFormatProblem(format) { return .fail(problem) }
 
       do {
         let start = CFAbsoluteTimeGetCurrent()
@@ -1910,5 +1912,12 @@ extension UITools: ToolProvider {
     case "clipboard_set": return await clipboardSet(args, wdaClient: env.wdaClient)
     default: return nil
     }
+  }
+}
+
+/// The flat element listing behind `list_elements`, for the CLI's `ui source --format list`.
+public enum UIElementListing {
+  public static func render(env: Environment) async throws -> (body: String, count: Int, source: String) {
+    try await UITools.renderListing(scope: nil, env: env)
   }
 }

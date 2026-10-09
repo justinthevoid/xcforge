@@ -250,8 +250,9 @@ public actor WDAClient {
         throw WDAError.wdaRestart("xcforgeWDA has not been built yet")
       }
       await cleanupWDAProcesses(simulator: simulator)
-      startRunner(xctestrun: xctestrun, udid: await resolveSimulatorUDID(simulator))
-      for _ in 0..<30 {
+      await startRunner(xctestrun: xctestrun, udid: await resolveSimulatorUDID(simulator))
+      // A loaded Mac can take well over 15s to bring the runner back.
+      for _ in 0..<120 {
         try await Task.sleep(nanoseconds: 500_000_000)
         if await isHealthy() {
           sessionId = nil
@@ -259,7 +260,7 @@ public actor WDAClient {
           return
         }
       }
-      throw WDAError.wdaRestart("xcforgeWDA did not become ready within 15s after restart")
+      throw WDAError.wdaRestart("xcforgeWDA did not become ready within 60s after restart")
     }
     let bid = backend.bundleId
     // Kill any lingering WDA process
@@ -408,7 +409,7 @@ public actor WDAClient {
       return false
     }
 
-    startRunner(xctestrun: xctestrun, udid: udid)
+    await startRunner(xctestrun: xctestrun, udid: udid)
 
     // Step 3: Poll for server readiness. The first start installs the runner on the
     // simulator, which takes well over 30s on a loaded Mac.
@@ -451,8 +452,8 @@ public actor WDAClient {
 
   /// Start the xcforgeWDA runner on `udid` from a built test run, listening on this
   /// client's port. It runs until stopped; there is no time cap.
-  private func startRunner(xctestrun: String, udid: String) {
-    deployTask?.cancel()
+  private func startRunner(xctestrun: String, udid: String) async {
+    await stopRunners(udid: udid)
     let testArgs = [
       "xcodebuild", "test-without-building",
       "-xctestrun", xctestrun,
@@ -467,6 +468,23 @@ public actor WDAClient {
           "/usr/bin/xcrun", arguments: testArgs, environment: environment, timeout: Self.runnerLifetime)
       }
     }
+  }
+
+  /// Stop every xcforgeWDA runner (`xcodebuild test-without-building`) on `udid`, from this
+  /// process or another one. A second XCTest session on the same simulator kills the app
+  /// under test, so a start or restart must never leave the old runner behind.
+  private func stopRunners(udid: String) async {
+    deployTask?.cancel()
+    deployTask = nil
+    let pattern = Self.runnerPattern(udid: udid)
+    let killed = try? await Shell.run("/usr/bin/pkill", arguments: ["-TERM", "-f", pattern], timeout: 5)
+    // pkill exits 0 when it signalled something; give the runner a moment to go.
+    if killed?.exitCode == 0 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+  }
+
+  /// `pkill -f` pattern for an xcforgeWDA runner on `udid`.
+  static func runnerPattern(udid: String) -> String {
+    "test-without-building -xctestrun .*xcforgeWDA.* -destination id=\(udid)"
   }
 
   /// How long a runner may live: effectively unlimited (30 days).
@@ -534,6 +552,37 @@ public actor WDAClient {
     return simulator
   }
 
+  /// Why WDA can't be started on `simulator` without booting it, or nil when it is booted
+  /// (or its state can't be read).
+  private func simulatorNotBootedProblem(_ simulator: String) async -> String? {
+    let udid = await resolveSimulatorUDID(simulator)
+    guard let result = try? await Shell.xcrun(timeout: 15, "simctl", "list", "devices", "-j"),
+      result.succeeded, let data = result.stdout.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    return Self.notBootedProblem(udid: udid, listJSON: json)
+  }
+
+  /// The error for a simulator that isn't booted, naming any simulator that is. Nil when
+  /// `udid` is booted or isn't in the list.
+  static func notBootedProblem(udid: String, listJSON: [String: Any]) -> String? {
+    guard let runtimes = listJSON["devices"] as? [String: [[String: Any]]] else { return nil }
+    let devices = runtimes.values.flatMap { $0 }
+    guard let target = devices.first(where: { $0["udid"] as? String == udid }) else { return nil }
+    let state = target["state"] as? String ?? "unknown"
+    if state == "Booted" { return nil }
+    let name = target["name"] as? String ?? udid
+    let others = devices.filter { $0["state"] as? String == "Booted" }.compactMap { $0["name"] as? String }
+    var message =
+      "Simulator \(name) (\(udid)) is \(state.lowercased()); boot it first (`xcrun simctl boot \(udid)`). "
+      + "xcforge doesn't boot simulators for UI commands."
+    if !others.isEmpty {
+      message += " Already booted: \(others.joined(separator: ", ")). Use it with --simulator, "
+        + "or shut it down first: two booted simulators can exhaust memory on a small Mac."
+    }
+    return message
+  }
+
   /// Health-check with auto-restart and fallback chain.
   /// Always tries in fixed order: healthy? → restart current → deploy xcforgeWDA → fallback Original WDA.
   /// H1 fix: Backend state is only updated AFTER confirming which backend is actually running.
@@ -544,6 +593,12 @@ public actor WDAClient {
 
     // A device runner can't be restarted from here; say what to do instead.
     if isRemote { throw WDAError.remoteNotResponding(baseURL) }
+
+    // Starting the runner with xcodebuild boots a shut-down simulator, and a second booted
+    // simulator can exhaust a small Mac's memory. Refuse instead of booting.
+    if let problem = await simulatorNotBootedProblem(simulator) {
+      throw WDAError.simulatorNotBooted(problem)
+    }
 
     // 2. Try restarting current backend
     do {
@@ -1199,13 +1254,24 @@ public actor WDAClient {
 
   // MARK: - View Hierarchy
 
+  /// Formats WDA's `/source` accepts. `list` is xcforge's flat element listing, handled by callers.
+  public static let sourceFormats = ["json", "xml", "description"]
+
+  /// Why `format` can't be used for a source request, or nil when it can.
+  public static func sourceFormatProblem(_ format: String) -> String? {
+    let lower = format.lowercased()
+    if sourceFormats.contains(lower) || lower == "list" { return nil }
+    return "Unknown source format '\(format)'. Use one of: \((sourceFormats + ["list"]).joined(separator: ", "))."
+  }
+
   public func getSource(format: String = "json") async throws -> String {
+    if let problem = Self.sourceFormatProblem(format) { throw WDAError.invalidResponse(problem) }
     // getSource bypasses session management, so start WDA here like find_element does.
     let healthy = await isHealthy()
     if !healthy {
       try await ensureWDARunning()
     }
-    let (data, statusCode) = try await request(method: "GET", path: "/source?format=\(format)")
+    let (data, statusCode) = try await request(method: "GET", path: "/source?format=\(format.lowercased())")
     guard statusCode < 400 else {
       throw WDAError.invalidResponse("Source request failed with status \(statusCode)")
     }
@@ -1367,6 +1433,7 @@ enum WDAError: Error, CustomStringConvertible {
   case wdaNotResponding
   case noBackendAvailable(String?)
   case remoteNotResponding(String)
+  case simulatorNotBooted(String)
 
   var description: String {
     switch self {
@@ -1383,6 +1450,7 @@ enum WDAError: Error, CustomStringConvertible {
     case .noBackendAvailable(nil):
       return
         "No WDA backend available. Neither xcforgeWDA nor Original WDA could be started. Install xcforgeWDA or start WebDriverAgent."
+    case .simulatorNotBooted(let msg): return msg
     case .remoteNotResponding(let url):
       return "WebDriverAgent at \(url) is not responding. Start it with `xcforge wda start --device <udid>` "
         + "(MCP: wda_start). If it was running: unlock the device, check Settings > Developer > "

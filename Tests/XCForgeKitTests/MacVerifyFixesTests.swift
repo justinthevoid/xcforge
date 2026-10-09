@@ -137,6 +137,101 @@ struct MacVerifyFixesTests {
     #expect(portrait.width == 402 && portrait.height == 874)
   }
 
+  @Test("lookup:error: return types are read from the method encoding")
+  func lookupReturnEncoding() {
+    #expect(IndigoHIDClient.lookupReturn(encoding: "I") == .machPort)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "rI") == .machPort)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "@") == .object)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "v") == nil)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "") == nil)
+  }
+
+  @Test("point sizes follow the interface, not the portrait framebuffer")
+  func interfacePointSize() {
+    let rotated = ScreenshotShaping.interfacePointSize(
+      width: 402, height: 874, pixelWidth: 1206, pixelHeight: 2622, interfaceLandscape: true)
+    #expect(rotated.width == 874 && rotated.height == 402 && rotated.imageRotated)
+    let portrait = ScreenshotShaping.interfacePointSize(
+      width: 402, height: 874, pixelWidth: 1206, pixelHeight: 2622, interfaceLandscape: false)
+    #expect(portrait.width == 402 && portrait.height == 874 && !portrait.imageRotated)
+    let unknown = ScreenshotShaping.interfacePointSize(
+      width: 402, height: 874, pixelWidth: 2622, pixelHeight: 1206, interfaceLandscape: nil)
+    #expect(unknown.width == 874 && !unknown.imageRotated)
+    #expect(ScreenshotShaping.pointSizeText(width: 874, height: 402, imageRotated: true).contains("interface rotated"))
+    #expect(ScreenshotShaping.pointSizeText(width: 402, height: 874, imageRotated: false) == "402×874 pt")
+  }
+
+  // MARK: - second recheck
+
+  @Test("a busy WDA port on the device is reported with a --port hint")
+  func wdaPortInUse() {
+    let log = "t = 3.2s Unable to start web server on port 8100: Address already in use\n"
+    let message = DeviceWDA.portInUse(log: log, port: 8100)
+    #expect(message?.contains("--port 8101") == true)
+    #expect(DeviceWDA.portInUse(log: "ServerURLHere->http://10.0.0.2:8100<-ServerURLHere", port: 8100) == nil)
+  }
+
+  @Test("device WDA builds into the configured DerivedData folder")
+  func wdaBuildDirectory() {
+    #expect(DeviceWDA.buildDirectory(udid: "U1", configured: "/tmp/dd") == "/tmp/dd")
+    #expect(DeviceWDA.buildDirectory(udid: "U1", configured: nil).hasSuffix("build-U1"))
+    #expect(DeviceWDA.buildDirectory(udid: "U1", configured: "").hasSuffix("build-U1"))
+  }
+
+  @Test("the runner pattern matches xcforgeWDA on that simulator only")
+  func runnerPattern() throws {
+    let regex = try NSRegularExpression(pattern: WDAClient.runnerPattern(udid: "AAAA-1111"))
+    func matches(_ line: String) -> Bool {
+      regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
+    }
+    let products = "/Users/j/Library/Developer/Xcode/DerivedData/xcforgeWDA-deploy/Build/Products"
+    let runner = "xcodebuild test-without-building -xctestrun \(products)/xcforgeWDARunner_x.xctestrun"
+    #expect(matches(runner + " -destination id=AAAA-1111"))
+    #expect(!matches(runner + " -destination id=BBBB-2222"))
+    #expect(!matches("xcodebuild test-without-building -xctestrun /dd/App_x.xctestrun -destination id=AAAA-1111"))
+  }
+
+  @Test("unknown ui source formats are rejected with the valid ones")
+  func sourceFormats() {
+    #expect(WDAClient.sourceFormatProblem("json") == nil)
+    #expect(WDAClient.sourceFormatProblem("XML") == nil)
+    #expect(WDAClient.sourceFormatProblem("list") == nil)
+    let problem = WDAClient.sourceFormatProblem("yaml")
+    #expect(problem?.contains("json, xml, description, list") == true)
+  }
+
+  @Test("HID is off on Xcode 27 and on before it")
+  func hidSupportedByXcode() {
+    #expect(IndigoHIDClient.hidSupported(xcodeMajor: 26))
+    #expect(!IndigoHIDClient.hidSupported(xcodeMajor: 27))
+    #expect(IndigoHIDClient.hidSupported(xcodeMajor: nil))
+  }
+
+  @Test("HID screen sizes cover the iPhone 17 family")
+  func hidScreenSizes() {
+    let prefix = "com.apple.CoreSimulator.SimDeviceType."
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-17").width == 402)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-17-Pro").height == 874)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-17-Pro-Max").width == 440)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-Air").width == 420)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-16").width == 390)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-15-Pro").width == 393)
+  }
+
+  @Test("UI commands refuse to boot a shut-down simulator and name the booted one")
+  func notBootedProblem() {
+    let devices: [[String: Any]] = [
+      ["udid": "A", "name": "iPhone 17", "state": "Shutdown"],
+      ["udid": "B", "name": "iPhone 18 Pro Max", "state": "Booted"],
+    ]
+    let list: [String: Any] = ["devices": ["iOS-27-0": devices]]
+    let problem = WDAClient.notBootedProblem(udid: "A", listJSON: list)
+    #expect(problem?.contains("iPhone 17 (A) is shutdown; boot it first") == true)
+    #expect(problem?.contains("Already booted: iPhone 18 Pro Max") == true)
+    #expect(WDAClient.notBootedProblem(udid: "B", listJSON: list) == nil)
+    #expect(WDAClient.notBootedProblem(udid: "Z", listJSON: list) == nil)
+  }
+
   @Test("set_orientation takes a simulator")
   func orientationTakesSimulator() {
     #expect(UITarget.toolNames.contains("set_orientation"))
