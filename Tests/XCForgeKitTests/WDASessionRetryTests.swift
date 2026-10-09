@@ -84,6 +84,8 @@ final class StubWDAProtocol: URLProtocol, @unchecked Sendable {
 
 /// Run `body` with `StubWDAProtocol` registered globally; reset state on entry/exit.
 private func withStubbedWDA<T>(_ body: () async throws -> T) async rethrows -> T {
+  await WDAStubGate.shared.acquire()
+  defer { WDAStubGate.shared.releaseSoon() }
   StubWDAProtocol.reset()
   URLProtocol.registerClass(StubWDAProtocol.self)
   defer {

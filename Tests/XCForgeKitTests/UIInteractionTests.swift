@@ -89,6 +89,8 @@ private func makeStubbedClient() async -> WDAClient {
 }
 
 private func withStubbedWDA<T>(_ body: () async throws -> T) async rethrows -> T {
+  await WDAStubGate.shared.acquire()
+  defer { WDAStubGate.shared.releaseSoon() }
   StubWDAUITap.reset()
   URLProtocol.registerClass(StubWDAUITap.self)
   defer {
