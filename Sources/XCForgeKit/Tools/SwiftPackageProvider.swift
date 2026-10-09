@@ -12,7 +12,8 @@ public enum SwiftPackageTools {
           "path": .object([
             "type": .string("string"),
             "description": .string(
-              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."),
+              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."
+            ),
           ]),
           "configuration": .object([
             "type": .string("string"),
@@ -31,7 +32,8 @@ public enum SwiftPackageTools {
           "path": .object([
             "type": .string("string"),
             "description": .string(
-              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."),
+              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."
+            ),
           ]),
           "filter": .object([
             "type": .string("string"),
@@ -54,7 +56,8 @@ public enum SwiftPackageTools {
           "path": .object([
             "type": .string("string"),
             "description": .string(
-              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."),
+              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."
+            ),
           ]),
           "executable": .object([
             "type": .string("string"),
@@ -77,7 +80,8 @@ public enum SwiftPackageTools {
           "path": .object([
             "type": .string("string"),
             "description": .string(
-              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."),
+              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."
+            ),
           ])
         ]),
       ])
@@ -91,7 +95,8 @@ public enum SwiftPackageTools {
           "path": .object([
             "type": .string("string"),
             "description": .string(
-              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."),
+              "Folder containing Package.swift. Default: .xcforge.yaml packagePath, the current folder, or the only package in the repo."
+            ),
           ])
         ]),
       ])
