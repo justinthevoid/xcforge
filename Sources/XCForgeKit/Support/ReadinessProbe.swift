@@ -253,7 +253,8 @@ public enum ReadinessProbe {
     let startNs = DispatchTime.now().uptimeNanoseconds
     let deadline = startNs + UInt64(clamped * 1_000_000_000)
 
-    let axpUsable = AXPBridge.isAvailable
+    // Simulator.app's accessibility tree can't tell simulators apart: only with one booted.
+    let axpUsable = await UITools.axpTargetsSimulator(env: env)
     // Track whether AXP/WDA detectors were ever *exercised functionally*
     // across ALL evaluated signals — not just the ones that held. A signal
     // that fails must not hide the fact that a detector was actually working,

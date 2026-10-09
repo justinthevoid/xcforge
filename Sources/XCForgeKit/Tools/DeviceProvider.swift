@@ -800,7 +800,7 @@ extension DeviceTools: ToolProvider {
         let state = DeviceWDA.load(device: input.device)
         await DeviceWDA.stop(device: input.device, env: env)
         if let state, await env.wdaClient.getBaseURL() == state.url {
-          await env.wdaClient.setBaseURL("http://localhost:8100")
+          await env.wdaClient.useSimulators()
         }
         return .ok(
           state == nil

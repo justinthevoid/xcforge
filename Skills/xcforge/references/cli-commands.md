@@ -347,6 +347,11 @@ xcforge sim location-reset                       # Clear GPS override
 xcforge sim appearance --appearance dark         # Set light/dark mode
 xcforge sim statusbar --time "9:41" --battery-level 100  # Override status bar
 xcforge sim statusbar-clear                      # Restore default status bar
+xcforge sim content-size accessibility-large     # Dynamic Type size (prints the old one)
+xcforge sim locale fr_FR                         # Locale + language (relaunch the app to apply)
+xcforge sim container --container data           # App container path (last built app)
+xcforge sim push '{"aps":{"alert":"Hi"}}'        # Deliver a push notification
+xcforge sim privacy grant photos                 # Grant a permission before the app asks
 ```
 
 All subcommands support `--json`. `install`, `launch`, `terminate` auto-detect simulator and bundle ID from session state.
@@ -445,7 +450,9 @@ Capture simulator screenshots and manage visual baselines. Three subcommands —
 
 ```bash
 xcforge screenshot                               # Same as `xcforge screenshot capture`
-xcforge screenshot capture                       # Capture to /tmp/xcforge-screenshot.png
+xcforge screenshot capture                       # Capture to a new temp file (path printed)
+xcforge screenshot capture --max-dimension 800   # Smaller image for a quick look
+xcforge screenshot capture --crop 0,100,390,200  # One area, in device points
 xcforge screenshot capture --format jpeg --output /path/to/file.jpeg
 xcforge screenshot capture --grid                # Include point-coordinate grid overlay
 xcforge screenshot baseline --name login-screen  # Save as named baseline
@@ -497,9 +504,8 @@ UI automation via WebDriverAgent. 17 subcommands — `status` is the default.
 xcforge ui status                                # Check WDA health
 xcforge ui session                               # Create WDA session
 xcforge ui session --bundle-id com.app.id        # Bind session to app — verifies CFBundleIdentifier
-xcforge ui ls                                    # Flat element list — auto picks WDA when sim is booted
-xcforge ui ls --source wda                       # Force WDA (iOS app tree); use this if sheets aren't visible
-xcforge ui ls --source axp                       # Force macOS Accessibility (Simulator.app chrome)
+xcforge ui ls                                    # Flat element list (WDA; started when needed)
+xcforge ui ls --source axp                       # macOS Accessibility tree of the one booted simulator
 xcforge ui ls --scope home.drawer.root           # Restrict to a11y-id and its descendants
 xcforge ui find --using "accessibility id" --value "Save"
 xcforge ui find --using "accessibility id" --value "Save" --scroll
@@ -516,6 +522,9 @@ xcforge ui pinch --center-x 200 --center-y 400 --scale 2.0
 xcforge ui drag --from-x 100 --from-y 200 --to-x 300 --to-y 400
 xcforge ui type --text "hello world"
 xcforge ui type --text "hello" --element-id <id> --clear-first
+xcforge ui type --text "secret" --secure --key return   # Redacted, then press return
+xcforge ui type --dismiss-keyboard
+XCFORGE_SIMULATOR="iPhone 16" xcforge ui tap --x 200 --y 400   # Drive a specific simulator
 xcforge ui get-text --element-id <id>
 xcforge ui source                                # Full view hierarchy (JSON)
 xcforge ui source --format xml

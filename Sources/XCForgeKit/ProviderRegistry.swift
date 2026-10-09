@@ -45,7 +45,8 @@ public enum ToolRegistry {
   }
 
   public static var allTools: [Tool] {
-    var tools = activeProviders.flatMap { $0.tools }.map(XcodebuildOptions.augment)
+    var tools = activeProviders.flatMap { $0.tools }
+      .map(XcodebuildOptions.augment).map(UITarget.augment).map(UIWait.augment)
     // Always include the tool_groups management tool
     tools.append(toolGroupsTool)
     assert(
@@ -68,6 +69,7 @@ public enum ToolRegistry {
     let options =
       XcodebuildOptions.mcpToolNames.contains(name)
       ? XcodebuildOptions.fromMCPArguments(args) : XcodebuildOptions()
+    await UITarget.select(for: name, args: args, env: env)
     let result = await XcodebuildOptions.$current.withValue(options) { () async -> CallTool.Result? in
       for provider in activeProviders {
         if let result = await provider.dispatch(name, args, env: env) {
@@ -76,7 +78,10 @@ public enum ToolRegistry {
       }
       return nil
     }
-    if let result { return await withNotes(result, tool: name, env: env) }
+    if let result {
+      let waited = await UIWait.afterAction(result, tool: name, args: args, env: env)
+      return await withNotes(waited, tool: name, env: env)
+    }
     Log.warn("Unknown tool: \(name)")
     return .fail("Unknown tool: \(name)")
   }

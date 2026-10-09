@@ -179,7 +179,8 @@ public final class PlanExecutor: Sendable {
             let rect = try await wdaClient.getElementRect(elementId: eid)
             let cx = rect.x + rect.width / 2
             let cy = rect.y + rect.height / 2
-            try await IndigoHIDClient.shared.tap(x: cx, y: cy)
+            let (sim, orientation) = await hidTarget(wdaClient)
+            try await IndigoHIDClient.shared.tap(x: cx, y: cy, simulator: sim, orientation: orientation)
             return .result(
               .passed, detail: "Clicked \(targetDescription(target)) (indigo)", screenshot: nil)
           } catch {
@@ -200,7 +201,8 @@ public final class PlanExecutor: Sendable {
         // IndigoHID fast-path
         if IndigoHIDClient.isAvailable {
           do {
-            try await IndigoHIDClient.shared.doubleTap(x: cx, y: cy)
+            let (sim, orientation) = await hidTarget(wdaClient)
+            try await IndigoHIDClient.shared.doubleTap(x: cx, y: cy, simulator: sim, orientation: orientation)
             return .result(
               .passed, detail: "Double-tapped \(targetDescription(target)) (indigo)",
               screenshot: nil)
@@ -224,7 +226,9 @@ public final class PlanExecutor: Sendable {
         // IndigoHID fast-path
         if IndigoHIDClient.isAvailable {
           do {
-            try await IndigoHIDClient.shared.longPress(x: cx, y: cy, durationMs: dur)
+            let (sim, orientation) = await hidTarget(wdaClient)
+            try await IndigoHIDClient.shared.longPress(
+              x: cx, y: cy, durationMs: dur, simulator: sim, orientation: orientation)
             return .result(
               .passed, detail: "Long-pressed \(targetDescription(target)) (indigo)", screenshot: nil
             )
@@ -247,8 +251,9 @@ public final class PlanExecutor: Sendable {
         // IndigoHID fast-path for swipe
         if IndigoHIDClient.isAvailable {
           do {
+            let (sim, orientation) = await hidTarget(wdaClient)
             try await IndigoHIDClient.shared.swipe(
-              startX: sx, startY: sy, endX: ex, endY: ey, durationMs: dur
+              startX: sx, startY: sy, endX: ex, endY: ey, durationMs: dur, simulator: sim, orientation: orientation
             )
             _ = target
             return .result(.passed, detail: "Swiped \(direction) (indigo)", screenshot: nil)
@@ -267,10 +272,10 @@ public final class PlanExecutor: Sendable {
           let eid = try await variables.resolveTarget(t, wdaClient: wdaClient)
           try await wdaClient.setValue(elementId: eid, text: text)
         } else {
-          // Type into currently focused element
-          let (eid, _) = try await wdaClient.findElement(
-            using: "class name", value: "XCUIElementTypeTextField"
-          )
+          // Type into the focused field; there may be several text fields.
+          guard let eid = try await wdaClient.activeElementId() else {
+            return .result(.failed, detail: "No field has keyboard focus; give typeText a target", screenshot: nil)
+          }
           try await wdaClient.setValue(elementId: eid, text: text)
         }
         return .result(
@@ -402,6 +407,12 @@ public final class PlanExecutor: Sendable {
     case .judge: return "judge"
     case .handleUnexpected: return "handleUnexpected"
     }
+  }
+
+  /// The simulator WebDriverAgent targets and its interface orientation, so a direct HID touch
+  /// lands on the same screen, the right way up.
+  private func hidTarget(_ wdaClient: WDAClient) async -> (String, IndigoHIDClient.Orientation) {
+    (await wdaClient.getTargetSimulator(), await UITools.hidOrientation(wdaClient: wdaClient))
   }
 
   private func swipeCoordinates(direction: String, width: Double, height: Double) -> (

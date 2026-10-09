@@ -745,56 +745,43 @@ struct UIDrag: AsyncParsableCommand {
 struct UIType: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "type",
-    abstract: "Type text into the currently focused element or a specified element."
+    abstract: "Type into the focused field or an element, press a key, or dismiss the keyboard."
   )
 
   @Option(help: "Text to type.")
-  var text: String
+  var text: String?
 
-  @Option(help: "Optional element ID to type into.")
+  @Option(help: "Element ID to type into. Default: the field with keyboard focus.")
   var elementId: String?
 
   @Flag(help: "Clear existing text first.")
   var clearFirst = false
+
+  @Option(help: "Key to press after the text: return, delete, tab or escape.")
+  var key: String?
+
+  @Flag(help: "Dismiss the keyboard afterwards.")
+  var dismissKeyboard = false
+
+  @Flag(help: "Don't echo the text, even outside a secure field.")
+  var secure = false
 
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    let env = Environment.live
-    do {
-      if let eid = elementId {
-        if clearFirst {
-          try await env.wdaClient.clearElement(elementId: eid)
-        }
-        try await env.wdaClient.setValue(elementId: eid, text: text)
-      } else {
-        _ = try await env.wdaClient.ensureSession()
-        let (eid, _) = try await env.wdaClient.findElement(
-          using: "class name", value: "XCUIElementTypeTextField")
-        if clearFirst {
-          try await env.wdaClient.clearElement(elementId: eid)
-        }
-        try await env.wdaClient.setValue(elementId: eid, text: text)
-      }
-      let message = "Typed '\(text)'"
-      if useJSON {
-        print(
-          try WorkflowJSONRenderer.renderJSON(
-            UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
-      } else {
-        print(message)
-      }
-    } catch {
-      let message = "Type failed: \(error)"
-      if useJSON {
-        print(
-          try WorkflowJSONRenderer.renderJSON(
-            UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
-      } else {
-        print(message)
-      }
+    let (succeeded, message) = await xcforgeTypeText(
+      text: text, elementId: elementId, clearFirst: clearFirst, key: key, dismissKeyboard: dismissKeyboard,
+      secure: secure, env: Environment.live)
+    if useJSON {
+      print(
+        try WorkflowJSONRenderer.renderJSON(
+          UIResult(succeeded: succeeded, message: message, elementId: elementId, elementCount: nil)))
+    } else {
+      print(message)
+    }
+    if !succeeded {
       throw ExitCode.failure
     }
   }

@@ -9,6 +9,14 @@ Take a simulator screenshot. 0.3s latency — 44x faster than alternatives.
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 | `format` | No | jpeg | Image format: `png` or `jpeg` |
 | `grid` | No | false | Overlay a point-coordinate grid on the image |
+| `crop` | No | — | `x,y,width,height` in device points (the coordinates taps use) |
+| `max_dimension` | No | — | Shrink so the longer side is at most this many pixels |
+| `waitFor` / `timeout` | No | — | Readiness signal to wait for before capturing |
+
+**Token budget.** A full-resolution iPhone screenshot costs several thousand tokens. Pass
+`max_dimension: 800` for a look at the screen, and `crop` to see one area at full detail. The
+result line gives the device's point size, the crop, the output pixels and, when scaled, how
+many points one pixel covers, so coordinates read off the image map back to taps.
 
 **3-tier capture strategy:**
 1. **Burst** — native CoreSimulator IOSurface framebuffer access (~10ms)
@@ -17,7 +25,10 @@ Take a simulator screenshot. 0.3s latency — 44x faster than alternatives.
 
 **Grid overlay:** When `grid: true`, overlays a transparent grid with 50pt minor lines and 100pt labeled divisions. Displays both X and Y axis labels at 100pt intervals. Falls back to ungridded image with a warning if overlay allocation fails.
 
-**Returns:** Inline base64 image + metadata (resolution, byte size, capture method).
+**Returns:** Inline base64 image + metadata: device size in points (from the simulator's
+screen, not the Simulator window), pixel size, byte size, capture method. The CLI
+(`xcforge screenshot capture`, with `--crop` and `--max-dimension`) writes a new file per capture
+unless `--output` is given.
 
 Use `jpeg` (default) for fastest transfer. Use `png` for pixel-perfect visual regression baselines. Use `grid: true` for coordinate verification during layout work or UI automation scripting.
 

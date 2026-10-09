@@ -73,8 +73,14 @@ struct ScreenshotCapture: AsyncParsableCommand {
   @Option(help: "Image format: png or jpeg. Default: png")
   var format: String = "png"
 
-  @Option(help: "Output file path. Default: /tmp/xcforge-screenshot.<format>")
+  @Option(help: "Output file path. Default: a new file in the temp directory, printed in the result.")
   var output: String?
+
+  @Option(help: "Region to keep, as x,y,width,height in device points (the coordinates taps use).")
+  var crop: String?
+
+  @Option(name: .customLong("max-dimension"), help: "Shrink the image so its longer side is at most this many pixels.")
+  var maxDimension: Int?
 
   @Flag(
     help:
@@ -100,7 +106,17 @@ struct ScreenshotCapture: AsyncParsableCommand {
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    let output = self.output ?? "/tmp/xcforge-screenshot.\(format)"
+    let output = self.output ?? ScreenshotShaping.uniquePath(format: format)
+    var cropRect: ScreenshotShaping.PointRect?
+    if let crop {
+      guard let parsed = ScreenshotShaping.parseCrop(crop) else {
+        throw ValidationError(ScreenshotShaping.cropFormatHelp)
+      }
+      cropRect = parsed
+    }
+    if let maxDimension, maxDimension < ScreenshotShaping.minimumDimension {
+      throw ValidationError("--max-dimension must be at least \(ScreenshotShaping.minimumDimension)")
+    }
 
     let env = Environment.live
     let sim = try await env.session.resolveSimulator(simulator)
@@ -126,53 +142,30 @@ struct ScreenshotCapture: AsyncParsableCommand {
     // unreachable (omitted from JSON — shape unchanged for legacy callers).
     let appForeground = await WDASessionRepair.appForeground(requested: nil, env: env)
 
-    if grid {
-      // Capture CGImage → overlay → encode → write. On any failure, fall back
-      // to the standard capture path and emit a warning.
-      do {
-        let udid = try await SimTools.resolveSimulator(sim, env: env)
-        let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
-        let cg = try await VisualTools.captureCGImage(simulator: udid, env: env)
-        guard
-          let gridded = xcforgeDrawPointGrid(
-            on: cg,
-            pointWidth: info.pointSize.width,
-            pointHeight: info.pointSize.height,
-            scale: info.scale
-          )
-        else {
-          fputs("warning: grid overlay failed (could not allocate bitmap); falling back to ungridded image\n", stderr)
-          try await VisualTools.captureScreenshot(
-            simulator: sim, format: format, outputPath: output)
-          let attrs = try FileManager.default.attributesOfItem(atPath: output)
-          let fileSize = (attrs[.size] as? Int) ?? 0
-          let result = ScreenshotResult(
-            succeeded: true, path: output, format: format, sizeKB: fileSize / 1024,
-            appForeground: appForeground)
-          if useJSON {
-            print(try WorkflowJSONRenderer.renderJSON(result))
-          } else {
-            print(ScreenshotRenderer.renderCapture(result))
-          }
-          return
-        }
-        if let data = xcforgeEncodeImage(gridded, format: format) {
-          let parent = (output as NSString).deletingLastPathComponent
-          if !parent.isEmpty {
-            try FileManager.default.createDirectory(
-              atPath: parent, withIntermediateDirectories: true)
-          }
-          try data.write(to: URL(fileURLWithPath: output))
+    if grid || cropRect != nil || maxDimension != nil {
+      // Capture at device pixels, then grid, crop and shrink. A grid failure falls back to the
+      // plain image with a warning; a failed crop or resize is an error.
+      let udid = try await SimTools.resolveSimulator(sim, env: env)
+      let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
+      var image = try await VisualTools.captureCGImage(simulator: udid, env: env)
+      if grid {
+        if let gridded = xcforgeDrawPointGrid(
+          on: image, pointWidth: info.pointSize.width, pointHeight: info.pointSize.height, scale: info.scale)
+        {
+          image = gridded
         } else {
-          fputs("warning: grid overlay encode failed; falling back to ungridded image\n", stderr)
-          try await VisualTools.captureScreenshot(
-            simulator: sim, format: format, outputPath: output)
+          fputs("warning: grid overlay failed (could not allocate bitmap); saving the image without it\n", stderr)
         }
-      } catch {
-        fputs("warning: grid overlay failed (\(error)); falling back to ungridded image\n", stderr)
-        try await VisualTools.captureScreenshot(
-          simulator: sim, format: format, outputPath: output)
       }
+      image = ScreenshotShaping.shape(image, crop: cropRect, scale: info.scale, maxDimension: maxDimension)
+      guard let data = xcforgeEncodeImage(image, format: format) else {
+        throw ValidationError("Could not encode the screenshot as \(format)")
+      }
+      let parent = (output as NSString).deletingLastPathComponent
+      if !parent.isEmpty {
+        try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
+      }
+      try data.write(to: URL(fileURLWithPath: output))
     } else {
       try await VisualTools.captureScreenshot(
         simulator: sim,

@@ -60,9 +60,9 @@ actor IndigoHIDClient {
   // MARK: - Public API
 
   /// Tap at point coordinates (in points, same coordinate space as WDA).
-  func tap(x: Double, y: Double, simulator: String = "booted") async throws {
+  func tap(x: Double, y: Double, simulator: String = "booted", orientation: Orientation = .portrait) async throws {
     let port = try await resolvePort(simulator: simulator)
-    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y)
+    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y, orientation: orientation)
 
     try await sendOnHIDQueue {
       try Self.sendTouch(port: port, xRatio: xRatio, yRatio: yRatio, direction: .down)
@@ -74,13 +74,15 @@ actor IndigoHIDClient {
   }
 
   /// Double-tap at point coordinates.
-  func doubleTap(x: Double, y: Double, simulator: String = "booted") async throws {
+  func doubleTap(x: Double, y: Double, simulator: String = "booted", orientation: Orientation = .portrait)
+    async throws
+  {
     while gestureInProgress { try await Task.sleep(nanoseconds: 1_000_000) }
     gestureInProgress = true
     defer { gestureInProgress = false }
 
     let port = try await resolvePort(simulator: simulator)
-    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y)
+    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y, orientation: orientation)
 
     // First tap
     try await sendOnHIDQueue {
@@ -104,11 +106,11 @@ actor IndigoHIDClient {
   }
 
   /// Long press at point coordinates.
-  func longPress(x: Double, y: Double, durationMs: Int = 1000, simulator: String = "booted")
-    async throws
-  {
+  func longPress(
+    x: Double, y: Double, durationMs: Int = 1000, simulator: String = "booted", orientation: Orientation = .portrait
+  ) async throws {
     let port = try await resolvePort(simulator: simulator)
-    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y)
+    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y, orientation: orientation)
 
     try await sendOnHIDQueue {
       try Self.sendTouch(port: port, xRatio: xRatio, yRatio: yRatio, direction: .down)
@@ -125,15 +127,16 @@ actor IndigoHIDClient {
     startX: Double, startY: Double,
     endX: Double, endY: Double,
     durationMs: Int = 300,
-    simulator: String = "booted"
+    simulator: String = "booted",
+    orientation: Orientation = .portrait
   ) async throws {
     while gestureInProgress { try await Task.sleep(nanoseconds: 1_000_000) }
     gestureInProgress = true
     defer { gestureInProgress = false }
 
     let port = try await resolvePort(simulator: simulator)
-    let (sxR, syR) = try normalizeCoordinates(x: startX, y: startY)
-    let (exR, eyR) = try normalizeCoordinates(x: endX, y: endY)
+    let (sxR, syR) = try normalizeCoordinates(x: startX, y: startY, orientation: orientation)
+    let (exR, eyR) = try normalizeCoordinates(x: endX, y: endY, orientation: orientation)
 
     // Calculate steps (~10px per step in point space)
     let dx = endX - startX
@@ -346,13 +349,56 @@ actor IndigoHIDClient {
 
   // MARK: - Coordinate Normalization
 
-  private func normalizeCoordinates(x: Double, y: Double) throws -> (Float, Float) {
+  /// The interface orientation taps are given in. The digitizer is fixed in portrait, so
+  /// points in a rotated interface have to be turned back before they're sent.
+  enum Orientation: Sendable, Equatable {
+    case portrait, portraitUpsideDown, landscapeLeft, landscapeRight
+
+    /// From WebDriverAgent's orientation value.
+    init(wdaValue: String) {
+      let value = wdaValue.uppercased()
+      if value.contains("UPSIDE") {
+        self = .portraitUpsideDown
+      } else if value.contains("LANDSCAPERIGHT") || value == "LANDSCAPE_RIGHT" {
+        self = .landscapeRight
+      } else if value.contains("LANDSCAPE") {
+        self = .landscapeLeft
+      } else {
+        self = .portrait
+      }
+    }
+  }
+
+  private func normalizeCoordinates(x: Double, y: Double, orientation: Orientation) throws -> (Float, Float) {
     guard cachedScreenWidth > 0, cachedScreenHeight > 0 else {
       throw IndigoHIDError.screenInfoUnavailable
     }
-    let xRatio = Float(x / cachedScreenWidth)
-    let yRatio = Float(y / cachedScreenHeight)
-    return (min(max(xRatio, 0), 1), min(max(yRatio, 0), 1))
+    return Self.normalize(
+      x: x, y: y, portraitWidth: cachedScreenWidth, portraitHeight: cachedScreenHeight, orientation: orientation)
+  }
+
+  /// A point in the interface's own coordinates as 0...1 ratios of the portrait digitizer.
+  /// (inferred) Landscape left is the device turned counter-clockwise, home edge on the right.
+  static func normalize(
+    x: Double, y: Double, portraitWidth: Double, portraitHeight: Double, orientation: Orientation
+  ) -> (Float, Float) {
+    let xRatio: Double
+    let yRatio: Double
+    switch orientation {
+    case .portrait:
+      xRatio = x / portraitWidth
+      yRatio = y / portraitHeight
+    case .portraitUpsideDown:
+      xRatio = 1 - x / portraitWidth
+      yRatio = 1 - y / portraitHeight
+    case .landscapeLeft:
+      xRatio = 1 - y / portraitWidth
+      yRatio = x / portraitHeight
+    case .landscapeRight:
+      xRatio = y / portraitWidth
+      yRatio = 1 - x / portraitHeight
+    }
+    return (Float(min(max(xRatio, 0), 1)), Float(min(max(yRatio, 0), 1)))
   }
 
   // MARK: - Mach IPC

@@ -37,7 +37,9 @@ public enum SimTools {
     let sessionCleared: Bool
   }
 
-  public static let tools: [Tool] = [
+  public static let tools: [Tool] = coreTools + setupTools
+
+  static let coreTools: [Tool] = [
     Tool(
       name: "list_sims",
       description:
@@ -1288,7 +1290,7 @@ extension SimTools: ToolProvider {
       case .success(let input):
         return dispatchResult(await executeSimStatusBarClear(simulator: input.simulator, env: env))
       }
-    default: return nil
+    default: return await dispatchSetup(name, args, env: env)
     }
   }
 }

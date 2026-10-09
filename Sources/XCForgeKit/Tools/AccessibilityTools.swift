@@ -226,15 +226,8 @@ public enum AccessibilityTools {
       }
     }
 
-    // Restore original size
-    if let original = originalSize {
-      _ = try? await env.shell.xcrun(timeout: 10, "simctl", "ui", sim, "content_size", original)
-    } else {
-      _ = try? await env.shell.xcrun(
-        timeout: 10, "simctl", "ui", sim,
-        "content_size", "UICTContentSizeCategoryL"
-      )
-    }
+    // Restore the original size (an unreadable value means the system default, large)
+    _ = try? await env.shell.xcrun(timeout: 10, "simctl", "ui", sim, "content_size", originalSize ?? "large")
 
     guard screenshots.count >= 2 else {
       return .fail(
@@ -430,14 +423,10 @@ public enum AccessibilityTools {
         ))
     }
 
-    // Relaunch with first locale to restore
+    // Relaunch without locale arguments, so the app is back in the simulator's own language
+    // rather than left in whichever locale ran first.
     _ = try? await env.shell.xcrun(timeout: 5, "simctl", "terminate", sim, bundleId)
-    let baseLang = locales[0].split(separator: "-").first.map(String.init) ?? locales[0]
-    _ = try? await env.shell.xcrun(
-      timeout: 15, "simctl", "launch", sim, bundleId,
-      "-AppleLanguages", "(\(baseLang))",
-      "-AppleLocale", locales[0]
-    )
+    _ = try? await env.shell.xcrun(timeout: 15, "simctl", "launch", sim, bundleId)
 
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
     let allPassed = results.allSatisfy(\.passed)
@@ -514,7 +503,11 @@ public enum AccessibilityTools {
   // MARK: - Helpers
 
   private static func getCurrentContentSize(sim: String, env: Environment) async -> String? {
-    // Try to read the current content size preference
+    // `simctl ui <sim> content_size` with no value prints the current one.
+    if let result = try? await env.shell.xcrun(timeout: 5, "simctl", "ui", sim, "content_size"), result.succeeded {
+      let value = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !value.isEmpty, !value.contains(" ") { return value }
+    }
     guard
       let result = try? await env.shell.xcrun(
         timeout: 5, "simctl", "spawn", sim,

@@ -29,6 +29,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Launch arguments, environment and a deep link: `args`, `env` (KEY=VALUE), `url` and `terminate` on `launch_app` and `build_run_sim`; `--arg`, `--env`, `--url` and `--no-terminate` on `sim launch` and `build run`; `--env` on `console launch`
 - `open_url` / `sim openurl` open a URL or deep link on a simulator
 - `clean` / `build clean` take `configuration` and `derivedData: true` / `--derived-data`, which deletes this project's DerivedData folder (and only that one)
+- **Every UI tool takes `simulator`, and each simulator has its own WebDriverAgent** on its own port (8100 up, saved in `~/.xcforge/wda/simulator-ports.json`), so with two simulators booted the screenshot and the taps hit the same one. `XCFORGE_SIMULATOR` does the same for CLI `ui` commands
+- **Actions can wait for the result:** `wait_for`, `until_gone` and `timeout` on taps, swipes, typing and `find_element`, instead of sleeps
+- `find_element` reports how many elements matched, with each one's label and frame, and takes `index`
+- `type_text` types into the focused field; `key` sends return, delete, tab and other named keys, `dismiss_keyboard` hides the keyboard, and `secure` keeps the text out of the result (`ui type --key`, `--dismiss-keyboard`, `--secure`)
+- `alert_action` (accept/dismiss) on `wda_create_session` and `XCFORGE_ALERT_ACTION` let permission alerts be handled automatically; "not found" errors mention a visible alert
+- `screenshot` takes `crop` (x,y,width,height in device points) and `max_dimension` (longest side in pixels, with how many points one pixel covers); `screenshot capture --crop`, `--max-dimension`
+- Simulator setup tools: `sim_content_size`, `sim_locale`, `app_container`, `sim_push` and `sim_privacy` (grant/revoke/reset), and `sim content-size|locale|container|push|privacy`. Setters report the value they replaced
 
 ### Changed
 - **One test ID format.** Results, `list_tests`, last-failures and known-failures all use `Target/Suite/test()` (Swift Testing) or `Target/Class/testMethod` (XCTest), and filters accept it as printed. The target is added to short IDs from the scheme's or test plan's test targets instead of guessed, and the `test()()` spelling xcodebuild needs is written for you
@@ -75,12 +82,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **`simRecovery` defaults to `off` everywhere** (was `auto` for `build_and_test`, `build-test` and `bless`). `auto` now only reboots; erasing a simulator needs the new `erase` mode. Invalid values are an error instead of silently becoming `auto`. `build-test` gains `--sim-recovery`
 - Result bundles and diagnostic snapshots get collision-free names (`xcf-<prefix>-<ts>-<pid>-<rand>`), so two sessions starting in the same second no longer delete each other's bundles. `XCFORGE_ARTIFACT_DIR` / `artifactDir` moves them out of `/tmp`
 - `build diagnose`, `test failures` and `test coverage` read this project's last recorded result bundle instead of the newest bundle any session left in `/tmp`. `test failures` without `--xcresult-path` reuses that bundle instead of re-running the whole suite
+- `list_elements` and `get_source` drop wrapper containers, hidden and off-screen elements, and add `value`, `disabled` and `selected`
+- `get_source` and `list_elements` start WebDriverAgent when it isn't running, and fail clearly instead of reading the Simulator app's own accessibility tree
+- Screenshots report the device's point size, not the Simulator window's, and the fallback writes a new file per capture instead of one shared `/tmp` file; CLI `screenshot capture` writes a new file unless `--output` is given
 
 ### Fixed
 - A timed-out `build-for-testing` is reported as a build failure instead of continuing to `test-without-building` against stale products
 - `test_plan_inspect` finds plans inside `App.xcodeproj/xcshareddata/xctestplans` and decodes Xcode's string-form `skippedTests` and plans with missing sections
 - A hung build's fallback no longer runs `pkill -x xcodebuild`, which killed every session's build on the Mac. Hang snapshots sample the xcodebuild matched by this run's result bundle path instead of the newest xcodebuild on the system
 - WDA port cleanup only kills WebDriverAgent runner processes, uses the port from `WDA_BASE_URL`, skips remote WDA hosts, and calls `lsof` at its real path (`/usr/sbin/lsof`)
+- A WebDriverAgent session recreated after a hiccup no longer relaunches the app (`forceAppLaunch: false`)
+- Restarting xcforgeWDA reruns its last build with `test-without-building` instead of opening the runner app (which never starts the server), so recovery no longer falls through to a full rebuild; the runner is no longer stopped after an hour
+- The accessibility-tree fast path is used only with exactly one simulator booted and no device attached, and reads that simulator's windows, not Simulator's menus
+- Coordinate taps and swipes (`indigo_tap`, `indigo_swipe`, plan steps) account for landscape and upside-down orientation
+- `accessibility_check`, `localization_check` and `multi_device_check` put back the text size, language and appearance they found instead of resetting to large, the first locale and light
 
 ## [1.6.1] - 2026-05-19
 

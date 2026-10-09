@@ -380,6 +380,16 @@ enum MultiDeviceTools {
       log("  Window IDs: \(windowIDs)")
     }
 
+    // Each device's appearance before this check, to put back afterwards.
+    var originalAppearance: [String: String] = [:]
+    if testDarkMode {
+      for d in readyDevices {
+        let result = try? await env.shell.xcrun(timeout: 5, "simctl", "ui", d.udid, "appearance")
+        let value = result?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if value == "light" || value == "dark" { originalAppearance[d.udid] = value }
+      }
+    }
+
     for mode in modes {
       log("  Mode \(mode.label): setting appearance...")
       for d in readyDevices {
@@ -475,10 +485,11 @@ enum MultiDeviceTools {
         }
       }
     }
-    // Restore light mode if we changed
+    // Restore each device's own appearance if we changed it
     if testDarkMode {
       for d in readyDevices {
-        _ = try? await env.shell.xcrun(timeout: 5, "simctl", "ui", d.udid, "appearance", "light")
+        let appearance = originalAppearance[d.udid] ?? "light"
+        _ = try? await env.shell.xcrun(timeout: 5, "simctl", "ui", d.udid, "appearance", appearance)
       }
     }
 

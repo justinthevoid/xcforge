@@ -4,6 +4,20 @@ All UI tools communicate directly with WebDriverAgent via HTTP — no Appium, no
 
 **Prerequisite:** WebDriverAgent must be running on the target simulator. Check with `wda_status`.
 
+**Which screen.** Every UI tool takes `simulator` (name or UDID). Each simulator gets its own
+WebDriverAgent on its own port (8100 up, saved in `~/.xcforge/wda/simulator-ports.json`), so with
+two simulators booted the screenshot and the taps go to the same one. The last simulator named is
+used when a call names none; until then calls go to the booted simulator. From the CLI, set
+`XCFORGE_SIMULATOR=<name or UDID>` (`XCFORGE_DEVICE` for a phone).
+
+**Waiting instead of sleeping.** Taps, swipes, typing and `handle_alert` take `wait_for` (an
+accessibility id or label to appear), `until_gone` (one to disappear) and `timeout` (seconds,
+default 10). The result says whether the wait held; a wait that times out marks the call as an error.
+
+**Permission alerts.** `alert_action: accept|dismiss` on `wda_create_session` (or
+`XCFORGE_ALERT_ACTION`) has WDA answer system alerts by itself. `sim_privacy grant` grants a
+permission before the app asks. A "not found" error says when an alert is in the way.
+
 ## wda_status
 
 Check if WebDriverAgent is running and reachable.
@@ -22,6 +36,10 @@ Create a new WDA session, optionally activating an app.
 |-----------|----------|---------|-------------|
 | `bundle_id` | No | — | App to activate (optional) |
 | `wda_url` | No | http://localhost:8100 | Custom WDA URL |
+| `alert_action` | No | `none` | `accept` or `dismiss` system alerts automatically for this session |
+
+A session xcforge recreates by itself (after a WDA hiccup or restart) never relaunches the app
+(`forceAppLaunch: false`), so screen state and launch arguments survive.
 
 **Bundle id binding (v1.4.1+).** When `bundle_id` is provided, `WDAClient` persists
 it as the active bundle id and threads it through every subsequent recreate
@@ -81,18 +99,18 @@ additive (`encodeIfPresent`; old consumers ignore unknown keys).
 
 ## list_elements (CLI: `xcforge ui ls`)
 
-Flat one-line-per-element listing. Format: `<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>`. 50KB-truncated. Optional scope filter restricts the listing to a single a11y-id and its descendants.
+Flat one-line-per-element listing. Format: `<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>`, then ` | value=…`, ` | disabled` and ` | selected` when they apply. Wrapper containers with nothing to say, hidden elements and off-screen elements are left out; output is cut at an element boundary at 50KB. Optional scope filter restricts the listing to a single a11y-id and its descendants.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `scope` | No | — | a11y-id to scope the listing to |
 | `source` | No | `auto` | Tree source: `auto` (WDA when sim is booted, else AXP), `wda` (iOS app via WebDriverAgent), `axp` (macOS Accessibility) |
 
-**Source policy.** `auto` flips primary to WDA whenever an iOS simulator is
-booted — that's the signal you're automating an iOS app, in which case AXP
-would return Simulator.app's macOS chrome (menubar, dock, About menu). When
-the primary source returns empty, `auto` falls back to the alternate; explicit
-`--source wda` or `--source axp` is forced and throws on failure or empty.
+**Source policy.** `auto` uses WDA (starting it when needed) whenever a simulator is booted or
+WDA points at a phone, with no fallback: a failure is reported rather than answered from the
+Simulator app's own accessibility tree. The macOS accessibility tree (`axp`) reads only the
+simulator's windows and is used as a shortcut only when exactly one simulator is booted and no
+phone is attached.
 
 ---
 
@@ -131,6 +149,12 @@ Find a single UI element. Supports auto-scrolling to off-screen elements.
 | `scroll` | No | false | Enable auto-scroll to find off-screen elements |
 | `direction` | No | auto | Scroll direction: `auto` (smart — detects boundaries, reverses automatically), `up`, `down`, `left`, `right` |
 | `max_swipes` | No | 10 | Maximum scroll attempts |
+| `index` | No | 0 | Which match to use when several match |
+| `timeout` | No | — | Seconds to wait for the element to appear |
+| `until_gone` | No | false | Wait for the element to disappear instead |
+
+When several elements match, the result says how many and lists up to 10 with their label and
+frame, so you can pick one with `index` or tighten the query.
 
 **Auto-scroll 3-tier fallback:**
 1. `scrollToVisible` — WDA native scroll (works with UIKit)
@@ -277,13 +301,17 @@ Element-to-element or coordinate-based drag and drop. 1 call instead of 3.
 
 ## type_text
 
-Type text into focused or specified element.
+Type text into the focused element, or a specified one. Fails when nothing has focus and no
+element is given (tap the field first).
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `text` | **Yes** | — | Text to type |
+| `text` | No | — | Text to type |
 | `element_id` | No | Currently focused | Target element |
 | `clear_first` | No | false | Clear existing text before typing |
+| `key` | No | — | Named key to press after the text: `return`, `delete`, `tab`, `escape` |
+| `dismiss_keyboard` | No | false | Hide the keyboard afterwards |
+| `secure` | No | auto | Keep the text out of the result (automatic for secure fields) |
 
 ---
 
@@ -305,9 +333,8 @@ Get the full view hierarchy.
 |-----------|----------|---------|-------------|
 | `format` | No | json | Output format: `json`, `xml`, `description` |
 
-**Performance:** ~20ms latency (750x faster than competition).
-
-**Use sparingly** — returns the entire UI tree. Prefer `find_element` for targeted lookups.
+Starts WebDriverAgent when it isn't running. **Use sparingly** — returns the entire UI tree.
+Prefer `list_elements` (one line per element) or `find_element` for targeted lookups.
 
 ---
 
@@ -322,6 +349,9 @@ Tap at coordinates via native HID (sub-5ms, bypasses WDA). Falls back to WDA if 
 | `simulator` | No | `"booted"` | Simulator UDID or `"booted"` |
 
 **Performance:** Sub-5ms latency via native HID when available, vs ~50ms via WDA.
+
+Coordinates are in the interface's own points. When WDA is running, its orientation is read first
+so taps land correctly in landscape and upside down (inferred mapping; check on a Mac).
 
 ---
 

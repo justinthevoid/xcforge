@@ -49,6 +49,18 @@ enum ScreenshotTools {
               "Ceiling in seconds for `waitFor`. Capture happens the instant the signal holds. Default 20."
             ),
           ]),
+          "crop": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Region to return, as x,y,width,height in device points (the coordinates taps use), e.g. 0,100,390,200."
+            ),
+          ]),
+          "max_dimension": .object([
+            "type": .string("integer"),
+            "description": .string(
+              "Shrink the image so its longer side is at most this many pixels. Saves tokens; the result says how many points one pixel covers."
+            ),
+          ]),
         ]),
       ])
     )
@@ -62,6 +74,13 @@ enum ScreenshotTools {
     let grid: Bool?
     let waitFor: String?
     let timeout: Double?
+    let crop: String?
+    let maxDimension: Int?
+
+    enum CodingKeys: String, CodingKey {
+      case simulator, format, grid, waitFor, timeout, crop
+      case maxDimension = "max_dimension"
+    }
   }
 
   static func screenshot(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -82,6 +101,14 @@ enum ScreenshotTools {
     }
     let format = input.format ?? "jpeg"
     let wantGrid = input.grid ?? false
+    var crop: ScreenshotShaping.PointRect?
+    if let spec = input.crop {
+      guard let parsed = ScreenshotShaping.parseCrop(spec) else { return .fail(ScreenshotShaping.cropFormatHelp) }
+      crop = parsed
+    }
+    if let maxDimension = input.maxDimension, maxDimension < ScreenshotShaping.minimumDimension {
+      return .fail("max_dimension must be at least \(ScreenshotShaping.minimumDimension)")
+    }
 
     // Optional readiness gate — warn-only, NEVER hard-fails the screenshot.
     var readinessNote = ""
@@ -117,41 +144,59 @@ enum ScreenshotTools {
 
     let start = CFAbsoluteTimeGetCurrent()
 
-    // Grid mode: capture CGImage → overlay → encode → return inline.
-    // On any failure during the overlay path, fall back to the ungridded path
-    // and surface a warning rather than failing the call.
-    if wantGrid {
+    // Grid, crop or downscale: capture a CGImage at device pixels, then shape it. Grid alone
+    // falls back to the ungridded fast path on failure; a crop or size the caller relies on
+    // fails instead of silently returning something else.
+    let shaping = crop != nil || input.maxDimension != nil
+    if wantGrid || shaping {
       do {
         let udid = try await SimTools.resolveSimulator(sim, env: env)
         let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
-        let cgImage = try await VisualTools.captureCGImage(simulator: udid, env: env)
-        if let gridded = drawPointGrid(
-          on: cgImage,
-          pointWidth: info.pointSize.width,
-          pointHeight: info.pointSize.height,
-          scale: info.scale
-        ), let encoded = encodeImage(gridded, format: format) {
-          let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-          let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
-          let pxW = gridded.width
-          let pxH = gridded.height
-          let ptW = Int(info.pointSize.width)
-          let ptH = Int(info.pointSize.height)
-          return .init(content: [
-            .image(
-              data: encoded.base64EncodedString(), mimeType: mimeType,
-              annotations: nil, _meta: nil),
-            .text(
-              text:
-                "\(ptW)×\(ptH) pt | \(pxW)x\(pxH) px | \(encoded.count / 1024)KB | \(elapsed)ms (grid)\(trailing)",
-              annotations: nil, _meta: nil),
-          ])
+        var image = try await VisualTools.captureCGImage(simulator: udid, env: env)
+        if wantGrid {
+          if let gridded = drawPointGrid(
+            on: image, pointWidth: info.pointSize.width, pointHeight: info.pointSize.height, scale: info.scale)
+          {
+            image = gridded
+          } else {
+            Log.warn("Grid overlay failed; returning the image without it")
+          }
         }
-        Log.warn("Grid overlay or encode failed; returning ungridded image")
+        image = ScreenshotShaping.shape(image, crop: crop, scale: info.scale, maxDimension: input.maxDimension)
+        guard let encoded = encodeImage(image, format: format) else {
+          throw NSError(
+            domain: "ScreenshotTools", code: 1, userInfo: [NSLocalizedDescriptionKey: "image encoding failed"])
+        }
+        let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
+        let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
+        var parts = ["\(Int(info.pointSize.width))×\(Int(info.pointSize.height)) pt screen"]
+        var shownPointWidth = info.pointSize.width
+        if let crop {
+          parts.append("crop \(crop.description) pt")
+          shownPointWidth = min(crop.width, info.pointSize.width - crop.x)
+        }
+        parts.append("\(image.width)x\(image.height) px")
+        if input.maxDimension != nil {
+          let ratio = ScreenshotShaping.pointsPerPixel(outputWidth: image.width, croppedPointWidth: shownPointWidth)
+          parts.append(String(format: "1 px = %.2f pt", ratio))
+        }
+        let steps = [wantGrid ? "grid" : nil, crop != nil ? "crop" : nil, input.maxDimension != nil ? "scaled" : nil]
+        let mode = steps.compactMap { $0 }.joined(separator: ", ")
+        parts.append("\(encoded.count / 1024)KB")
+        parts.append("\(elapsed)ms (\(mode))")
+        return .init(content: [
+          .image(data: encoded.base64EncodedString(), mimeType: mimeType, annotations: nil, _meta: nil),
+          .text(text: parts.joined(separator: " | ") + trailing, annotations: nil, _meta: nil),
+        ])
       } catch {
+        if shaping { return .fail("Screenshot failed: \(error)") }
         Log.warn("Grid overlay failed (\(error)); returning ungridded image")
       }
     }
+
+    // Device points come from the simulator's screen, not the Simulator window, whose size
+    // depends on its zoom.
+    let screenInfo = await ScreenInfoCache.shared.info(for: sim, env: env)
 
     // Fast path: inline capture (macOS 14+)
     if #available(macOS 14.0, *) {
@@ -162,7 +207,12 @@ enum ScreenshotTools {
         let elapsed = String(
           format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
         let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
-        let ptInfo = result.pointWidth > 0 ? "\(result.pointWidth)×\(result.pointHeight) pt | " : ""
+        let ptInfo: String
+        if let screenInfo {
+          ptInfo = "\(Int(screenInfo.pointSize.width))×\(Int(screenInfo.pointSize.height)) pt | "
+        } else {
+          ptInfo = result.pointWidth > 0 ? "\(result.pointWidth)×\(result.pointHeight) pt | " : ""
+        }
         return .init(content: [
           .image(
             data: result.base64, mimeType: mimeType, annotations: nil, _meta: nil),
@@ -174,20 +224,21 @@ enum ScreenshotTools {
       } catch {
         Log.warn("Inline screenshot failed, falling back to simctl: \(error)")
         return await simctlScreenshot(
-          sim: sim, format: format, start: start, trailing: trailing, env: env)
+          sim: sim, format: format, start: start, trailing: trailing, screenInfo: screenInfo, env: env)
       }
     }
 
     return await simctlScreenshot(
-      sim: sim, format: format, start: start, trailing: trailing, env: env)
+      sim: sim, format: format, start: start, trailing: trailing, screenInfo: screenInfo, env: env)
   }
 
   // MARK: - simctl Fallback (writes to file, returns path)
 
   private static func simctlScreenshot(
-    sim: String, format: String, start: CFAbsoluteTime, trailing: String, env: Environment
+    sim: String, format: String, start: CFAbsoluteTime, trailing: String, screenInfo: SimTools.ScreenInfo?,
+    env: Environment
   ) async -> CallTool.Result {
-    let outputPath = "/tmp/xcf-screenshot.\(format)"
+    let outputPath = ScreenshotShaping.uniquePath(format: format)
     do {
       let result = try await env.shell.xcrun(
         timeout: 15, "simctl", "io", sim, "screenshot",
@@ -201,9 +252,11 @@ enum ScreenshotTools {
         // Read file and return inline
         if let data = FileManager.default.contents(atPath: outputPath) {
           let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
-          // Best-effort point dimensions from Simulator window
+          defer { try? FileManager.default.removeItem(atPath: outputPath) }
           var ptInfo = ""
-          if #available(macOS 14.0, *) {
+          if let screenInfo {
+            ptInfo = "\(Int(screenInfo.pointSize.width))×\(Int(screenInfo.pointSize.height)) pt | "
+          } else if #available(macOS 14.0, *) {
             if let window = try? await FramebufferCapture.findSimulatorWindow(simulator: sim) {
               let ptW = Int(window.frame.width)
               let ptH = Int(window.frame.height)
