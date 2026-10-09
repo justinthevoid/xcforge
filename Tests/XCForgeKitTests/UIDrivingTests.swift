@@ -75,7 +75,8 @@ struct UIDrivingTests {
       Issue.record("schema is not an object")
       return
     }
-    let properties = schema["properties"]?.objectValue ?? [:]
+    var properties: [String: Value] = [:]
+    if case .object(let object)? = schema["properties"] { properties = object }
     for key in ["simulator", "wait_for", "until_gone", "timeout"] {
       #expect(properties[key] != nil, "missing \(key)")
     }
@@ -195,7 +196,8 @@ struct UIDrivingTests {
       Issue.record("schema is not an object")
       return
     }
-    let properties = schema["properties"]?.objectValue ?? [:]
+    var properties: [String: Value] = [:]
+    if case .object(let object)? = schema["properties"] { properties = object }
     #expect(properties["crop"] != nil)
     #expect(properties["max_dimension"] != nil)
   }
