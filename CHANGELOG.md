@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [Unreleased]
 
 ### Added
+- **`xcforge skill install`** writes the xcforge agent skill (embedded in the binary) into the project's `.claude/skills`, or with `--global` into `~/.claude/skills` (`$CLAUDE_CONFIG_DIR/skills` when set), or any `--dir`. Re-running refreshes a stale copy and drops files a newer xcforge no longer ships. `skill status` reports where it's installed and whether it's current, `skill show` prints a file, `skill uninstall` removes it
 - **Shared-Mac options for every xcodebuild call:** `--derived-data-path`, `--result-bundle-path`, repeatable `--xcodebuild-arg`, `--lock`, `--lock-wait` and `--min-free-gb` on `build compile|run|clean`, `build-test` and `test run|failures|list|rerun-failed`, with matching MCP arguments, env vars and `.xcforge.yaml` keys (`derivedDataPath`, `buildLock`, `artifactDir`, `minFreeGB`). See `Skills/xcforge/references/shared-mac.md`
 - **Build lock with a first-come, first-served queue.** Takes the same `flock` as macOS `lockf(1)`, so it queues next to existing `lockf` wrappers. `xcforge lock status` / `build_lock_status` show the holder, the queue and wait times
 - `--isolated-sim` / `isolatedSimulator` on `build-test`/`build_and_test` and `test run`/`test_sim`: run on a fresh simulator created for the run and deleted afterwards
