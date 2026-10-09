@@ -75,7 +75,7 @@ MCP tools use snake_case (`build_sim`, `ui_tap`). CLI commands mirror them as su
 2. Register it in `ProviderRegistry`
 3. Add a matching CLI command in `Sources/XCForgeCLI/Commands/`
 4. Add tests in `Tests/XCForgeKitTests/`
-5. Update skill reference in `Skills/xcforge/references/`
+5. Update skill reference in `Skills/xcforge/references/`, then run `python3 scripts/embed-skill.py` so the binary's copy (installed by `xcforge skill install`) matches
 
 ## Dependencies
 

@@ -191,11 +191,17 @@ File: `~/.config/zed/settings.json` (or `.zed/settings.json` per-project)
 
 ## Claude Code Skill
 
-xcforge includes a Claude Code skill that loads the full tool reference into context when you're working on iOS tasks. Install it globally with:
+xcforge ships an agent skill: the tool reference an agent loads when it works on iOS tasks. The binary carries it, so installing it needs nothing else:
 
 ```bash
-npx skills justinthevoid/xcforge
+xcforge skill install            # this repo: .claude/skills/xcforge (commit it to share with the team)
+xcforge skill install --global   # every project: ~/.claude/skills/xcforge
+xcforge skill install --dir <skills-dir>      # any other agent's skills directory
+xcforge skill status             # where it's installed and whether it matches this xcforge
+xcforge skill show references/test-tools.md   # print one file without installing
 ```
+
+Re-run `xcforge skill install` after upgrading xcforge to refresh the copy; only changed files are rewritten. It won't overwrite an `xcforge` skill directory it didn't create unless you pass `--force`. `xcforge skill uninstall` removes it.
 
 Once installed, Claude will automatically load the right reference files when you use xcforge tools — exact parameters, return values, and usage patterns for each category (build, test, simulator, UI automation, logs, LLDB, diagnosis, and more).
 
