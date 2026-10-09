@@ -170,7 +170,8 @@ struct DiagnoseToolsTests {
     let request = DiagnosisStatusRequest(runId: nil)
     let workflow = DiagnosisStatusWorkflow()
     let cliResult = await workflow.inspect(request: request)
-    let cliJSON = try? WorkflowJSONRenderer.renderJSON(cliResult)
+    // MCP returns the compact form of the same encoding.
+    let cliJSON = try? WorkflowJSONRenderer.renderJSON(cliResult, compact: true)
 
     let mcpResult = await DiagnoseTools.diagnoseStatus(nil)
     let mcpJSON = extractText(mcpResult)
@@ -184,7 +185,8 @@ struct DiagnoseToolsTests {
     let request = DiagnosisFinalResultRequest(runId: nil)
     let workflow = DiagnosisFinalResultWorkflow()
     let cliResult = await workflow.assemble(request: request)
-    let cliJSON = try? WorkflowJSONRenderer.renderJSON(cliResult)
+    // MCP returns the compact form of the same encoding.
+    let cliJSON = try? WorkflowJSONRenderer.renderJSON(cliResult, compact: true)
 
     let mcpResult = await DiagnoseTools.diagnoseResult(nil)
     let mcpJSON = extractText(mcpResult)
