@@ -8,17 +8,43 @@ actor IndigoHIDClient {
 
   static let shared = IndigoHIDClient()
 
-  /// Whether the required frameworks can be loaded.
+  /// Whether HID input can be used: SimulatorKit loads and this Xcode is one where taps are
+  /// known to land. On Xcode 27 the events are sent without error but never reach the app,
+  /// so HID is off there and callers use WDA. `XCFORGE_FORCE_HID=1` turns it on anyway.
   nonisolated static let isAvailable: Bool = {
-    guard simKitHandle != nil else {
+    guard simKitHandle != nil, supportedXcode else {
       Log.warn("IndigoHIDClient unavailable — \(unavailableReason)")
       return false
     }
     return true
   }()
 
+  nonisolated private static let supportedXcode: Bool = {
+    if ProcessInfo.processInfo.environment["XCFORGE_FORCE_HID"] == "1" { return true }
+    return hidSupported(xcodeMajor: xcodeMajorVersion(developerDir: developerDir))
+  }()
+
+  /// HID taps are verified up to Xcode 26. An unknown version counts as supported.
+  nonisolated static func hidSupported(xcodeMajor: Int?) -> Bool {
+    guard let xcodeMajor else { return true }
+    return xcodeMajor < 27
+  }
+
+  /// The major version of the Xcode at `developerDir`, from `Contents/version.plist`.
+  nonisolated static func xcodeMajorVersion(developerDir: String) -> Int? {
+    let contents = (developerDir as NSString).deletingLastPathComponent
+    let plist = (contents as NSString).appendingPathComponent("version.plist")
+    guard let dict = NSDictionary(contentsOfFile: plist),
+      let version = dict["CFBundleShortVersionString"] as? String
+    else { return nil }
+    return version.split(separator: ".").first.flatMap { Int($0) }
+  }
+
   /// Why HID input can't be used, for results that fall back to WDA.
   nonisolated static var unavailableReason: String {
+    if simKitHandle != nil, !supportedXcode {
+      return "HID is not yet supported on Xcode 27, used WDA (XCFORGE_FORCE_HID=1 tries HID anyway)"
+    }
     let folders = simulatorKitCandidates(developerDir: developerDir).map {
       (($0 as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
     }
@@ -308,15 +334,24 @@ actor IndigoHIDClient {
     // iPhone SE (3rd gen)
     case let m where m.contains("iPhone-SE"):
       return (375, 667, 2.0)
+    // iPhone 16/17 Pro Max
+    case let m where (m.contains("iPhone-16") || m.contains("iPhone-17")) && m.contains("Pro-Max"):
+      return (440, 956, 3.0)
+    // iPhone Air
+    case let m where m.contains("iPhone-Air"):
+      return (420, 912, 3.0)
+    // iPhone 17, iPhone 16 Pro and 17 Pro
+    case let m where m.contains("iPhone-17") && !m.contains("Plus"),
+      let m where m.contains("iPhone-16-Pro"):
+      return (402, 874, 3.0)
     // iPhone 14/15/16 standard
     case let m where m.contains("iPhone-14") && !m.contains("Pro") && !m.contains("Plus"),
       let m where m.contains("iPhone-15") && !m.contains("Pro") && !m.contains("Plus"),
       let m where m.contains("iPhone-16") && !m.contains("Pro") && !m.contains("Plus"):
       return (390, 844, 3.0)
-    // iPhone 14/15/16 Pro
+    // iPhone 14/15 Pro
     case let m where m.contains("iPhone-14-Pro") && !m.contains("Max"),
-      let m where m.contains("iPhone-15-Pro") && !m.contains("Max"),
-      let m where m.contains("iPhone-16-Pro") && !m.contains("Max"):
+      let m where m.contains("iPhone-15-Pro") && !m.contains("Max"):
       return (393, 852, 3.0)
     // iPhone Pro Max / Plus
     case let m where m.contains("Pro-Max") || m.contains("Plus"):
@@ -330,9 +365,9 @@ actor IndigoHIDClient {
     // iPad Pro 12.9" / 13"
     case let m where m.contains("iPad-Pro") && (m.contains("12") || m.contains("13")):
       return (1024, 1366, 2.0)
-    // Fallback: iPhone 16 Pro dimensions
+    // Fallback: iPhone 16 Pro / 17 dimensions
     default:
-      return (393, 852, 3.0)
+      return (402, 874, 3.0)
     }
   }
 

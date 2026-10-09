@@ -200,6 +200,24 @@ struct MacVerifyFixesTests {
     #expect(problem?.contains("json, xml, description, list") == true)
   }
 
+  @Test("HID is off on Xcode 27 and on before it")
+  func hidSupportedByXcode() {
+    #expect(IndigoHIDClient.hidSupported(xcodeMajor: 26))
+    #expect(!IndigoHIDClient.hidSupported(xcodeMajor: 27))
+    #expect(IndigoHIDClient.hidSupported(xcodeMajor: nil))
+  }
+
+  @Test("HID screen sizes cover the iPhone 17 family")
+  func hidScreenSizes() {
+    let prefix = "com.apple.CoreSimulator.SimDeviceType."
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-17").width == 402)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-17-Pro").height == 874)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-17-Pro-Max").width == 440)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-Air").width == 420)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-16").width == 390)
+    #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-15-Pro").width == 393)
+  }
+
   @Test("set_orientation takes a simulator")
   func orientationTakesSimulator() {
     #expect(UITarget.toolNames.contains("set_orientation"))

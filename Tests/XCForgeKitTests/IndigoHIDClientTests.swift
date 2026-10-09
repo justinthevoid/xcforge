@@ -12,8 +12,8 @@ struct IndigoHIDClientTests {
   func iphone16Pro() {
     let dims = IndigoHIDClient.screenDimensions(
       for: "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro")
-    #expect(dims.width == 393)
-    #expect(dims.height == 852)
+    #expect(dims.width == 402)
+    #expect(dims.height == 874)
     #expect(dims.scale == 3.0)
   }
 
@@ -30,8 +30,8 @@ struct IndigoHIDClientTests {
   func iphone16ProMax() {
     let dims = IndigoHIDClient.screenDimensions(
       for: "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max")
-    #expect(dims.width == 430)
-    #expect(dims.height == 932)
+    #expect(dims.width == 440)
+    #expect(dims.height == 956)
     #expect(dims.scale == 3.0)
   }
 
@@ -57,8 +57,8 @@ struct IndigoHIDClientTests {
   func unknownDevice() {
     let dims = IndigoHIDClient.screenDimensions(
       for: "com.apple.CoreSimulator.SimDeviceType.FutureDevice-99")
-    #expect(dims.width == 393)
-    #expect(dims.height == 852)
+    #expect(dims.width == 402)
+    #expect(dims.height == 874)
     #expect(dims.scale == 3.0)
   }
 

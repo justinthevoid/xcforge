@@ -13,7 +13,7 @@ extension UITools {
       Tap one target: elementId (from find_element), id (accessibility id, re-found and retried \
       once if stale), using + value (any WDA query), or x + y in points. With x + y: count: 2 \
       double-taps, durationMs long-presses, pixels: true reads x/y as screenshot pixels, hid: true \
-      uses native HID on a simulator.
+      uses native HID on a simulator (WDA on Xcode 27).
       """,
     inputSchema: .object([
       "type": .string("object"),
@@ -46,7 +46,8 @@ extension UITools {
         ]),
         "hid": .object([
           "type": .string("boolean"),
-          "description": .string("Tap with native HID events on a simulator (bypasses WDA, falls back to it)."),
+          "description": .string(
+            "Tap with native HID events on a simulator (falls back to WDA; not yet supported on Xcode 27)."),
         ]),
       ]),
     ])

@@ -138,7 +138,7 @@ Tap one target. Pass exactly one of `elementId`, `id`, `using` + `value`, or `x`
 | `count` | No | 1 | 2 double-taps. Needs `x`, `y` |
 | `durationMs` | No | — | Hold this long (long press). Needs `x`, `y` |
 | `pixels` | No | false | `x`, `y` are screenshot pixels, divided by the simulator's scale |
-| `hid` | No | false | Native HID on a simulator (sub-5ms, bypasses WDA, falls back to it) |
+| `hid` | No | false | Native HID on a simulator (sub-5ms, bypasses WDA, falls back to it). Not yet supported on Xcode 27: WDA is used and the result says so |
 
 Coordinates are in the interface's own points. With `hid`, WDA's orientation is read first so taps
 land correctly in landscape and upside down (inferred mapping; check on a Mac).
@@ -198,7 +198,7 @@ Swipe from one point to another.
 | `endX` | **Yes** | — | End X (points) |
 | `endY` | **Yes** | — | End Y (points) |
 | `durationMs` | No | 300 | Swipe duration in milliseconds |
-| `hid` | No | false | Native HID on a simulator (sub-5ms per step, bypasses WDA, falls back to it) |
+| `hid` | No | false | Native HID on a simulator (sub-5ms per step, bypasses WDA, falls back to it). Not yet supported on Xcode 27: WDA is used and the result says so |
 
 ---
 

@@ -193,7 +193,8 @@ enum UITools {
           ]),
           "hid": .object([
             "type": .string("boolean"),
-            "description": .string("Swipe with native HID events on a simulator (bypasses WDA, falls back to it)."),
+            "description": .string(
+              "Swipe with native HID events on a simulator (falls back to WDA; not yet supported on Xcode 27)."),
           ]),
         ]),
         "required": .array([
