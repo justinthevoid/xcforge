@@ -9,17 +9,45 @@ public enum LastFailuresStore {
   public static let fileName = "last-failures.json"
   public static let directoryName = ".xcforge"
 
+  /// How the recorded run was invoked, so a rerun reproduces it instead of failing or
+  /// passing for a different reason.
+  public struct RunSettings: Codable, Sendable, Equatable {
+    public var project: String?
+    public var testPlan: String?
+    public var configuration: String?
+    /// The `KEY=VALUE` test-runner environment entries, as given.
+    public var env: [String]?
+
+    public init(
+      project: String? = nil, testPlan: String? = nil, configuration: String? = nil, env: [String]? = nil
+    ) {
+      self.project = project
+      self.testPlan = testPlan
+      self.configuration = configuration
+      self.env = env
+    }
+  }
+
   public struct Payload: Codable, Sendable, Equatable {
     public let failures: [String]
     public let scheme: String?
     public let simulator: String?
     public let recordedAt: Date
+    public let run: RunSettings?
+    /// Set when the run failed before any test reported (build error, runner crash).
+    /// `failures` is empty then, and a rerun has nothing it can safely replay.
+    public let infraFailure: String?
 
-    public init(failures: [String], scheme: String?, simulator: String?, recordedAt: Date = Date()) {
+    public init(
+      failures: [String], scheme: String?, simulator: String?, recordedAt: Date = Date(),
+      run: RunSettings? = nil, infraFailure: String? = nil
+    ) {
       self.failures = failures
       self.scheme = scheme
       self.simulator = simulator
       self.recordedAt = recordedAt
+      self.run = run
+      self.infraFailure = infraFailure
     }
   }
 
@@ -36,6 +64,8 @@ public enum LastFailuresStore {
     failures: [String],
     scheme: String?,
     simulator: String?,
+    run: RunSettings? = nil,
+    infraFailure: String? = nil,
     at repoRoot: String,
     now: Date = Date()
   ) -> Bool {
@@ -50,7 +80,8 @@ public enum LastFailuresStore {
     let target = URL(fileURLWithPath: path(at: repoRoot))
     let tmp = URL(fileURLWithPath: target.path + ".tmp")
     let payload = Payload(
-      failures: failures, scheme: scheme, simulator: simulator, recordedAt: now)
+      failures: failures, scheme: scheme, simulator: simulator, recordedAt: now, run: run,
+      infraFailure: infraFailure)
 
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

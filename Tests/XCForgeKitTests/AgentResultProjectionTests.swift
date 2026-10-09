@@ -59,10 +59,10 @@ struct AgentResultProjectionTests {
 
   @Test("encoded JSON has only the locked agent-shape keys at the top level")
   func slimKeys() throws {
-    // Locked allowed set per spec — `knownFailures` is optional so the ceiling is 9.
+    // `knownFailures`, `flaky` and `reason` appear only when they have something to say.
     let allowed: Set<String> = [
       "succeeded", "buildOk", "total", "passed", "failed", "skipped",
-      "timedOut", "knownFailures", "failures",
+      "timedOut", "knownFailures", "failures", "flaky", "reason",
     ]
     let exec = makeExecution(knownFailures: ["Suite/k"])
     let json = try WorkflowJSONRenderer.renderTestJSON(exec, forAgent: true)

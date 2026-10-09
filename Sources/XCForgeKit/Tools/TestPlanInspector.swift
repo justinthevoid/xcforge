@@ -78,8 +78,17 @@ public enum TestPlanInspector {
   public static func inspectTestPlan(name: String, project: String, env: Environment) async throws
     -> String
   {
+    let located = locate(name: name, project: project)
+    if let path = located.path {
+      return try parse(at: path)
+    }
+    throw InspectError.notFound(name: name, searched: located.searched)
+  }
+
+  /// Find the `.xctestplan` named `name` for `project`, and the places looked in.
+  static func locate(name: String, project: String) -> (path: String?, searched: [String]) {
     let normalized = name.hasSuffix(".xctestplan") ? name : "\(name).xctestplan"
-    let baseName = normalized
+    let baseName = (normalized as NSString).lastPathComponent
 
     let projectDir: String
     if project.hasSuffix(".xcodeproj") || project.hasSuffix(".xcworkspace") {
@@ -100,18 +109,30 @@ public enum TestPlanInspector {
       if let entries = try? FileManager.default.contentsOfDirectory(atPath: planDir),
         let match = entries.first(where: { $0.lowercased() == baseName.lowercased() })
       {
-        return try parse(at: "\(planDir)/\(match)")
+        return ("\(planDir)/\(match)", searchedPaths)
       }
     }
 
     // Recursive find under projectDir (case-insensitive)
-    let found = findTestPlan(named: baseName, under: projectDir)
-    if let found {
-      return try parse(at: found)
+    if let found = findTestPlan(named: baseName, under: projectDir) {
+      return (found, searchedPaths)
     }
     searchedPaths.append("\(projectDir)/**/*.xctestplan (recursive, case-insensitive)")
+    return (nil, searchedPaths)
+  }
 
-    throw InspectError.notFound(name: name, searched: searchedPaths)
+  /// Names of the test targets a plan runs (disabled targets left out), or nil when the plan
+  /// can't be found or read.
+  static func testTargetNames(plan: String, project: String) -> [String]? {
+    guard let path = locate(name: plan, project: project).path else { return nil }
+    return testTargetNames(atPath: path)
+  }
+
+  static func testTargetNames(atPath path: String) -> [String]? {
+    guard let data = FileManager.default.contents(atPath: path),
+      let decoded = try? JSONDecoder().decode(XCTestPlan.self, from: data)
+    else { return nil }
+    return decoded.testTargets.filter { $0.enabled != false }.map(\.target.name)
   }
 
   // MARK: - Private

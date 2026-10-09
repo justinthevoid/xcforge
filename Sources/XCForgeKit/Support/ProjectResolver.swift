@@ -257,6 +257,31 @@ enum AutoDetect {
     return []
   }
 
+  /// Test target names and how they were found.
+  struct TestTargets: Sendable, Equatable {
+    let names: [String]
+    /// True when read from the test plan or scheme, false when guessed from target names.
+    let exact: Bool
+  }
+
+  /// Test targets for filter resolution: the test plan's, else the scheme's test action's,
+  /// else targets whose names end in Tests. Workspaces have no target list in `-list`, so the
+  /// scheme is the only reliable source there.
+  static func testTargetNames(
+    project: String, scheme: String?, testplan: String?, env: Environment = .live
+  ) async -> TestTargets {
+    if let testplan, let names = TestPlanInspector.testTargetNames(plan: testplan, project: project),
+      !names.isEmpty
+    {
+      return TestTargets(names: names, exact: true)
+    }
+    if let scheme, let names = SchemeFile.testTargets(scheme: scheme, project: project), !names.isEmpty {
+      return TestTargets(names: names, exact: true)
+    }
+    let guessed = (try? await testTargets(project: project, env: env)) ?? []
+    return TestTargets(names: guessed, exact: false)
+  }
+
   // MARK: - Destination builder
 
   /// Build xcodebuild destination string from a simulator name, UDID, or physical device identifier.
@@ -338,7 +363,7 @@ enum AutoDetect {
 
   /// Returns true if the string looks like a physical device UDID.
   /// Supports both legacy 40-char hex format and newer 8-16 hex format (e.g. 00008101-001A2B3C4D5E6F78).
-  private static func isPhysicalDeviceUDID(_ s: String) -> Bool {
+  static func isPhysicalDeviceUDID(_ s: String) -> Bool {
     let legacy = #"^[0-9a-fA-F]{40}$"#
     let modern = #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{16}$"#
     return s.range(of: legacy, options: .regularExpression) != nil
@@ -588,5 +613,93 @@ enum AutoDetect {
     }
 
     return exactMatch ?? caseInsensitive ?? prefixBooted ?? prefixMatch
+  }
+}
+
+/// Reads a scheme's test action from its `.xcscheme` file.
+enum SchemeFile {
+  /// The `.xcscheme` for `scheme`, looked for in the project (or the workspace and the
+  /// projects beside it), shared schemes first.
+  static func locate(scheme: String, project: String) -> String? {
+    let fm = FileManager.default
+    var containers = [project]
+    if project.hasSuffix(".xcworkspace") {
+      containers += projects(near: (project as NSString).deletingLastPathComponent)
+    }
+    for container in containers {
+      let shared = "\(container)/xcshareddata/xcschemes/\(scheme).xcscheme"
+      if fm.fileExists(atPath: shared) { return shared }
+    }
+    for container in containers {
+      let userData = "\(container)/xcuserdata"
+      for user in (try? fm.contentsOfDirectory(atPath: userData)) ?? [] {
+        let path = "\(userData)/\(user)/xcschemes/\(scheme).xcscheme"
+        if fm.fileExists(atPath: path) { return path }
+      }
+    }
+    return nil
+  }
+
+  /// `.xcodeproj` bundles within three levels of `directory`, skipping build output.
+  static func projects(near directory: String) -> [String] {
+    guard
+      let enumerator = FileManager.default.enumerator(
+        at: URL(fileURLWithPath: directory), includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles, .skipsPackageDescendants])
+    else { return [] }
+    var found: [String] = []
+    for case let url as URL in enumerator {
+      if SourceChanges.skippedDirectories.contains(url.lastPathComponent) {
+        enumerator.skipDescendants()
+        continue
+      }
+      if url.pathExtension == "xcodeproj" { found.append(url.path) }
+      if enumerator.level >= 3 { enumerator.skipDescendants() }
+    }
+    return found.sorted()
+  }
+
+  /// Test target names the scheme's test action runs: those of its test plans when it uses
+  /// them, else its testables. Nil when the scheme file can't be found.
+  static func testTargets(scheme: String, project: String) -> [String]? {
+    guard let path = locate(scheme: scheme, project: project),
+      let xml = try? String(contentsOfFile: path, encoding: .utf8)
+    else { return nil }
+    // `container:` paths are relative to the folder holding the project or workspace that
+    // owns the scheme, which for a workspace may be a project in a subfolder.
+    var container = (path as NSString).deletingLastPathComponent
+    while !container.hasSuffix(".xcodeproj") && !container.hasSuffix(".xcworkspace") && container.count > 1 {
+      container = (container as NSString).deletingLastPathComponent
+    }
+    return testTargets(schemeXML: xml, projectDirectory: (container as NSString).deletingLastPathComponent)
+  }
+
+  static func testTargets(schemeXML xml: String, projectDirectory: String) -> [String] {
+    guard let start = xml.range(of: "<TestAction"),
+      let end = xml.range(of: "</TestAction>", range: start.upperBound..<xml.endIndex)
+    else { return [] }
+    let action = String(xml[start.lowerBound..<end.upperBound])
+
+    var names: [String] = []
+    for plan in matches(#"reference\s*=\s*"container:([^"]+\.xctestplan)""#, in: action) {
+      let path = plan.hasPrefix("/") ? plan : (projectDirectory as NSString).appendingPathComponent(plan)
+      names += TestPlanInspector.testTargetNames(atPath: path) ?? []
+    }
+    if names.isEmpty {
+      let enabled = #"<TestableReference[^>]*?skipped\s*=\s*"NO"[\s\S]*?</TestableReference>"#
+      let testables = matches(enabled, in: action, group: 0)
+      for testable in testables {
+        names += matches(#"BlueprintName\s*=\s*"([^"]+)""#, in: testable).prefix(1)
+      }
+    }
+    var seen = Set<String>()
+    return names.filter { seen.insert($0).inserted }
+  }
+
+  private static func matches(_ pattern: String, in text: String, group: Int = 1) -> [String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+      Range($0.range(at: group), in: text).map { String(text[$0]) }
+    }
   }
 }

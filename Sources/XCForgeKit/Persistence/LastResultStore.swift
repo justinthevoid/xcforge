@@ -16,6 +16,9 @@ public enum LastResultStore {
     public var build: String?
     public var test: String?
     public var updatedAt: Date
+    /// When build-for-testing last succeeded, and for which scheme, configuration and platform.
+    public var testBuiltAt: Date?
+    public var testBuildKey: String?
   }
 
   static func directory() -> String {
@@ -50,6 +53,38 @@ public enum LastResultStore {
     case .test: record.test = bundlePath
     }
     record.updatedAt = now
+    save(record, to: path)
+  }
+
+  /// What a test build depends on besides the sources.
+  static func testBuildKey(scheme: String, configuration: String, coverage: Bool, physicalDevice: Bool)
+    -> String
+  {
+    [scheme, configuration, coverage ? "coverage" : "", physicalDevice ? "device" : "simulator"]
+      .joined(separator: "|")
+  }
+
+  /// Note that build-for-testing just succeeded for `project` with `key`.
+  static func recordTestBuild(project: String, key: String, now: Date = Date()) {
+    let path = filePath(for: project)
+    try? FileManager.default.createDirectory(
+      atPath: directory(), withIntermediateDirectories: true, attributes: nil)
+    var record = load(path) ?? Record(build: nil, test: nil, updatedAt: now)
+    record.testBuiltAt = now
+    record.testBuildKey = key
+    save(record, to: path)
+  }
+
+  /// True when the last successful build-for-testing for `project` used `key` and nothing
+  /// under `sourceRoot` changed after it, so its products can be tested as they are.
+  static func testBuildIsCurrent(project: String, key: String, sourceRoot: String) -> Bool {
+    guard let record = load(filePath(for: project)), record.testBuildKey == key,
+      let builtAt = record.testBuiltAt
+    else { return false }
+    return !SourceChanges.anyModified(under: sourceRoot, after: builtAt)
+  }
+
+  private static func save(_ record: Record, to path: String) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     encoder.dateEncodingStrategy = .iso8601

@@ -22,8 +22,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Each build and test tool result ends with `project: <absolute path>`, so a build of the wrong checkout or worktree is visible
 - `.xcforge.yaml` problems (unknown keys with a "did you mean", unparseable values) are listed by `set_defaults show` / `defaults show` and once at the end of the first tool result that uses the file
 - **Xcode 27 Device Hub support.** xcforge opens Device Hub when the selected Xcode has no Simulator.app, and screen capture, the accessibility bridge and window scripting accept either app
+- **Test run options:** `retries`, `iterations`, `untilFailure`, `parallel`, `testTimeoutSeconds`, `skipBuild`, `includeConsole`, `env` and `timeoutSeconds` on `test_sim` and `build_and_test`, with matching flags (`--retries`, `--iterations`, `--until-failure`, `--parallel/--no-parallel`, `--test-timeout`, `--no-build`, `--include-console`, `--env`, `--timeout-seconds`) on `test run`, `build-test` and `test rerun-failed`
+- Tests that fail and then pass on retry are listed as flaky (`flaky` in agent JSON)
+- `test rerun-failed` reuses the recorded project, test plan, configuration and env, and skips build-for-testing when no source file changed since the last one (`--build` forces it)
 
 ### Changed
+- **One test ID format.** Results, `list_tests`, last-failures and known-failures all use `Target/Suite/test()` (Swift Testing) or `Target/Class/testMethod` (XCTest), and filters accept it as printed. The target is added to short IDs from the scheme's or test plan's test targets instead of guessed, and the `test()()` spelling xcodebuild needs is written for you
+- Failures carry every message with file and line, the argument or repetition it came from, and their attachments; identical messages are grouped, and text output is capped at 20 failures with a count of the rest
+- A test failure is no longer reported as "test target build failed". When the build or runner fails before any test reports, agent JSON says why (`reason`) and `rerun-failed` refuses instead of running nothing
+- Agent JSON `failed` counts every failure, not only the ones listed
 - **Cancelling stops the build.** An MCP cancel, a client disconnect, Ctrl-C, SIGTERM or SIGHUP now stops the xcodebuild (or other command) xcforge started, together with every process it spawned. Timeouts kill the whole process tree too, so compiler and test-runner children no longer outlive the call and hold DerivedData ("database is locked" on the next run)
 - Two MCP calls that would run xcodebuild on the same DerivedData folder (or the same project's default one) at once now run one after the other, first come first served
 - An explicit `project` in another repo or worktree uses the `.xcforge.yaml` next to it, for both session defaults (scheme, simulator, test plan) and xcodebuild options (DerivedData, lock, idle timeout)
