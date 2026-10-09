@@ -54,6 +54,15 @@ struct BuildTest: AsyncParsableCommand {
   )
   var env: [String] = []
 
+  @Option(
+    help:
+      "Simulator recovery: off (default), auto (reboot if not Booted), erase (also erase if a reboot didn't help)."
+  )
+  var simRecovery: String = "off"
+
+  @Flag(help: "Run on a fresh simulator of the same model and OS, deleted afterwards.")
+  var isolatedSim = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -69,7 +78,14 @@ struct BuildTest: AsyncParsableCommand {
   )
   var gate = false
 
+  @OptionGroup var xcodebuild: XcodebuildOptionGroup
+
   mutating func run() async throws {
+    let command = self
+    try await xcodebuild.scoped { try await command.execute() }
+  }
+
+  func execute() async throws {
     let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
     let configuration = self.configuration ?? "Debug"
     let resolvedTimeout = timeoutSeconds.map { TimeInterval($0) }
@@ -84,10 +100,12 @@ struct BuildTest: AsyncParsableCommand {
       coverage: coverage,
       long: long,
       diagnose: diagnose,
+      simRecovery: try SimRecoveryMode.parse(simRecovery),
       timeoutSeconds: resolvedTimeout,
       envEntries: env,
       gate: gate,
-      forMode: forMode
+      forMode: forMode,
+      isolatedSimulator: isolatedSim
     )
 
     if useJSON {

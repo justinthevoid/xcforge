@@ -41,7 +41,7 @@ public enum ToolRegistry {
   }
 
   public static var allTools: [Tool] {
-    var tools = activeProviders.flatMap { $0.tools }
+    var tools = activeProviders.flatMap { $0.tools }.map(XcodebuildOptions.augment)
     // Always include the tool_groups management tool
     tools.append(toolGroupsTool)
     assert(
@@ -56,11 +56,20 @@ public enum ToolRegistry {
     // Handle built-in tool_groups before checking providers
     if name == "tool_groups" { return handleToolGroups(args) }
 
-    for provider in activeProviders {
-      if let result = await provider.dispatch(name, args, env: env) {
-        return result
+    // Per-call xcodebuild options (derivedDataPath, buildLock, ...) ride in a task-local so
+    // every xcodebuild call made while serving this tool sees them.
+    let options =
+      XcodebuildOptions.mcpToolNames.contains(name)
+      ? XcodebuildOptions.fromMCPArguments(args) : XcodebuildOptions()
+    let result = await XcodebuildOptions.$current.withValue(options) { () async -> CallTool.Result? in
+      for provider in activeProviders {
+        if let result = await provider.dispatch(name, args, env: env) {
+          return result
+        }
       }
+      return nil
     }
+    if let result { return result }
     Log.warn("Unknown tool: \(name)")
     return .fail("Unknown tool: \(name)")
   }

@@ -293,6 +293,21 @@ public enum BuildTools {
       ])
     ),
     Tool(
+      name: "build_lock_status",
+      description: """
+        Show who holds the shared build lock and who is queued behind it, with wait times.         The lock path comes from the 'lock' argument, XCFORGE_BUILD_LOCK, or .xcforge.yaml buildLock.
+        """,
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "lock": .object([
+            "type": .string("string"),
+            "description": .string("Lock file path. Defaults to the configured build lock."),
+          ])
+        ]),
+      ])
+    ),
+    Tool(
       name: "discover_projects",
       description: "Find Xcode projects and workspaces in a directory.",
       inputSchema: .object([
@@ -386,9 +401,9 @@ public enum BuildTools {
     let buildTimeout = await TestTools.resolveTestTimeout(long: long, env: env)
     let snapshotPath = TestTools.diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
-      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
-    let result = try await env.shell.run(
-      "/usr/bin/xcodebuild", arguments: buildArgs, timeout: buildTimeout)
+      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120],
+      processMatch: resultPath, env: env)
+    let result = try await Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
     watchdog.cancel()
     let watchdogCapture = await watchdog.latestResult
     let diagResult: DiagnosticSnapshot.Result?
@@ -397,14 +412,14 @@ public enum BuildTools {
         diagResult = captured
       } else {
         diagResult = await DiagnosticSnapshot.capture(
-          udid: resolvedSimulator, snapshotPath: snapshotPath, env: env)
+          udid: resolvedSimulator, snapshotPath: snapshotPath, processMatch: resultPath, env: env)
       }
     } else if diagnose {
       if let captured = watchdogCapture {
         diagResult = captured
       } else {
         diagResult = await DiagnosticSnapshot.capture(
-          udid: resolvedSimulator, snapshotPath: snapshotPath, env: env)
+          udid: resolvedSimulator, snapshotPath: snapshotPath, processMatch: resultPath, env: env)
       }
     } else {
       diagResult = watchdogCapture
@@ -724,16 +739,22 @@ public enum BuildTools {
     return issue.message
   }
 
-  /// Find the most recent xcresult bundle from a build in /tmp.
-  public static func findRecentBuildXcresult(env: Environment = .live) async -> String? {
+  /// Find this project's most recent build result bundle. Falls back to the newest
+  /// xcforge build bundle in the artifact directory when no project can be resolved.
+  public static func findRecentBuildXcresult(project: String? = nil, env: Environment = .live)
+    async -> String?
+  {
+    if let resolved = try? await env.session.resolveProject(project) {
+      return LastResultStore.latest(project: resolved, kind: .build)
+    }
+    let dir = XcodebuildOptions.artifactDirectory()
     do {
-      let result = try await env.shell.run(
-        "/bin/ls", arguments: ["-1t", "/tmp/"], timeout: 5)
+      let result = try await env.shell.run("/bin/ls", arguments: ["-1t", dir], timeout: 5)
       guard result.succeeded else { return nil }
       let candidates = result.stdout.split(separator: "\n")
         .map(String.init)
         .filter { $0.hasPrefix("xcf-build-") && $0.hasSuffix(".xcresult") }
-      return candidates.first.map { "/tmp/\($0)" }
+      return candidates.first.map { (dir as NSString).appendingPathComponent($0) }
     } catch {
       return nil
     }
@@ -777,11 +798,8 @@ public enum BuildTools {
       let projectFlag = isWorkspace ? "-workspace" : "-project"
 
       do {
-        let result = try await env.shell.run(
-          "/usr/bin/xcodebuild",
-          arguments: [
-            projectFlag, project, "-scheme", scheme, "clean",
-          ], timeout: 60)
+        let result = try await Xcodebuild.run(
+          [projectFlag, project, "-scheme", scheme, "clean"], timeout: 60, env: env)
         return result.succeeded ? .ok("Clean succeeded") : .fail("Clean failed: \(result.stderr)")
       } catch {
         return .fail("Clean error: \(error)")
@@ -877,10 +895,10 @@ public enum BuildTools {
     let buildTimeout = await TestTools.resolveTestTimeout(long: input.long ?? false, env: env)
     let buildSnapshotPath = TestTools.diagnosticSnapshotPath()
     let buildWatchdog = HangWatchdog(
-      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], env: env)
-    async let buildTask = env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: buildTimeout)
-    async let settingsTask = env.shell.run(
-      "/usr/bin/xcodebuild", arguments: settingsArgs, timeout: 30)
+      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], processMatch: resultPath,
+      env: env)
+    async let buildTask = Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
+    async let settingsTask = Xcodebuild.run(settingsArgs, timeout: 30, env: env)
     async let bootTask = env.shell.run(
       "/usr/bin/xcrun", arguments: ["simctl", "boot", udid], timeout: 60)
     async let openTask = env.shell.run(
@@ -900,7 +918,7 @@ public enum BuildTools {
       buildDiagResult = captured
     } else if input.diagnose ?? false {
       buildDiagResult = await DiagnosticSnapshot.capture(
-        udid: udid, snapshotPath: buildSnapshotPath, env: env)
+        udid: udid, snapshotPath: buildSnapshotPath, processMatch: resultPath, env: env)
     } else {
       buildDiagResult = nil
     }
@@ -996,7 +1014,9 @@ public enum BuildTools {
 
     // Tier 3: Search DerivedData
     if appPath == nil {
-      let ddPath = NSHomeDirectory() + "/Library/Developer/Xcode/DerivedData"
+      let ddPath =
+        XcodebuildOptions.effective(cwd: env.currentDirectoryPath()).derivedDataPath
+        ?? NSHomeDirectory() + "/Library/Developer/Xcode/DerivedData"
       let findResult = try? await env.shell.run(
         "/usr/bin/find",
         arguments: [
@@ -1132,15 +1152,14 @@ public enum BuildTools {
     let projectFlag = isWorkspace ? "-workspace" : "-project"
     let destination = await AutoDetect.buildDestination(simulator)
 
-    let result = try await env.shell.run(
-      "/usr/bin/xcodebuild",
-      arguments: [
+    let result = try await Xcodebuild.run(
+      [
         projectFlag, project,
         "-scheme", scheme,
         "-configuration", configuration,
         "-destination", destination,
         "-showBuildSettings",
-      ], timeout: 30)
+      ], timeout: 30, env: env)
 
     guard result.succeeded else {
       let details = result.stderr.isEmpty ? result.stdout : result.stderr
@@ -1259,11 +1278,8 @@ public enum BuildTools {
     let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
 
-    let result = try await Shell.run(
-      "/usr/bin/xcodebuild",
-      arguments: [
-        projectFlag, resolvedProject, "-scheme", resolvedScheme, "clean",
-      ], timeout: 60)
+    let result = try await Xcodebuild.run(
+      [projectFlag, resolvedProject, "-scheme", resolvedScheme, "clean"], timeout: 60, env: env)
 
     return CleanExecution(
       succeeded: result.succeeded,
@@ -1349,6 +1365,16 @@ public enum BuildTools {
 }
 
 extension BuildTools: ToolProvider {
+  static func buildLockStatus(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    let explicit = args?["lock"]?.stringValue
+    guard let path = BuildLock.configuredPath(explicit: explicit, cwd: env.currentDirectoryPath())
+    else {
+      return .fail("No build lock configured. Pass 'lock', set XCFORGE_BUILD_LOCK, or add buildLock to .xcforge.yaml.")
+    }
+    let status = await BuildLock.status(path: path, env: env)
+    return .ok(BuildLock.format(status))
+  }
+
   public static func dispatch(_ name: String, _ args: [String: Value]?, env: Environment) async
     -> CallTool.Result?
   {
@@ -1359,6 +1385,7 @@ extension BuildTools: ToolProvider {
     case "clean": return await clean(args, env: env)
     case "discover_projects": return await discoverProjects(args, env: env)
     case "list_schemes": return await listSchemes(args, env: env)
+    case "build_lock_status": return await buildLockStatus(args, env: env)
     default: return nil
     }
   }

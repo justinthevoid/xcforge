@@ -60,13 +60,20 @@ enum DiagnosticSnapshot {
 
   // MARK: - Capture
 
-  static func capture(udid: String?, snapshotPath: String, env: Environment) async -> Result {
+  /// - Parameter processMatch: A string unique to this invocation's command line (its result
+  ///   bundle path). When set, only an xcodebuild started by this xcforge call is sampled, never
+  ///   another session's build on the same Mac.
+  static func capture(
+    udid: String?, snapshotPath: String, processMatch: String? = nil, env: Environment
+  ) async -> Result {
     var sections: [String] = []
     sections.append("=== xcforge diagnostic snapshot ===")
     sections.append("Timestamp: \(ISO8601DateFormatter().string(from: Date()))")
 
+    let pgrepArgs = processMatch.map { ["-n", "-f", NSRegularExpression.escapedPattern(for: $0)] }
+      ?? ["-n", "xcodebuild"]
     let pgrepResult = try? await env.shell.run(
-      "/usr/bin/pgrep", arguments: ["-n", "xcodebuild"], timeout: 5)
+      "/usr/bin/pgrep", arguments: pgrepArgs, timeout: 5)
     let pidStr =
       pgrepResult?.stdout
       .split(separator: "\n", omittingEmptySubsequences: true)

@@ -42,7 +42,14 @@ struct TestRerunFailed: AsyncParsableCommand {
   @Flag(help: "Apply known-failures gate to the rerun result.")
   var gate = false
 
+  @OptionGroup var xcodebuild: XcodebuildOptionGroup
+
   mutating func run() async throws {
+    let command = self
+    try await xcodebuild.scoped { try await command.execute() }
+  }
+
+  func execute() async throws {
     let cwd = FileManager.default.currentDirectoryPath
     let repoRoot = RepoRoot.discover(from: cwd) ?? cwd
     guard let payload = LastFailuresStore.read(at: repoRoot) else {

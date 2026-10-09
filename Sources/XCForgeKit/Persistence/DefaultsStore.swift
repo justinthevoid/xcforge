@@ -586,6 +586,14 @@ public enum RepoConfig {
     /// values to sticky session defaults. Defaults to `true` (legacy behavior)
     /// when the key is omitted.
     public var autoPromote: Bool?
+    /// `-derivedDataPath` for every xcodebuild call. Relative paths resolve against the yaml's folder.
+    public var derivedDataPath: String?
+    /// Lock file held around every xcodebuild call (same flock as `lockf(1)`).
+    public var buildLock: String?
+    /// Directory for generated result bundles and diagnostics.
+    public var artifactDir: String?
+    /// Refuse to build below this much free disk (GB). Absent means warn only.
+    public var minFreeGB: Double?
 
     public init(
       project: String? = nil,
@@ -594,7 +602,11 @@ public enum RepoConfig {
       configuration: String? = nil,
       testPlan: String? = nil,
       testTimeout: Int? = nil,
-      autoPromote: Bool? = nil
+      autoPromote: Bool? = nil,
+      derivedDataPath: String? = nil,
+      buildLock: String? = nil,
+      artifactDir: String? = nil,
+      minFreeGB: Double? = nil
     ) {
       self.project = project
       self.scheme = scheme
@@ -603,12 +615,17 @@ public enum RepoConfig {
       self.testPlan = testPlan
       self.testTimeout = testTimeout
       self.autoPromote = autoPromote
+      self.derivedDataPath = derivedDataPath
+      self.buildLock = buildLock
+      self.artifactDir = artifactDir
+      self.minFreeGB = minFreeGB
     }
 
     /// True when every field is nil (nothing to apply).
     public var isEmpty: Bool {
       project == nil && scheme == nil && simulator == nil && configuration == nil
         && testPlan == nil && testTimeout == nil && autoPromote == nil
+        && derivedDataPath == nil && buildLock == nil && artifactDir == nil && minFreeGB == nil
     }
   }
 
@@ -661,7 +678,7 @@ public enum RepoConfig {
 
     let allowedKeys: Set<String> = [
       "project", "scheme", "simulator", "configuration", "testPlan",
-      "testTimeout", "autoPromote",
+      "testTimeout", "autoPromote", "derivedDataPath", "buildLock", "artifactDir", "minFreeGB",
     ]
     for key in dict.keys where !allowedKeys.contains(key) {
       Log.warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'")
@@ -706,6 +723,23 @@ public enum RepoConfig {
       }
     }
 
+    // Path keys resolve relative to the yaml's folder; they need not exist yet.
+    func resolvedPath(_ key: String) -> String? {
+      guard let raw = dict[key] else { return nil }
+      let expanded = (raw as NSString).expandingTildeInPath
+      if expanded.hasPrefix("/") { return expanded }
+      return ((configDir as NSString).appendingPathComponent(expanded) as NSString).standardizingPath
+    }
+
+    var minFreeGB: Double?
+    if let raw = dict["minFreeGB"] {
+      if let parsed = Double(raw), parsed >= 0 {
+        minFreeGB = parsed
+      } else {
+        Log.warn("\(RepoConfig.fileName): ignoring non-numeric minFreeGB '\(raw)'")
+      }
+    }
+
     let result = Values(
       project: project,
       scheme: dict["scheme"],
@@ -713,7 +747,11 @@ public enum RepoConfig {
       configuration: dict["configuration"],
       testPlan: dict["testPlan"],
       testTimeout: testTimeout,
-      autoPromote: autoPromote
+      autoPromote: autoPromote,
+      derivedDataPath: resolvedPath("derivedDataPath"),
+      buildLock: resolvedPath("buildLock"),
+      artifactDir: resolvedPath("artifactDir"),
+      minFreeGB: minFreeGB
     )
     return result.isEmpty ? nil : result
   }

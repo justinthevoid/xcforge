@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+- **Shared-Mac options for every xcodebuild call:** `--derived-data-path`, `--result-bundle-path`, repeatable `--xcodebuild-arg`, `--lock`, `--lock-wait` and `--min-free-gb` on `build compile|run|clean`, `build-test` and `test run|failures|list|rerun-failed`, with matching MCP arguments, env vars and `.xcforge.yaml` keys (`derivedDataPath`, `buildLock`, `artifactDir`, `minFreeGB`). See `Skills/xcforge/references/shared-mac.md`
+- **Build lock with a first-come, first-served queue.** Takes the same `flock` as macOS `lockf(1)`, so it queues next to existing `lockf` wrappers. `xcforge lock status` / `build_lock_status` show the holder, the queue and wait times
+- `--isolated-sim` / `isolatedSimulator` on `build-test`/`build_and_test` and `test run`/`test_sim`: run on a fresh simulator created for the run and deleted afterwards
+- Preflight warnings for low disk and heavy swap before a build
+
+### Changed
+- **`simRecovery` defaults to `off` everywhere** (was `auto` for `build_and_test`, `build-test` and `bless`). `auto` now only reboots; erasing a simulator needs the new `erase` mode. Invalid values are an error instead of silently becoming `auto`. `build-test` gains `--sim-recovery`
+- Result bundles and diagnostic snapshots get collision-free names (`xcf-<prefix>-<ts>-<pid>-<rand>`), so two sessions starting in the same second no longer delete each other's bundles. `XCFORGE_ARTIFACT_DIR` / `artifactDir` moves them out of `/tmp`
+- `build diagnose`, `test failures` and `test coverage` read this project's last recorded result bundle instead of the newest bundle any session left in `/tmp`. `test failures` without `--xcresult-path` reuses that bundle instead of re-running the whole suite
+
+### Fixed
+- A hung build's fallback no longer runs `pkill -x xcodebuild`, which killed every session's build on the Mac. Hang snapshots sample the xcodebuild matched by this run's result bundle path instead of the newest xcodebuild on the system
+- WDA port cleanup only kills WebDriverAgent runner processes, uses the port from `WDA_BASE_URL`, skips remote WDA hosts, and calls `lsof` at its real path (`/usr/sbin/lsof`)
+
 ## [1.6.1] - 2026-05-19
 
 ### Fixed

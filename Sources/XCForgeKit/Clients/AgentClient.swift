@@ -185,18 +185,41 @@ public actor WDAClient {
       "\(backend.displayName) did not become ready within 10s after restart")
   }
 
-  /// Kill any process holding port 8100 to prevent binding conflicts.
+  /// Free the local WDA port, killing only WebDriverAgent runner processes listening on it.
+  /// The port comes from the configured base URL. Nothing is killed for a remote WDA
+  /// (a phone over the CoreDevice tunnel) or for an unrelated process on the port.
   private func cleanupPort8100() async {
-    if let result = try? await Shell.run("/usr/bin/lsof", arguments: ["-ti", ":8100"], timeout: 5),
+    guard let url = URL(string: baseURL), let host = url.host,
+      ["localhost", "127.0.0.1", "::1"].contains(host)
+    else { return }
+    let port = url.port ?? 8100
+    guard
+      let result = try? await Shell.run(
+        "/usr/sbin/lsof", arguments: ["-ti", "tcp:\(port)", "-sTCP:LISTEN"], timeout: 5),
       result.succeeded, !result.stdout.isEmpty
-    {
-      for pidStr in result.stdout.split(separator: "\n") {
-        if let pid = Int32(pidStr.trimmingCharacters(in: .whitespaces)) {
-          kill(pid, SIGKILL)
-        }
+    else { return }
+    var killed = false
+    for pidStr in result.stdout.split(separator: "\n") {
+      guard let pid = Int32(pidStr.trimmingCharacters(in: .whitespaces)) else { continue }
+      let ps = try? await Shell.run(
+        "/bin/ps", arguments: ["-o", "comm=", "-p", String(pid)], timeout: 5)
+      let command = ps?.stdout ?? ""
+      guard Self.isWDARunnerCommand(command) else {
+        Log.warn("Port \(port) is held by pid \(pid) (\(command)), not a WDA runner — leaving it alone")
+        continue
       }
+      kill(pid, SIGKILL)
+      killed = true
+    }
+    if killed {
       try? await Task.sleep(nanoseconds: 300_000_000)  // 0.3s for port release
     }
+  }
+
+  /// True when a process command path looks like a WebDriverAgent test runner.
+  static func isWDARunnerCommand(_ command: String) -> Bool {
+    let name = (command.trimmingCharacters(in: .whitespacesAndNewlines) as NSString).lastPathComponent
+    return name.contains("WebDriverAgent") || name.contains("WDARunner") || name.hasSuffix("-Runner")
   }
 
   /// Kill any WDA process on port 8100 and terminate known runners.

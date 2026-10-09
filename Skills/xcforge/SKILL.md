@@ -27,6 +27,7 @@ xcforge is a native Swift MCP server and CLI for iOS development. 109 MCP tools,
 |-----------|-----------|
 | **[Build Tools](references/build-tools.md)** | Building, running, cleaning, discovering projects, listing schemes |
 | **[Test Tools](references/test-tools.md)** | Running tests, analyzing failures, checking code coverage, build diagnostics |
+| **[Shared Mac](references/shared-mac.md)** | DerivedData/result-bundle paths, extra xcodebuild args, build lock queue, isolated simulators, simulator recovery modes |
 | **[Simulator Tools](references/simulator-tools.md)** | Managing simulators — boot, shutdown, install, launch, clone, erase, delete, orientation, video recording, location, appearance, status bar |
 | **[Device Tools](references/device-tools.md)** | Physical iOS devices — list, info, install, uninstall, launch, terminate, list apps via devicectl |
 | **[SPM Tools](references/spm-tools.md)** | Swift packages — build, test, run, list dependencies, clean |

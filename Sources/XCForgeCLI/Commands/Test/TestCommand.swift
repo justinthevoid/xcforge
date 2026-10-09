@@ -82,8 +82,14 @@ struct TestRun: AsyncParsableCommand {
   @Flag(help: "Capture a diagnostic snapshot even when the test run succeeds.")
   var diagnose = false
 
-  @Option(help: "Simulator recovery mode (auto|off). Default: off.")
+  @Option(
+    help:
+      "Simulator recovery: off (default), auto (reboot if not Booted), erase (also erase if a reboot didn't help)."
+  )
   var simRecovery: String = "off"
+
+  @Flag(help: "Run on a fresh simulator of the same model and OS, deleted afterwards.")
+  var isolatedSim = false
 
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
@@ -100,12 +106,19 @@ struct TestRun: AsyncParsableCommand {
   )
   var gate = false
 
+  @OptionGroup var xcodebuild: XcodebuildOptionGroup
+
   mutating func run() async throws {
+    let command = self
+    try await xcodebuild.scoped { try await command.execute() }
+  }
+
+  func execute() async throws {
     let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
     let env = Environment.live
     let configuration = await env.session.resolveConfiguration(self.configuration)
     let resolvedTestplan = await env.session.resolveTestPlan(testplan)
-    let recoveryMode = SimRecoveryMode(rawValue: simRecovery) ?? .off
+    let recoveryMode = try SimRecoveryMode.parse(simRecovery)
 
     let execution = try await TestTools.executeTest(
       project: project,
@@ -120,6 +133,7 @@ struct TestRun: AsyncParsableCommand {
       simRecovery: recoveryMode,
       gate: gate,
       forMode: forMode,
+      isolatedSimulator: isolatedSim,
       env: env
     )
 
@@ -159,7 +173,14 @@ struct TestFailures: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var xcodebuild: XcodebuildOptionGroup
+
   mutating func run() async throws {
+    let command = self
+    try await xcodebuild.scoped { try await command.execute() }
+  }
+
+  func execute() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     let result = try await TestTools.extractFailures(
       xcresultPath: xcresultPath,
@@ -273,7 +294,14 @@ struct TestList: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var xcodebuild: XcodebuildOptionGroup
+
   mutating func run() async throws {
+    let command = self
+    try await xcodebuild.scoped { try await command.execute() }
+  }
+
+  func execute() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     let result = try await TestTools.executeListTests(
       project: project,
