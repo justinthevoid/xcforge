@@ -931,7 +931,7 @@ xcforge bless --baseline home-dark --tests "SnapshotTests/HomeTests" --project M
 | `--scheme <name>` | Auto-detected if omitted |
 | `--simulator <name\|udid>` | Auto-detected if omitted |
 
-**Steps performed:** save baseline → run tests → compare visual → suggest `[bless] <slug>` commit message.
+**Steps performed:** save baseline → run tests → compare visual.
 
 **Exit code:** 0 when all tests pass and diff is within threshold, 1 otherwise.
 

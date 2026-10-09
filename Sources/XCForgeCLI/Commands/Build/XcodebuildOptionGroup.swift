@@ -38,6 +38,11 @@ struct XcodebuildOptionGroup: ParsableArguments {
     help: "Keep building after the first error so one run reports every error. Default: on.")
   var continueAfterErrors: Bool?
 
+  @Flag(
+    inversion: .prefixedNo,
+    help: "Add -skipMacroValidation, -parallelizeTargets and compilation caching to builds. Default: on.")
+  var defaultFlags: Bool?
+
   var options: XcodebuildOptions {
     XcodebuildOptions(
       derivedDataPath: derivedDataPath.map { ($0 as NSString).expandingTildeInPath },
@@ -47,7 +52,8 @@ struct XcodebuildOptionGroup: ParsableArguments {
       lockWaitSeconds: lockWait.map { TimeInterval($0) },
       minFreeGB: minFreeGb,
       idleTimeoutSeconds: idleTimeout.map { TimeInterval($0) },
-      continueAfterErrors: continueAfterErrors
+      continueAfterErrors: continueAfterErrors,
+      defaultFlags: defaultFlags
     )
   }
 

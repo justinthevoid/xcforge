@@ -38,7 +38,7 @@ bun run lint && bun run format            # Biome lint/format
 **Dual-mode single binary**: no args → MCP server (stdio JSON-RPC); with args → CLI (ArgumentParser). Mode detection in `Sources/XCForgeCLI/Main.swift`.
 
 **Two targets** (see `Package.swift`):
-- `XCForgeKit` — shared library containing all 102+ MCP tools
+- `XCForgeKit` — shared library containing all 110+ MCP tools
 - `XCForgeCLI` — CLI layer wrapping the library with ArgumentParser commands
 
 ### Tool Provider System
@@ -74,7 +74,7 @@ MCP tools use snake_case (`build_sim`, `ui_tap`). CLI commands mirror them as su
 2. Register it in `ProviderRegistry`
 3. Add a matching CLI command in `Sources/XCForgeCLI/Commands/`
 4. Add tests in `Tests/XCForgeKitTests/`
-5. Update skill reference in `.claude/skills/xcforge/references/`
+5. Update skill reference in `Skills/xcforge/references/`
 
 ## Dependencies
 

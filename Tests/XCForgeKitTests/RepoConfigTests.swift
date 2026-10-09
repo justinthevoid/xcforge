@@ -766,12 +766,25 @@ struct RepoConfigTests {
     #expect(!shown.contains("auto-promoted"))
   }
 
-  @Test("autoPromote defaults to true when key omitted (legacy behavior)")
-  func autoPromoteDefaultsTrue() async {
+  @Test("autoPromote is off when the key is omitted and on with autoPromote: true")
+  func autoPromoteOptIn() async {
+    let offRoot = makeTempDir()
+    defer { cleanup(offRoot) }
+    createDir(offRoot.appendingPathComponent(".git"))
+    writeFile("scheme: AnyScheme\n", at: offRoot)
+    let offStoreDir = offRoot.appendingPathComponent("store", isDirectory: true)
+    createDir(offStoreDir)
+    let offStore = DefaultsStore(baseDirectory: offStoreDir)
+    let offSession = SessionState(defaultsStore: offStore, cwd: offRoot.path)
+    for _ in 0..<5 {
+      _ = try? await offSession.resolveScheme("PromoteMe", project: "/dummy.xcodeproj")
+    }
+    #expect(!(await offSession.showDefaults()).contains("auto-promoted"))
+
     let root = makeTempDir()
     defer { cleanup(root) }
     createDir(root.appendingPathComponent(".git"))
-    writeFile("scheme: AnyScheme\n", at: root)
+    writeFile("scheme: AnyScheme\nautoPromote: true\n", at: root)
 
     let storeDir = root.appendingPathComponent("store", isDirectory: true)
     createDir(storeDir)
@@ -892,7 +905,7 @@ struct RepoConfigTests {
     let root = makeTempDir()
     defer { cleanup(root) }
     createDir(root.appendingPathComponent(".git"))
-    // autoPromote defaults to true.
+    writeFile("autoPromote: true\n", at: root)
 
     let storeDir = root.appendingPathComponent("store", isDirectory: true)
     createDir(storeDir)

@@ -1106,14 +1106,14 @@ public enum BuildTools {
       launchResult = try await env.shell.run(
         "/usr/bin/xcrun",
         arguments: ["simctl", "launch", "--terminate-running-process", udid, bundleId],
-        timeout: 15)
+        timeout: SimTools.launchTimeout)
     } catch {
       return .fail("Build + Install succeeded\nLaunch error: \(error)")
     }
 
     guard launchResult.succeeded else {
       if launchResult.exitCode == -1 {
-        return .fail("Build + Install succeeded\nLaunch timed out after 15s")
+        return .fail("Build + Install succeeded\nLaunch timed out after \(Int(SimTools.launchTimeout))s")
       }
       return .fail("Build + Install succeeded\nLaunch FAILED: \(launchResult.stderr)")
     }

@@ -582,9 +582,8 @@ public enum RepoConfig {
     /// Default test watchdog timeout in seconds, applied when no explicit
     /// `timeoutSeconds` is passed. Overrides the built-in 1800s/7200s defaults.
     public var testTimeout: Int?
-    /// When `false`, suppresses the 3-strikes silent promotion of explicit
-    /// values to sticky session defaults. Defaults to `true` (legacy behavior)
-    /// when the key is omitted.
+    /// When `true`, three consecutive uses of the same explicit value promote it to a
+    /// sticky session default. Off when the key is omitted.
     public var autoPromote: Bool?
     /// `-derivedDataPath` for every xcodebuild call. Relative paths resolve against the yaml's folder.
     public var derivedDataPath: String?
@@ -596,6 +595,8 @@ public enum RepoConfig {
     public var minFreeGB: Double?
     /// Seconds of xcodebuild silence before it is treated as hung. 0 disables.
     public var idleTimeout: TimeInterval?
+    /// False drops the flags xcforge adds to every build.
+    public var defaultFlags: Bool?
 
     public init(
       project: String? = nil,
@@ -609,7 +610,8 @@ public enum RepoConfig {
       buildLock: String? = nil,
       artifactDir: String? = nil,
       minFreeGB: Double? = nil,
-      idleTimeout: TimeInterval? = nil
+      idleTimeout: TimeInterval? = nil,
+      defaultFlags: Bool? = nil
     ) {
       self.project = project
       self.scheme = scheme
@@ -623,6 +625,7 @@ public enum RepoConfig {
       self.artifactDir = artifactDir
       self.minFreeGB = minFreeGB
       self.idleTimeout = idleTimeout
+      self.defaultFlags = defaultFlags
     }
 
     /// True when every field is nil (nothing to apply).
@@ -630,7 +633,7 @@ public enum RepoConfig {
       project == nil && scheme == nil && simulator == nil && configuration == nil
         && testPlan == nil && testTimeout == nil && autoPromote == nil
         && derivedDataPath == nil && buildLock == nil && artifactDir == nil && minFreeGB == nil
-        && idleTimeout == nil
+        && idleTimeout == nil && defaultFlags == nil
     }
   }
 
@@ -684,7 +687,7 @@ public enum RepoConfig {
     let allowedKeys: Set<String> = [
       "project", "scheme", "simulator", "configuration", "testPlan",
       "testTimeout", "autoPromote", "derivedDataPath", "buildLock", "artifactDir", "minFreeGB",
-      "idleTimeout",
+      "idleTimeout", "defaultFlags",
     ]
     for key in dict.keys where !allowedKeys.contains(key) {
       Log.warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'")
@@ -767,7 +770,8 @@ public enum RepoConfig {
       buildLock: resolvedPath("buildLock"),
       artifactDir: resolvedPath("artifactDir"),
       minFreeGB: minFreeGB,
-      idleTimeout: idleTimeout
+      idleTimeout: idleTimeout,
+      defaultFlags: dict["defaultFlags"].flatMap(XcodebuildOptions.parseBool)
     )
     return result.isEmpty ? nil : result
   }
@@ -832,7 +836,7 @@ public enum RepoConfig {
     lines.append(
       entry(
         "autoPromote", nil,
-        "Set to false to disable 3-strikes auto-promotion of explicit values. Default: true."
+        "Set to true to save a value as a session default after 3 consecutive explicit uses. Default: false."
       ).trimmingCharacters(in: .newlines))
     return lines.joined(separator: "\n") + "\n"
   }

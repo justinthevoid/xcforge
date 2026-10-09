@@ -58,6 +58,15 @@ struct SharedMacSafetyTests {
     #expect(Xcodebuild.apply(XcodebuildOptions(), to: explicit) == explicit)
   }
 
+  @Test("defaultFlags: false strips the flags xcforge adds on its own")
+  func defaultFlagsOff() {
+    let args = ["-skipMacroValidation", "-parallelizeTargets", "build", "COMPILATION_CACHE_ENABLE_CACHING=YES"]
+    let off = XcodebuildOptions(continueAfterErrors: false, defaultFlags: false)
+    #expect(Xcodebuild.apply(off, to: args) == ["build"])
+    #expect(Xcodebuild.apply(XcodebuildOptions(continueAfterErrors: false), to: args) == args)
+    #expect(XcodebuildOptions.effective(cwd: "/", environment: ["XCFORGE_DEFAULT_FLAGS": "0"]).defaultFlags == false)
+  }
+
   // MARK: - Timeouts
 
   @Test("timeout kind distinguishes idle kills from total-limit kills")

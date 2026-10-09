@@ -70,8 +70,10 @@ public enum Xcodebuild {
 
   /// Insert `-derivedDataPath` and extra arguments before the first action token.
   /// Arguments the caller already passed are never duplicated.
-  static func apply(_ options: XcodebuildOptions, to arguments: [String]) -> [String] {
-    guard isBuildInvocation(arguments) else { return arguments }
+  static func apply(_ options: XcodebuildOptions, to original: [String]) -> [String] {
+    guard isBuildInvocation(original) else { return original }
+    let arguments =
+      options.defaultFlags == false ? original.filter { !xcforgeDefaultFlags.contains($0) } : original
     var insert: [String] = []
     if let dd = options.derivedDataPath, !dd.isEmpty, !arguments.contains("-derivedDataPath"),
       !arguments.contains("-xctestrun")
@@ -91,6 +93,11 @@ public enum Xcodebuild {
     result.insert(contentsOf: insert, at: index)
     return result
   }
+
+  /// Flags xcforge adds to builds on its own. `defaultFlags: false` removes them.
+  static let xcforgeDefaultFlags: Set<String> = [
+    "-skipMacroValidation", "-parallelizeTargets", "COMPILATION_CACHE_ENABLE_CACHING=YES",
+  ]
 
   /// Xcode user default that keeps the build going after the first error, so every
   /// error in the run is reported instead of only the first target's.

@@ -21,6 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Xcode 27 Device Hub support.** xcforge opens Device Hub when the selected Xcode has no Simulator.app, and screen capture, the accessibility bridge and window scripting accept either app
 
 ### Changed
+- **Auto-promotion is opt-in.** Repeated explicit values no longer silently become session defaults unless `.xcforge.yaml` sets `autoPromote: true`
+- `--no-default-flags` / `defaultFlags: false` / `XCFORGE_DEFAULT_FLAGS=0` / `.xcforge.yaml defaultFlags: false` drop the flags xcforge adds to builds (`-skipMacroValidation`, `-parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES`)
+- `lldb_continue` / `debug continue` wait 30s by default and take `timeoutSeconds` / `--timeout` (was a fixed 10s); simulator app launch waits up to 60s (was 15s)
+- `bless` no longer prints a suggested commit message
+- Tool descriptions and the skill drop "preferred", "call this first" and marketing copy; pitfalls are stated as facts rather than rules
 - UI tools no longer run simulator recovery (terminate, rebuild, redeploy) when WDA is on a physical device; they report `device_runner_not_reachable` and point at `wda start`
 - xcforgeWDA's iOS deployment target is 15.0 (Xcode 27 no longer builds for 13)
 - devicectl output is read from Xcode 27's `properties` dictionary as well as the older split keys; `device info` adds tunnel, pairing and Developer Mode state

@@ -649,7 +649,7 @@ public enum TestTools {
       description: """
         Build an iOS app then run tests in one call. Short-circuits on build failure \
         with structured diagnostics (errors with file:line). If build succeeds, runs \
-        tests and returns pass/fail summary. Preferred over separate build_and_diagnose + test_sim calls. \
+        tests and returns pass/fail summary. \
         Project, scheme, and simulator are auto-detected if omitted.
         """,
       inputSchema: .object([

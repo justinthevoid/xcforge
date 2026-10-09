@@ -29,6 +29,10 @@ public struct XcodebuildOptions: Sendable, Equatable {
   /// Keep compiling other files and targets after the first error so one run reports them all.
   /// Default: on.
   public var continueAfterErrors: Bool?
+  /// When false, drop the flags xcforge adds on its own (`-skipMacroValidation`,
+  /// `-parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES`) so the build matches a
+  /// plain xcodebuild invocation. Default: true.
+  public var defaultFlags: Bool?
 
   public init(
     derivedDataPath: String? = nil,
@@ -39,7 +43,8 @@ public struct XcodebuildOptions: Sendable, Equatable {
     minFreeGB: Double? = nil,
     artifactDir: String? = nil,
     idleTimeoutSeconds: TimeInterval? = nil,
-    continueAfterErrors: Bool? = nil
+    continueAfterErrors: Bool? = nil,
+    defaultFlags: Bool? = nil
   ) {
     self.derivedDataPath = derivedDataPath
     self.resultBundlePath = resultBundlePath
@@ -50,6 +55,7 @@ public struct XcodebuildOptions: Sendable, Equatable {
     self.artifactDir = artifactDir
     self.idleTimeoutSeconds = idleTimeoutSeconds
     self.continueAfterErrors = continueAfterErrors
+    self.defaultFlags = defaultFlags
   }
 
   /// Options set for the current call (CLI flags or MCP arguments).
@@ -93,8 +99,18 @@ public struct XcodebuildOptions: Sendable, Equatable {
       explicit.idleTimeoutSeconds ?? environment["XCFORGE_IDLE_TIMEOUT"].flatMap { TimeInterval($0) }
       ?? repo?.idleTimeout
     merged.continueAfterErrors = explicit.continueAfterErrors
+    merged.defaultFlags =
+      explicit.defaultFlags ?? environment["XCFORGE_DEFAULT_FLAGS"].flatMap(parseBool) ?? repo?.defaultFlags
     merged.extraArgs = explicit.extraArgs
     return merged
+  }
+
+  static func parseBool(_ raw: String) -> Bool? {
+    switch raw.lowercased() {
+    case "1", "true", "yes", "on": return true
+    case "0", "false", "no", "off": return false
+    default: return nil
+    }
   }
 
   /// Directory for generated artifacts. Defaults to `/tmp`.
@@ -181,6 +197,12 @@ public struct XcodebuildOptions: Sendable, Equatable {
       "description": .string(
         "Keep building after the first error so one run reports every error. Default: true."),
     ]),
+    "defaultFlags": .object([
+      "type": .string("boolean"),
+      "description": .string(
+        "Set false to drop the flags xcforge adds (-skipMacroValidation, -parallelizeTargets, COMPILATION_CACHE_ENABLE_CACHING=YES). Default: true."
+      ),
+    ]),
   ]
 
   /// Parse the option keys out of an MCP argument dictionary.
@@ -203,7 +225,8 @@ public struct XcodebuildOptions: Sendable, Equatable {
       minFreeGB: number(args["minFreeGB"]),
       artifactDir: nil,
       idleTimeoutSeconds: number(args["idleTimeoutSeconds"]),
-      continueAfterErrors: args["continueAfterErrors"]?.boolValue
+      continueAfterErrors: args["continueAfterErrors"]?.boolValue,
+      defaultFlags: args["defaultFlags"]?.boolValue
     )
   }
 

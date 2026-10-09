@@ -7,21 +7,9 @@ description: Complete reference for xcforge — 109 MCP tools + 113 CLI commands
 
 xcforge is a native Swift MCP server and CLI for iOS development. 109 MCP tools, 113 CLI commands across 19 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, multi-step plan execution, visual pose iteration, bless (baseline+test+diff in one call), agent-optimized test output with known-failures gating, and test plan inspection. Every MCP tool has a CLI equivalent.
 
-**Key advantages over alternatives:**
-- Screenshots in 0.3s (44x faster) via CoreSimulator IOSurface API
-- Native HID taps/swipes in <5ms (bypasses WDA when available)
-- Structured xcresult parsing — pass/fail counts, failure file:line, failure screenshots
-- One-call alert batching (`accept_all`) handles 3+ permission dialogs
-- Topic-filtered logs — 90% fewer tokens, 8 topics with line counts
-- Element-to-element drag & drop in 1 call
-- Auto-scroll to off-screen elements (3-tier fallback)
-- View hierarchy in ~20ms (750x faster)
-- Physical device support — install, launch, terminate, list apps via devicectl
-- Session profiles — save/switch named default sets for quick context switching
+## References
 
-## Reference Loading Guide
-
-**Load reference files when using or advising on any xcforge tool.** Each reference covers one tool category with exact parameters, return values, and usage patterns.
+Each reference covers one tool category with exact parameters, return values, and examples. Open the one you need.
 
 | Reference | Load When |
 |-----------|-----------|
@@ -29,7 +17,7 @@ xcforge is a native Swift MCP server and CLI for iOS development. 109 MCP tools,
 | **[Test Tools](references/test-tools.md)** | Running tests, analyzing failures, checking code coverage, build diagnostics |
 | **[Shared Mac](references/shared-mac.md)** | DerivedData/result-bundle paths, extra xcodebuild args, build lock queue, isolated simulators, simulator recovery modes |
 | **[Simulator Tools](references/simulator-tools.md)** | Managing simulators — boot, shutdown, install, launch, clone, erase, delete, orientation, video recording, location, appearance, status bar |
-| **[Device Tools](references/device-tools.md)** | Physical iOS devices — list, info, install, uninstall, launch, terminate, list apps via devicectl |
+| **[Device Tools](references/device-tools.md)** | Physical iOS devices — list, info, install, launch (deep links, env), screenshot, and WebDriverAgent on the device for UI automation |
 | **[SPM Tools](references/spm-tools.md)** | Swift packages — build, test, run, list dependencies, clean |
 | **[UI Automation](references/ui-automation.md)** | Finding/clicking elements, alerts, typing, gestures, drag & drop, view hierarchy, clipboard, native HID taps/swipes |
 | **[Screenshot & Visual](references/screenshot-visual.md)** | Taking screenshots, saving baselines, comparing visual regressions, multi-device checks, bless workflow |
@@ -56,7 +44,7 @@ All tools that accept `project`, `scheme`, `simulator`, `bundle_id`, or `app_pat
 
 **Repo config beats persisted defaults** (committed `.xcforge.yaml` outranks the personal machine-global file — like git `local` > `global`). `.xcforge.yaml` also supports repo-only `configuration` and `testPlan` keys.
 
-**Auto-promotion:** 3 consecutive calls with the same explicit value auto-promotes it to a session default.
+**Auto-promotion** (opt-in with `.xcforge.yaml autoPromote: true`): 3 consecutive calls with the same explicit value save it as a session default.
 
 Most tools work with zero parameters for single-project repos with one booted simulator.
 
@@ -69,7 +57,7 @@ build_run_sim()  → builds + boots + installs + launches in parallel (~9s faste
 
 ### Test → Fix → Verify (MCP)
 ```
-build_and_test()                              → build + test in one call (preferred)
+build_and_test()                              → build + test in one call
 build_and_test(filter: "testFoo")             → build + run specific test (auto-resolves target)
 test_failures(include_console: true)          → error messages + file:line + console
 # fix the code...
@@ -85,7 +73,7 @@ test_sim(filter: "MyClass/testFoo")           → run specific test (auto-resolv
 ### TDD Loop (CLI)
 ```bash
 xcforge build run                             → Cmd+R equivalent: build + boot + install + launch
-xcforge build-test                            → build + test in one step (preferred for TDD)
+xcforge build-test                            → build + test in one step
 xcforge build-test --filter "testFoo"         → build + run specific test
 xcforge build-test --env BLESS_BASELINE=1     → inject TEST_RUNNER_BLESS_BASELINE=1 into test process
 xcforge build-test --for agent                → slim ≤10-field JSON (agent-safe output)
@@ -200,6 +188,8 @@ device_install(device: "iPhone", app_path: "/path/to/App.app")
 device_launch(device: "iPhone", bundle_id: "com.app.id")
 device_apps(device: "iPhone")                 → list installed apps
 device_terminate(device: "iPhone", identifier: "com.app.id")
+device_screenshot(device: "iPhone")
+wda_start(device: "iPhone", team: "ABCDE12345")  → UI tools now drive the phone
 ```
 
 ### Swift Package Workflow (MCP)
@@ -224,7 +214,7 @@ xcforge spm clean                             → clean artifacts
 ```
 lldb_attach(bundleId: "com.example.App")      → { sessionId, pid, status: "stopped" }
 lldb_set_breakpoint(sessionId: "...", file: "Foo.swift", line: 42)
-lldb_continue(sessionId: "...", mode: "continue")   → runs until breakpoint; 10s timeout
+lldb_continue(sessionId: "...", mode: "continue")   → runs until breakpoint
 lldb_backtrace(sessionId: "...", threadIndex: 0)    → structured frames
 lldb_inspect_variable(sessionId: "...", expression: "self.count")
 lldb_run_command(sessionId: "...", command: "thread list")
@@ -247,11 +237,11 @@ clipboard_set(text: "test data")              → write to pasteboard
 clipboard_get()                               → read pasteboard content
 ```
 
-## Common Mistakes
+## Pitfalls
 
 1. **Starting log capture after the event** — `start_log_capture` only captures from the moment it's called. Start capture BEFORE reproducing the issue.
 
-2. **Not using `accept_all` after fresh install** — First app launch shows 2-3 permission dialogs. Call `handle_alert(action: "accept_all")` right after `launch_app` or `build_run_sim`.
+2. **Permission dialogs after a fresh install** — the first launch can show several. `handle_alert(action: "accept_all")` clears them in one call.
 
 3. **Manual swipe loops to find elements** — Use `find_element(scroll: true)` instead. It handles auto-scrolling with 3-tier fallback (scrollToVisible, calculated drag, iterative with stall detection).
 
@@ -259,11 +249,9 @@ clipboard_get()                               → read pasteboard content
 
 5. **Ignoring topic menu in `read_logs`** — The topic menu shows line counts. Use `include` to add specific topics rather than reading everything.
 
-6. **Not setting defaults for repeated operations** — Call `set_defaults(project: "...", scheme: "...", simulator: "...")` at the start of a session to avoid repeating parameters.
+6. **Using `test_sim` then parsing output for failures** — Use `test_failures` for detailed failure info with file:line and screenshots. `test_sim` gives the summary; `test_failures` gives the details.
 
-7. **Using `test_sim` then parsing output for failures** — Use `test_failures` for detailed failure info with file:line and screenshots. `test_sim` gives the summary; `test_failures` gives the details.
-
-8. **Forgetting WDA session** — UI automation tools require WebDriverAgent running on the simulator. If `wda_status` fails, WDA needs to be started. `build_run_sim` does NOT start WDA automatically.
+7. **WebDriverAgent** — UI automation tools start WDA on a simulator themselves on first use. On a physical device run `wda_start` (CLI `xcforge wda start`) first; the device must be unlocked with Settings > Developer > Enable UI Automation on.
 
    **Sub-pitfall: WDA can't see SwiftUI sheets / alerts / `fullScreenCover`.** Those mount in a secondary window owned by the app. Queries reach them only when the WDA session is bound to the app's bundle id. Run `xcforge ui session --bundle-id <id>` once — `WDAClient` persists the binding across recreates from then on, and the CLI verifies the binding via `GET /session/<sid>`, exiting non-zero on mismatch (no more silent no-binds). If `ui find` / `tap-by-id` 404s on an id you can see in `ui ls`, this is almost always why.
 
@@ -271,8 +259,8 @@ clipboard_get()                               → read pasteboard content
 
    **Sub-pitfall: `xcforge pose --screenshot` capturing the launch zoom animation.** `pose` now waits 1.5s by default before capturing so the iOS launch zoom can settle. Override with `--screenshot-delay <sec>` (use `0` for legacy immediate-capture).
 
-9. **Not clearing status bar overrides** — `sim_statusbar` overrides persist until cleared. Always call `sim_statusbar_clear()` after capturing screenshots with overrides.
+8. **Status bar overrides persist** — `sim_statusbar` overrides stay until `sim_statusbar_clear()`.
 
-10. **Confusing simulator vs device tools** — Simulator tools (`sim`, `build_sim`, etc.) don't work with physical devices. Use `device_*` tools (`list_devices`, `device_install`, etc.) for physical iOS devices connected via USB/WiFi.
+9. **Simulator vs device tools** — simulator tools (`sim`, `build_sim`, etc.) don't target physical devices. Use the `device_*` tools and `wda_start` for devices connected over USB or Wi-Fi.
 
-11. **Using `build_sim` for Swift packages** — Swift packages don't have .xcodeproj files. Use `swift_package_build` / `swift_package_test` instead.
+10. **Using `build_sim` for Swift packages** — Swift packages don't have .xcodeproj files. Use `swift_package_build` / `swift_package_test` instead.

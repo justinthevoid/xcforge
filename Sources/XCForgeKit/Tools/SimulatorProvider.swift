@@ -346,7 +346,7 @@ public enum SimTools {
       name: "set_orientation",
       description: """
         Set device orientation (portrait/landscape) via WDA. \
-        Uses XCUIDevice.shared.orientation — the only reliable programmatic method. \
+        Uses XCUIDevice.shared.orientation. \
         Returns the confirmed orientation after change.
         """,
       inputSchema: .object([
@@ -602,7 +602,8 @@ public enum SimTools {
 
       if launch.timedOut {
         return SimResult(
-          succeeded: false, message: "Launch timed out after 15s. The simulator may need a restart."
+          succeeded: false,
+          message: "Launch timed out after \(Int(launchTimeout))s. The simulator may be overloaded or need a restart."
         )
       }
 
@@ -994,6 +995,10 @@ public enum SimTools {
 
   // MARK: - Internal Helpers
 
+  /// Seconds `simctl launch` may take. Generous because a busy shared Mac can be slow to
+  /// spawn the first process after boot.
+  static let launchTimeout: TimeInterval = 60
+
   static func launchAppStructured(
     simulatorUDID: String, bundleId: String, args: [String]? = nil, env: Environment
   ) async throws -> StructuredAppLaunch {
@@ -1010,7 +1015,7 @@ public enum SimTools {
     let result = try await env.shell.run(
       "/usr/bin/xcrun",
       arguments: launchArgs,
-      timeout: 15
+      timeout: launchTimeout
     )
 
     return StructuredAppLaunch(

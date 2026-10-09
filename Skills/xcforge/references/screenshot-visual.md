@@ -92,8 +92,7 @@ Codify the baseline-write → test → diff → commit cycle in one call. Saves 
 1. Saves a visual baseline via `save_visual_baseline`
 2. Runs tests via `build_and_test` with the provided filter
 3. Compares current screenshot against the saved baseline
-4. Suggests a commit message: `[bless] <test-slug>`
 
-**Returns:** Pass/fail status, baseline path, test result summary, visual diff result, and suggested commit message. Returns failure if any test fails.
+**Returns:** Pass/fail status, baseline path, test result summary, and visual diff result. Returns failure if any test fails.
 
 **CLI:** `xcforge bless --baseline <name> --tests <filter>`
