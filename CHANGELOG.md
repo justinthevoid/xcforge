@@ -108,6 +108,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Screenshots report the device's point size, not the Simulator window's, and the fallback writes a new file per capture instead of one shared `/tmp` file; CLI `screenshot capture` writes a new file unless `--output` is given
 
 ### Fixed
+- `wda start` reports a busy port on the device ("Unable to start web server") at once with a `--port` hint instead of timing out, prints its errors as JSON under `--json`, and builds into the configured DerivedData folder (`--derived-data-path`, `XCFORGE_DERIVED_DATA_PATH`, `.xcforge.yaml`)
+- Starting or restarting the simulator WebDriverAgent stops any xcforgeWDA runner already on that simulator first, so two XCTest sessions can't run at once and kill the app under test. A restart now waits up to 60s before rebuilding
+- `ui source --format list` prints the flat element listing (as `get_source format: list` does); unknown formats are rejected up front with the valid ones
 - `ui tap` and other HID input no longer crash (SIGSEGV) on Xcode 27: SimulatorKit's `lookup:error:` returns a mach port, not an object, and is now called by its real signature. An unexpected signature is an error, not a crash
 - Screenshots of a landscape app report landscape point sizes even though the simulator framebuffer stays portrait (orientation read from WDA when it is running)
 - `build typecheck --target` works with a configured DerivedData folder: `-target` builds use SYMROOT/OBJROOT inside it instead of `-derivedDataPath`, which xcodebuild rejects. An xcodebuild usage error is reported as `xcodebuild_usage`, not a compile failure

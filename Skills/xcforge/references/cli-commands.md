@@ -555,6 +555,7 @@ XCFORGE_SIMULATOR="iPhone 16" xcforge ui tap --x 200 --y 400   # Drive a specifi
 xcforge ui get-text --element-id <id>
 xcforge ui source                                # Full view hierarchy (JSON)
 xcforge ui source --format xml
+xcforge ui source --format list                  # One line per element: id | label | type | frame
 xcforge ui alert --action accept_all             # Handle all alerts
 xcforge ui alert --action dismiss --button-label "Cancel"
 ```

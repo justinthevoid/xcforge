@@ -161,6 +161,45 @@ struct MacVerifyFixesTests {
     #expect(ScreenshotShaping.pointSizeText(width: 402, height: 874, imageRotated: false) == "402×874 pt")
   }
 
+  // MARK: - second recheck
+
+  @Test("a busy WDA port on the device is reported with a --port hint")
+  func wdaPortInUse() {
+    let log = "t = 3.2s Unable to start web server on port 8100: Address already in use\n"
+    let message = DeviceWDA.portInUse(log: log, port: 8100)
+    #expect(message?.contains("--port 8101") == true)
+    #expect(DeviceWDA.portInUse(log: "ServerURLHere->http://10.0.0.2:8100<-ServerURLHere", port: 8100) == nil)
+  }
+
+  @Test("device WDA builds into the configured DerivedData folder")
+  func wdaBuildDirectory() {
+    #expect(DeviceWDA.buildDirectory(udid: "U1", configured: "/tmp/dd") == "/tmp/dd")
+    #expect(DeviceWDA.buildDirectory(udid: "U1", configured: nil).hasSuffix("build-U1"))
+    #expect(DeviceWDA.buildDirectory(udid: "U1", configured: "").hasSuffix("build-U1"))
+  }
+
+  @Test("the runner pattern matches xcforgeWDA on that simulator only")
+  func runnerPattern() throws {
+    let regex = try NSRegularExpression(pattern: WDAClient.runnerPattern(udid: "AAAA-1111"))
+    func matches(_ line: String) -> Bool {
+      regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil
+    }
+    let products = "/Users/j/Library/Developer/Xcode/DerivedData/xcforgeWDA-deploy/Build/Products"
+    let runner = "xcodebuild test-without-building -xctestrun \(products)/xcforgeWDARunner_x.xctestrun"
+    #expect(matches(runner + " -destination id=AAAA-1111"))
+    #expect(!matches(runner + " -destination id=BBBB-2222"))
+    #expect(!matches("xcodebuild test-without-building -xctestrun /dd/App_x.xctestrun -destination id=AAAA-1111"))
+  }
+
+  @Test("unknown ui source formats are rejected with the valid ones")
+  func sourceFormats() {
+    #expect(WDAClient.sourceFormatProblem("json") == nil)
+    #expect(WDAClient.sourceFormatProblem("XML") == nil)
+    #expect(WDAClient.sourceFormatProblem("list") == nil)
+    let problem = WDAClient.sourceFormatProblem("yaml")
+    #expect(problem?.contains("json, xml, description, list") == true)
+  }
+
   @Test("set_orientation takes a simulator")
   func orientationTakesSimulator() {
     #expect(UITarget.toolNames.contains("set_orientation"))

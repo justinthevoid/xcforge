@@ -55,6 +55,7 @@ struct WDAStart: AsyncParsableCommand {
         device: device, team: team, bundleID: bundleId, port: port,
         startTimeout: TimeInterval(startTimeout), env: Environment.live)
     } catch {
+      if shouldOutputJSON(flag: json) { try rethrowOrJSONError(error, json: true) }
       fputs("\(error)\n", stderr)
       throw ExitCode.failure
     }

@@ -244,7 +244,7 @@ public enum DeviceWDA {
     }
     let team = team ?? ProcessInfo.processInfo.environment["XCFORGE_WDA_TEAM"]
     let runnerID = runnerBundleID(team: team, explicit: bundleID)
-    let derivedData = (stateDirectory() as NSString).appendingPathComponent("build-\(info.udid)")
+    let derivedData = buildDirectory(udid: info.udid, configured: XcodebuildOptions.effective().derivedDataPath)
 
     var buildArgs = [
       "-project", "\(projectDir)/xcforgeWDA.xcodeproj",
@@ -270,8 +270,9 @@ public enum DeviceWDA {
     }
 
     let products = (derivedData as NSString).appendingPathComponent("Build/Products")
+    // A shared DerivedData folder can hold the app's test runs too; take the runner's.
     let xctestrun = (try? FileManager.default.contentsOfDirectory(atPath: products))?
-      .first { $0.hasSuffix(".xctestrun") }
+      .first { $0.hasPrefix("xcforgeWDARunner") && $0.hasSuffix(".xctestrun") }
       .map { (products as NSString).appendingPathComponent($0) }
     guard let xctestrun else {
       throw StartError(description: "WebDriverAgent built but no .xctestrun was found in \(products).")
@@ -299,6 +300,10 @@ public enum DeviceWDA {
           description: "The WebDriverAgent runner exited before it was reachable.\n"
             + (explainFailure(log).map { $0 + "\n" } ?? "") + "Log: \(logPath)")
       }
+      if let busy = portInUse(log: log, port: port) {
+        await stopRunner(pid: pid, env: env)
+        throw StartError(description: busy + "\nLog: \(logPath)")
+      }
       if tunnelIP == nil { tunnelIP = await lookup(info.udid, env: env)?.tunnelIP }
       for url in candidateURLs(tunnelIP: tunnelIP, loggedURL: loggedServerURL(log), port: port) {
         if await isHealthy(url) {
@@ -319,6 +324,26 @@ public enum DeviceWDA {
         + (explainFailure(log).map { $0 + "\n" } ?? "")
         + "Tried: \(tried.isEmpty ? "no address yet" : tried.joined(separator: ", "))\n"
         + "Log: \(logPath)")
+  }
+
+  /// Where the runner is built: the configured DerivedData folder (`--derived-data-path`,
+  /// `XCFORGE_DERIVED_DATA_PATH` or `.xcforge.yaml`), else `~/.xcforge/wda/build-<udid>`.
+  static func buildDirectory(udid: String, configured: String?) -> String {
+    if let configured, !configured.isEmpty { return SessionState.absolutePath(configured) }
+    return (stateDirectory() as NSString).appendingPathComponent("build-\(udid)")
+  }
+
+  /// WDA logs "Unable to start web server on port N" when something on the device already
+  /// listens there (often another runner). Nil when the log doesn't say so.
+  static func portInUse(log: String, port: Int) -> String? {
+    guard log.contains("Unable to start web server on port") else { return nil }
+    return "Port \(port) is already in use on the device (WebDriverAgent couldn't start its server). "
+      + "Stop whatever holds it, or start on another port with --port \(port + 1)."
+  }
+
+  private static func stopRunner(pid: Int32, env: Environment) async {
+    _ = try? await env.shell.run("/usr/bin/pkill", arguments: ["-TERM", "-P", "\(pid)"], timeout: 5)
+    kill(pid, SIGTERM)
   }
 
   /// Stop the recorded runner for `device` and forget its URL. Best-effort.

@@ -875,7 +875,7 @@ struct UISource: AsyncParsableCommand {
     abstract: "Get the full view hierarchy (source tree) of the current screen."
   )
 
-  @Option(help: "Format: json, xml, or description. Default: json.")
+  @Option(help: "Format: json, xml, description, or list (one line per element). Default: json.")
   var format: String = "json"
 
   @Flag(help: "Emit the result as machine-readable JSON.")
@@ -883,12 +883,28 @@ struct UISource: AsyncParsableCommand {
 
   @OptionGroup var target: UISimulatorTarget
 
+  func validate() throws {
+    if let problem = WDAClient.sourceFormatProblem(format) { throw ValidationError(problem) }
+  }
+
   mutating func run() async throws {
     await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let start = CFAbsoluteTimeGetCurrent()
+      if format.lowercased() == "list" {
+        let listing = try await UIElementListing.render(env: env)
+        let message = "Elements (\(listing.source), \(listing.count)):\n\(listing.body)"
+        if useJSON {
+          print(
+            try WorkflowJSONRenderer.renderJSON(
+              UIResult(succeeded: true, message: message, elementId: nil, elementCount: listing.count)))
+        } else {
+          print(message)
+        }
+        return
+      }
       let source = try await env.wdaClient.getSource(format: format)
       let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
       let truncated =

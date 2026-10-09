@@ -250,8 +250,9 @@ public actor WDAClient {
         throw WDAError.wdaRestart("xcforgeWDA has not been built yet")
       }
       await cleanupWDAProcesses(simulator: simulator)
-      startRunner(xctestrun: xctestrun, udid: await resolveSimulatorUDID(simulator))
-      for _ in 0..<30 {
+      await startRunner(xctestrun: xctestrun, udid: await resolveSimulatorUDID(simulator))
+      // A loaded Mac can take well over 15s to bring the runner back.
+      for _ in 0..<120 {
         try await Task.sleep(nanoseconds: 500_000_000)
         if await isHealthy() {
           sessionId = nil
@@ -259,7 +260,7 @@ public actor WDAClient {
           return
         }
       }
-      throw WDAError.wdaRestart("xcforgeWDA did not become ready within 15s after restart")
+      throw WDAError.wdaRestart("xcforgeWDA did not become ready within 60s after restart")
     }
     let bid = backend.bundleId
     // Kill any lingering WDA process
@@ -408,7 +409,7 @@ public actor WDAClient {
       return false
     }
 
-    startRunner(xctestrun: xctestrun, udid: udid)
+    await startRunner(xctestrun: xctestrun, udid: udid)
 
     // Step 3: Poll for server readiness. The first start installs the runner on the
     // simulator, which takes well over 30s on a loaded Mac.
@@ -451,8 +452,8 @@ public actor WDAClient {
 
   /// Start the xcforgeWDA runner on `udid` from a built test run, listening on this
   /// client's port. It runs until stopped; there is no time cap.
-  private func startRunner(xctestrun: String, udid: String) {
-    deployTask?.cancel()
+  private func startRunner(xctestrun: String, udid: String) async {
+    await stopRunners(udid: udid)
     let testArgs = [
       "xcodebuild", "test-without-building",
       "-xctestrun", xctestrun,
@@ -467,6 +468,23 @@ public actor WDAClient {
           "/usr/bin/xcrun", arguments: testArgs, environment: environment, timeout: Self.runnerLifetime)
       }
     }
+  }
+
+  /// Stop every xcforgeWDA runner (`xcodebuild test-without-building`) on `udid`, from this
+  /// process or another one. A second XCTest session on the same simulator kills the app
+  /// under test, so a start or restart must never leave the old runner behind.
+  private func stopRunners(udid: String) async {
+    deployTask?.cancel()
+    deployTask = nil
+    let pattern = Self.runnerPattern(udid: udid)
+    let killed = try? await Shell.run("/usr/bin/pkill", arguments: ["-TERM", "-f", pattern], timeout: 5)
+    // pkill exits 0 when it signalled something; give the runner a moment to go.
+    if killed?.exitCode == 0 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+  }
+
+  /// `pkill -f` pattern for an xcforgeWDA runner on `udid`.
+  static func runnerPattern(udid: String) -> String {
+    "test-without-building -xctestrun .*xcforgeWDA.* -destination id=\(udid)"
   }
 
   /// How long a runner may live: effectively unlimited (30 days).
@@ -1199,13 +1217,24 @@ public actor WDAClient {
 
   // MARK: - View Hierarchy
 
+  /// Formats WDA's `/source` accepts. `list` is xcforge's flat element listing, handled by callers.
+  public static let sourceFormats = ["json", "xml", "description"]
+
+  /// Why `format` can't be used for a source request, or nil when it can.
+  public static func sourceFormatProblem(_ format: String) -> String? {
+    let lower = format.lowercased()
+    if sourceFormats.contains(lower) || lower == "list" { return nil }
+    return "Unknown source format '\(format)'. Use one of: \((sourceFormats + ["list"]).joined(separator: ", "))."
+  }
+
   public func getSource(format: String = "json") async throws -> String {
+    if let problem = Self.sourceFormatProblem(format) { throw WDAError.invalidResponse(problem) }
     // getSource bypasses session management, so start WDA here like find_element does.
     let healthy = await isHealthy()
     if !healthy {
       try await ensureWDARunning()
     }
-    let (data, statusCode) = try await request(method: "GET", path: "/source?format=\(format)")
+    let (data, statusCode) = try await request(method: "GET", path: "/source?format=\(format.lowercased())")
     guard statusCode < 400 else {
       throw WDAError.invalidResponse("Source request failed with status \(statusCode)")
     }
