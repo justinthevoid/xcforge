@@ -58,7 +58,8 @@ struct BuildLoopTests {
       device("Apple Watch", "WATCH", runtime: "watchOS-11-0"),
     ]
     #expect(AutoDetect.simulatorForCompile(from: none) == "P17")
-    let booted = none + [
+    var booted = none
+    booted += [
       device("iPhone 15", "B1", runtime: "iOS-17-5", state: "Booted"),
       device("iPad Air", "B2", runtime: "iOS-26-0", state: "Booted"),
     ]
