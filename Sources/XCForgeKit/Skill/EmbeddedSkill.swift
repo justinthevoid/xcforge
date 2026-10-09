@@ -1168,6 +1168,7 @@ XCFORGE_SIMULATOR="iPhone 16" xcforge ui tap --x 200 --y 400   # Drive a specifi
 xcforge ui get-text --element-id <id>
 xcforge ui source                                # Full view hierarchy (JSON)
 xcforge ui source --format xml
+xcforge ui source --format list                  # One line per element: id | label | type | frame
 xcforge ui alert --action accept_all             # Handle all alerts
 xcforge ui alert --action dismiss --button-label "Cancel"
 ```
@@ -3246,6 +3247,8 @@ On a 16 GB Mac, `jobs: 4` keeps a build from pushing other sessions into swap. `
 
 The lock is a plain `flock` on the file, the same lock macOS `lockf(1)` takes, so xcforge queues correctly next to shell wrappers such as `lockf /tmp/ios.lock xcodebuild ...`. xcforge waiters are served first-come, first-served through tickets in `<lock>.queue/`. The lock is held only while xcodebuild compiles or runs tests; `-showBuildSettings`, `-list` and WebDriverAgent are not locked.
 
+The queue orders xcforge waiters only. `flock` itself is not fair, so a blocking `lockf` waiter can take the lock ahead of a queued xcforge process when the holder releases it. If most builds on the Mac go through `lockf` wrappers, a queued xcforge command can wait through several of them; run those builds through xcforge with the same `--lock` path so everyone shares the queue.
+
 ```bash
 xcforge lock status --lock /tmp/ios.lock     # holder, queue, wait times
 xcforge build-test --lock /tmp/ios.lock      # wait in line, then build and test
@@ -3961,6 +3964,8 @@ used when a call names none; until then calls go to the booted simulator. From t
 accessibility id or label to appear), `untilGone` (one to disappear) and `timeout` (seconds,
 default 10). The result says whether the wait held; a wait that times out marks the call as an error.
 
+**Shut-down simulators are never booted.** If the target simulator is shut down, UI commands fail with "Simulator <name> is shutdown; boot it first" (and name any simulator that is already booted) instead of booting it to start WebDriverAgent. Boot it yourself, or target the booted one with `--simulator`.
+
 **Merged tools.** `tap` replaces eight tap tools, `swipe` takes `hid`, `get_source` takes
 `format: list` (was `list_elements`), and `find_element` takes `all` (was `find_elements`). The old
 names still work for one release and say what replaces them.
@@ -4085,7 +4090,7 @@ Tap one target. Pass exactly one of `elementId`, `id`, `using` + `value`, or `x`
 | `count` | No | 1 | 2 double-taps. Needs `x`, `y` |
 | `durationMs` | No | — | Hold this long (long press). Needs `x`, `y` |
 | `pixels` | No | false | `x`, `y` are screenshot pixels, divided by the simulator's scale |
-| `hid` | No | false | Native HID on a simulator (sub-5ms, bypasses WDA, falls back to it) |
+| `hid` | No | false | Native HID on a simulator (sub-5ms, bypasses WDA, falls back to it). Not yet supported on Xcode 27: WDA is used and the result says so |
 
 Coordinates are in the interface's own points. With `hid`, WDA's orientation is read first so taps
 land correctly in landscape and upside down (inferred mapping; check on a Mac).
@@ -4145,7 +4150,7 @@ Swipe from one point to another.
 | `endX` | **Yes** | — | End X (points) |
 | `endY` | **Yes** | — | End Y (points) |
 | `durationMs` | No | 300 | Swipe duration in milliseconds |
-| `hid` | No | false | Native HID on a simulator (sub-5ms per step, bypasses WDA, falls back to it) |
+| `hid` | No | false | Native HID on a simulator (sub-5ms per step, bypasses WDA, falls back to it). Not yet supported on Xcode 27: WDA is used and the result says so |
 
 ---
 
