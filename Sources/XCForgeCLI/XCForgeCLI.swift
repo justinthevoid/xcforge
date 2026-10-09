@@ -155,6 +155,8 @@ func rethrowOrJSONError(_ error: Error, json: Bool) throws {
 /// to report (an exit code a command already reported, help, `--version`).
 func printJSONError(_ error: Error) -> Bool {
   if error is ExitCode || error is CleanExit { return false }
+  // Help (`--help`, `help <cmd>`) and `--version` arrive as errors with a success exit code.
+  if XCForgeCLI.exitCode(for: error) == .success { return false }
   let envelope = CLIErrorEnvelope(error: "\(error)", code: errorCode(for: error))
   guard let data = try? JSONEncoder().encode(envelope), let jsonString = String(data: data, encoding: .utf8) else {
     return false
