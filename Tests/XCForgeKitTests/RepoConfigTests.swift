@@ -679,7 +679,7 @@ struct RepoConfigTests {
     #expect(result?.testTimeout == nil)
   }
 
-  @Test("resolveTestTimeout: explicit > testTimeout > long > 180")
+  @Test("resolveTestTimeout: explicit > testTimeout > long > 1800")
   func testTimeoutPrecedence() async {
     let root = makeTempDir()
     defer { cleanup(root) }
@@ -699,7 +699,7 @@ struct RepoConfigTests {
     #expect(await session.resolveTestTimeout(explicit: nil, long: true) == 600)
   }
 
-  @Test("resolveTestTimeout falls back to 180/1800 when no repo testTimeout")
+  @Test("resolveTestTimeout falls back to 1800/7200 when no repo testTimeout")
   func testTimeoutBaseline() async {
     let root = makeTempDir()
     defer { cleanup(root) }
@@ -711,8 +711,8 @@ struct RepoConfigTests {
     let store = DefaultsStore(baseDirectory: storeDir)
     let session = SessionState(defaultsStore: store, cwd: root.path)
 
-    #expect(await session.resolveTestTimeout(explicit: nil, long: false) == 180)
-    #expect(await session.resolveTestTimeout(explicit: nil, long: true) == 1800)
+    #expect(await session.resolveTestTimeout(explicit: nil, long: false) == 1800)
+    #expect(await session.resolveTestTimeout(explicit: nil, long: true) == 7200)
   }
 
   // MARK: - autoPromote parsing & opt-out
@@ -881,8 +881,8 @@ struct RepoConfigTests {
     let store2 = DefaultsStore(
       baseDirectory: noTimeoutRoot.appendingPathComponent("store", isDirectory: true))
     let session2 = SessionState(defaultsStore: store2, cwd: noTimeoutRoot.path)
-    #expect(await session2.resolveTestTimeout(explicit: 0, long: false) == 180)
-    #expect(await session2.resolveTestTimeout(explicit: 0, long: true) == 1800)
+    #expect(await session2.resolveTestTimeout(explicit: 0, long: false) == 1800)
+    #expect(await session2.resolveTestTimeout(explicit: 0, long: true) == 7200)
   }
 
   // MARK: - P9 setDefaults resets matching streak

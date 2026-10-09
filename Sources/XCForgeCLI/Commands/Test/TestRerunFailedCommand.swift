@@ -24,7 +24,7 @@ struct TestRerunFailed: AsyncParsableCommand {
   @Option(help: "Test plan name.")
   var testplan: String?
 
-  @Flag(help: "Use 1800s timeout instead of the default 180s.")
+  @Flag(help: "Raise the total time limit from 1800s to 7200s.")
   var long = false
 
   @Flag(help: "Capture a diagnostic snapshot even when the test run succeeds.")
@@ -62,7 +62,9 @@ struct TestRerunFailed: AsyncParsableCommand {
     }
 
     let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
-    let configuration = self.configuration ?? "Debug"
+    let session = Environment.live.session
+    let configuration = await session.resolveConfiguration(self.configuration)
+    let resolvedTestplan = await session.resolveTestPlan(testplan)
 
     // Pass failure IDs as a pre-split list so IDs containing commas (e.g.
     // parameterized Swift Testing arguments) survive the trip to xcodebuild
@@ -72,7 +74,7 @@ struct TestRerunFailed: AsyncParsableCommand {
       scheme: scheme ?? payload.scheme,
       simulator: simulator ?? payload.simulator,
       configuration: configuration,
-      testplan: testplan,
+      testplan: resolvedTestplan,
       filter: nil,
       filterIDs: payload.failures,
       coverage: false,

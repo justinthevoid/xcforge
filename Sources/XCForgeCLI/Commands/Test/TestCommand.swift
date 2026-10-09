@@ -76,7 +76,7 @@ struct TestRun: AsyncParsableCommand {
   @Flag(help: "Enable code coverage collection.")
   var coverage = false
 
-  @Flag(help: "Use 1800s timeout instead of the default 180s (for long integration suites).")
+  @Flag(help: "Raise the total time limit from 1800s to 7200s. Hangs are caught by --idle-timeout either way.")
   var long = false
 
   @Flag(help: "Capture a diagnostic snapshot even when the test run succeeds.")
@@ -291,6 +291,9 @@ struct TestList: AsyncParsableCommand {
   @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
   var simulator: String?
 
+  @Option(help: "List the tests this test plan runs. Default: .xcforge.yaml testPlan, else the scheme's.")
+  var testplan: String?
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -306,7 +309,8 @@ struct TestList: AsyncParsableCommand {
     let result = try await TestTools.executeListTests(
       project: project,
       scheme: scheme,
-      simulator: simulator
+      simulator: simulator,
+      testplan: testplan
     )
 
     if useJSON {

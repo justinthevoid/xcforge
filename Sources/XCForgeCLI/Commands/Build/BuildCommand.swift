@@ -34,7 +34,7 @@ struct BuildCompile: AsyncParsableCommand {
   @Option(help: "Build configuration (Debug/Release). Default: Debug")
   var configuration: String?
 
-  @Flag(help: "Use 1800s timeout instead of the default 180s for large projects.")
+  @Flag(help: "Raise the total time limit from 1800s to 7200s. Hangs are caught by --idle-timeout either way.")
   var long = false
 
   @Flag(help: "Capture a diagnostic snapshot on completion even without a hang.")

@@ -14,10 +14,11 @@ swift run xcforge build --help # CLI mode
 ```
 
 **Test timeout defaults** (`build-test`, `test run`, `test_sim`, `build_and_test`):
-- Default timeout: **180s**. Pass `--long` (CLI) or `long: true` (MCP) to use 1800s.
+- Default total limit: **1800s** (`--long` / `long: true`: 7200s). Builds and test runs are also killed
+  after **600s with no output** (`--idle-timeout` / `idleTimeoutSeconds`, 0 disables).
 - Pass `--diagnose` / `diagnose: true` to capture a diagnostic snapshot even on success.
 - On timeout, the result includes a `/tmp/xcf-diag-<pid>-<ts>.txt` path and a summary line.
-- `build_sim` and `build_run_sim` share the same watchdog design; `build` (build-only) remains at 1800s.
+- `build_sim` and `build_run_sim` share the same watchdog design.
 
 **Formatting** (CI enforces strict lint):
 ```bash

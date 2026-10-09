@@ -33,12 +33,12 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Enable code coverage collection.")
   var coverage = false
 
-  @Flag(help: "Use 1800s timeout instead of the default 180s (for long integration suites).")
+  @Flag(help: "Raise the total time limit from 1800s to 7200s. Hangs are caught by --idle-timeout either way.")
   var long = false
 
   @Option(
     help:
-      "Override timeout in seconds. Takes precedence over --long. Default: 180s (or 1800s with --long)."
+      "Override timeout in seconds. Takes precedence over --long. Default: 1800s (or 7200s with --long)."
   )
   var timeoutSeconds: Int?
 
@@ -87,7 +87,9 @@ struct BuildTest: AsyncParsableCommand {
 
   func execute() async throws {
     let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
-    let configuration = self.configuration ?? "Debug"
+    let session = Environment.live.session
+    let configuration = await session.resolveConfiguration(self.configuration)
+    let resolvedTestplan = await session.resolveTestPlan(testplan)
     let resolvedTimeout = timeoutSeconds.map { TimeInterval($0) }
 
     let result = try await TestTools.executeBuildAndTest(
@@ -95,7 +97,7 @@ struct BuildTest: AsyncParsableCommand {
       scheme: scheme,
       simulator: simulator,
       configuration: configuration,
-      testplan: testplan,
+      testplan: resolvedTestplan,
       filter: filter,
       coverage: coverage,
       long: long,

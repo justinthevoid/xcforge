@@ -16,7 +16,7 @@ Fast compile-only build without install or launch (~5s vs ~20s for full pipeline
 | `scheme` | No | Auto-detect | Scheme name |
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID (for SDK selection) |
 | `configuration` | No | Debug | Build configuration (Debug/Release) |
-| `long` | No | false | Use 1800s timeout instead of default 180s |
+| `long` | No | false | Raise the total time limit from 1800s to 7200s |
 
 **Returns:** Bundle ID, app path, build duration, warnings count. On failure: structured errors with file:line from xcresult.
 

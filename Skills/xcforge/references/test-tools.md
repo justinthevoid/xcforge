@@ -9,9 +9,11 @@ All test tools parse `.xcresult` bundles for structured results — no raw xcode
 > See [auto-detection.md](auto-detection.md).
 >
 > **Timeout note:** `timeoutSeconds` precedence is explicit arg > `.xcforge.yaml
-> testTimeout` > `--long`/`long: true` (1800s) > default 180s. Non-positive
+> testTimeout` > `--long`/`long: true` (7200s) > default 1800s. Non-positive
 > values are rejected on both the explicit and the YAML path and fall through to
-> the next layer with a warning.
+> the next layer with a warning. Separately, a build or test run that prints
+> nothing for `idleTimeoutSeconds` (default 600, 0 disables) is killed and
+> reported with `timeout: idle`.
 
 ## test_sim
 

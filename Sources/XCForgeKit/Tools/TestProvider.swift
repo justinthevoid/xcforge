@@ -367,6 +367,7 @@ public enum TestTools {
     var scheme: String?
     var simulator: String?
     var filter: String?
+    var testplan: String?
   }
 
   // MARK: - Public Result Types for build_and_test
@@ -432,6 +433,19 @@ public enum TestTools {
     public let targetCount: Int
     public let classCount: Int
     public let testCount: Int
+    /// Tests the scheme or test plan disables. Nil when xcodebuild did not report them.
+    public let disabledTestCount: Int?
+
+    public init(
+      tests: [TestIdentifier], targetCount: Int, classCount: Int, testCount: Int,
+      disabledTestCount: Int? = nil
+    ) {
+      self.tests = tests
+      self.targetCount = targetCount
+      self.classCount = classCount
+      self.testCount = testCount
+      self.disabledTestCount = disabledTestCount
+    }
   }
 
   public static let tools: [Tool] = [
@@ -481,7 +495,7 @@ public enum TestTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for suites known to run longer than 3 minutes."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -676,7 +690,7 @@ public enum TestTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for suites known to run longer than 3 minutes."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -703,7 +717,7 @@ public enum TestTools {
           "timeoutSeconds": .object([
             "type": .string("integer"),
             "description": .string(
-              "Override the xcodebuild timeout in seconds. Takes precedence over 'long'. Default: 180 (or 1800 with long: true)."
+              "Override the xcodebuild timeout in seconds. Takes precedence over 'long'. Default: 1800 (or 7200 with long: true)."
             ),
           ]),
           "env": .object([
@@ -732,8 +746,8 @@ public enum TestTools {
     Tool(
       name: "list_tests",
       description: """
-        List available test identifiers (Target/Class/method) for a scheme. \
-        Use this to discover the correct filter format before running test_sim or build_and_test. \
+        List test identifiers (Target/Class/method) for a scheme or test plan, XCTest and Swift Testing. \
+        Identifiers are in the exact form test_sim and build_and_test accept as filter. \
         Builds for testing first (does not run tests). \
         Project, scheme, and simulator are auto-detected if omitted.
         """,
@@ -756,6 +770,12 @@ public enum TestTools {
             "type": .string("string"),
             "description": .string(
               "Substring filter on test identifiers. Returns only tests whose Target/Class/method contains this string. Use to verify filter format before running test_sim."
+            ),
+          ]),
+          "testplan": .object([
+            "type": .string("string"),
+            "description": .string(
+              "List the tests this test plan runs (its tags and skips applied). Default: .xcforge.yaml testPlan, else the scheme's."
             ),
           ]),
         ]),
@@ -796,7 +816,7 @@ public enum TestTools {
 
   /// Resolve the test watchdog timeout via the session actor.
   /// Precedence: explicit `timeoutSeconds` > `.xcforge.yaml` `testTimeout`
-  /// > `long ? 1800 : 180`. Centralized so every test/build path picks up
+  /// > `long ? 7200 : 1800`. Centralized so every test/build path picks up
   /// the same configurable default.
   static func resolveTestTimeout(
     explicit: Int? = nil, long: Bool, env: Environment
@@ -837,7 +857,7 @@ public enum TestTools {
       guard let recorded = LastResultStore.latest(project: resolved, kind: .test) else {
         return nil
       }
-      return await parseCoverage(recorded, env: env) != nil ? recorded : nil
+      return await parseCoverage(recorded, onlyTargets: true, env: env) != nil ? recorded : nil
     }
     let dir = XcodebuildOptions.artifactDirectory()
     do {
@@ -848,7 +868,7 @@ public enum TestTools {
         .filter { $0.hasPrefix("xcf-test-") && $0.hasSuffix(".xcresult") }
       for candidate in candidates.prefix(3) {
         let path = (dir as NSString).appendingPathComponent(candidate)
-        if await parseCoverage(path, env: env) != nil {
+        if await parseCoverage(path, onlyTargets: true, env: env) != nil {
           return path
         }
       }
@@ -1007,16 +1027,15 @@ public enum TestTools {
 
     guard
       let listResult = try? await executeListTests(
-        project: project, scheme: scheme, simulator: simulator, env: env
+        project: project, scheme: scheme, simulator: simulator, testplan: testplan, env: env
       )
     else {
       hint += "\nCould not enumerate tests to suggest alternatives."
       return hint
     }
-    hint += "\n(found \(listResult.testCount) XCTest identifiers in bundle via -enumerate-tests)"
+    hint += "\n(found \(listResult.testCount) test identifiers via -enumerate-tests)"
     if listResult.testCount == 0 {
-      hint +=
-        "\nThe test bundle appears to be empty. Note: -enumerate-tests only discovers XCTest methods, not Swift Testing @Test suites."
+      hint += "\nThe test bundle appears to be empty."
       return hint
     }
     let lowered = filter.lowercased()
@@ -1212,13 +1231,40 @@ public enum TestTools {
     let snapshotPath = diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
       udid: udid, snapshotPath: snapshotPath, sampleAt: [60, 120], processMatch: resultPath, env: env)
-    let result = try await Xcodebuild.run(
+    var result = try await Xcodebuild.run(
       args, environment: childEnvironment, timeout: timeout, env: env)
+    // The test runner sometimes fails to launch or connect on a busy Mac. The build is
+    // already done, so one immediate retry is cheap and usually succeeds.
+    if !result.succeeded, Xcodebuild.timeoutKind(result) == nil,
+      let symptom = runnerLaunchFailure(Xcodebuild.combinedOutput(result))
+    {
+      Log.warn("Test runner failed to start (\(symptom)); retrying test-without-building once")
+      _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
+      result = try await Xcodebuild.run(
+        args, environment: childEnvironment, timeout: timeout, env: env)
+    }
     watchdog.cancel()
     let diagResult = await resolvedDiagResult(
       result: result, diagnose: diagnose, watchdog: watchdog,
       udid: udid, snapshotPath: snapshotPath, processMatch: resultPath, env: env)
     return (result, resultPath, diagResult)
+  }
+
+  /// Messages xcodebuild prints when the test runner never started, as opposed to tests
+  /// failing. Matched case-insensitively.
+  static let runnerLaunchFailureMarkers = [
+    "test runner hung before establishing connection",
+    "early unexpected exit, operation never finished bootstrapping",
+    "failed to establish communication with the test runner",
+    "failed to launch",
+  ]
+
+  /// The runner-launch symptom found in `output`, or nil. Output that shows any test
+  /// starting never counts, so a crash mid-suite is not re-run.
+  static func runnerLaunchFailure(_ output: String) -> String? {
+    let lower = output.lowercased()
+    if lower.contains("test case '") || lower.contains("◇ test ") { return nil }
+    return runnerLaunchFailureMarkers.first { lower.contains($0) }
   }
 
   /// Polls for `<bundle>/Info.plist` existence up to `timeout` seconds in 500 ms increments.
@@ -1334,7 +1380,7 @@ public enum TestTools {
     }
 
     if !buildResult.succeeded && issues.isEmpty {
-      issues = fallbackBuildIssues(stderr: buildResult.stderr)
+      issues = fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(buildResult))
       errorCount = issues.filter { $0.severity == .error }.count
       warningCount = issues.filter { $0.severity == .warning }.count
       analyzerWarningCount = issues.filter { $0.severity == .analyzerWarning }.count
@@ -1562,18 +1608,30 @@ public enum TestTools {
   }
 
   /// Parse coverage report via xccov
-  private static func parseCoverage(_ path: String, env: Environment) async -> String? {
+  /// Coverage report JSON. `onlyTargets` skips per-file data, which is fast and small; use
+  /// it when only a yes/no or per-target numbers are needed. A full report too large to
+  /// hold falls back to the per-target report rather than returning truncated JSON.
+  private static func parseCoverage(_ path: String, onlyTargets: Bool = false, env: Environment)
+    async -> String?
+  {
+    let limit = 64 * 1024 * 1024
+    var arguments = ["xccov", "view", "--report", "--json"]
+    if onlyTargets { arguments.append("--only-targets") }
+    arguments.append(path)
     do {
       let result = try await env.shell.run(
-        "/usr/bin/xcrun",
-        arguments: ["xccov", "view", "--report", "--json", path],
-        timeout: 30,
-        outputLimit: 20 * 1024 * 1024  // full coverage reports for large projects can exceed the 2 MB default
-      )
+        "/usr/bin/xcrun", arguments: arguments, timeout: onlyTargets ? 60 : 180, outputLimit: limit)
       guard result.succeeded else {
         Log.warn("parseCoverage failed: \(result.stderr)")
         return nil
       }
+      if !onlyTargets, result.stdout.utf8.count >= limit - 8 {
+        Log.warn("Coverage report exceeds \(limit / 1024 / 1024) MB; reporting per target only")
+        return await parseCoverage(path, onlyTargets: true, env: env)
+      }
+      // --only-targets prints a bare array of targets; wrap it so callers see one shape.
+      let trimmed = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+      if trimmed.hasPrefix("[") { return "{\"targets\": \(trimmed)}" }
       return result.stdout
     } catch {
       Log.warn("parseCoverage error: \(error)")
@@ -1662,8 +1720,9 @@ public enum TestTools {
       long: long, diagnose: diagnose, udid: udidForDest, env: env
     )
 
-    // If build failed, surface it as a test failure
-    if !buildShellResult.succeeded && buildShellResult.exitCode != -1 {
+    // If build failed (or was killed by a timeout), surface it as a test failure rather than
+    // running test-without-building against stale or missing products.
+    if !buildShellResult.succeeded {
       let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
       var buildDiagnostics: [BuildIssueObservation]?
       if let buildJSON = await parseBuildResults(buildResultPath, env: env),
@@ -1674,10 +1733,10 @@ public enum TestTools {
         if !parsed.issues.isEmpty { buildDiagnostics = parsed.issues }
       }
       if buildDiagnostics == nil {
-        buildDiagnostics = fallbackBuildIssues(stderr: buildShellResult.stderr)
+        buildDiagnostics = fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(buildShellResult))
         if buildDiagnostics?.isEmpty == true { buildDiagnostics = nil }
       }
-      let failures: [TestFailureObservation]
+      var failures: [TestFailureObservation]
       if let diag = buildDiagnostics {
         failures = diag.filter { $0.severity == .error }.map {
           TestFailureObservation(
@@ -1691,7 +1750,7 @@ public enum TestTools {
         let tail = String(buildShellResult.stderr.suffix(2000)).trimmingCharacters(
           in: .whitespacesAndNewlines)
         failures =
-          tail.isEmpty
+          tail.isEmpty || buildShellResult.exitCode == -1
           ? []
           : [
             TestFailureObservation(
@@ -1701,6 +1760,13 @@ public enum TestTools {
               source: "build-for-testing.stderr"
             )
           ]
+      }
+      if let explanation = Xcodebuild.timeoutExplanation(buildShellResult) {
+        failures.insert(
+          TestFailureObservation(
+            testName: "xcodebuild", testIdentifier: "xcodebuild", message: explanation,
+            source: "build-for-testing.timeout"),
+          at: 0)
       }
       return TestExecution(
         succeeded: false,
@@ -1778,7 +1844,7 @@ public enum TestTools {
         }
       }
       if buildDiagnostics == nil {
-        buildDiagnostics = fallbackBuildIssues(stderr: testShellResult.stderr)
+        buildDiagnostics = fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(testShellResult))
         if buildDiagnostics?.isEmpty == true { buildDiagnostics = nil }
       }
     }
@@ -1821,7 +1887,9 @@ public enum TestTools {
     let expectedFailureCount = parsedSummary?.expectedFailureCount ?? 0
 
     // Filter matched nothing → treat as failure so agents don't assume tests passed
-    let zeroMatchWithFilter = totalTestCount == 0 && filter != nil
+    // Zero tests ran (filter or test plan selected nothing) → failure, so a run that tested
+    // nothing never reads as a pass. Without a parsed summary the count is unknown, not zero.
+    let zeroMatchWithFilter = totalTestCount == 0 && (filter != nil || parsedSummary != nil)
 
     let cwd = env.currentDirectoryPath()
     let repoRoot = RepoRoot.discover(from: cwd) ?? cwd
@@ -2283,7 +2351,7 @@ public enum TestTools {
       }
 
       if issues.isEmpty {
-        issues = fallbackBuildIssues(stderr: buildShellResult.stderr)
+        issues = fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(buildShellResult))
       }
 
       return BuildAndTestResult(
@@ -2566,7 +2634,7 @@ public enum TestTools {
         if !parsed.issues.isEmpty { buildDiagnostics = parsed.issues }
       }
       if buildDiagnostics == nil {
-        buildDiagnostics = fallbackBuildIssues(stderr: shellResult.stderr)
+        buildDiagnostics = fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(shellResult))
         if buildDiagnostics?.isEmpty == true { buildDiagnostics = nil }
       }
     }
@@ -2606,7 +2674,9 @@ public enum TestTools {
     let passedTestCount = parsedSummary?.passedTestCount ?? 0
     let skippedTestCount = parsedSummary?.skippedTestCount ?? 0
     let expectedFailureCount = parsedSummary?.expectedFailureCount ?? 0
-    let zeroMatchWithFilter = totalTestCount == 0 && filter != nil
+    // Zero tests ran (filter or test plan selected nothing) → failure, so a run that tested
+    // nothing never reads as a pass. Without a parsed summary the count is unknown, not zero.
+    let zeroMatchWithFilter = totalTestCount == 0 && (filter != nil || parsedSummary != nil)
 
     let cwd = env.currentDirectoryPath()
     let repoRoot = RepoRoot.discover(from: cwd) ?? cwd
@@ -2661,6 +2731,7 @@ public enum TestTools {
     project: String? = nil,
     scheme: String? = nil,
     simulator: String? = nil,
+    testplan: String? = nil,
     env: Environment = .live
   ) async throws -> ListTestsResult {
     let resolvedProject = try await env.session.resolveProject(project)
@@ -2687,17 +2758,42 @@ public enum TestTools {
       Log.warn("Could not parse Xcode version from: \(xcodeVersionResult.stdout.prefix(100))")
     }
 
-    // xcodebuild test -enumerate-tests builds for testing then lists tests without running them
+    // xcodebuild test -enumerate-tests builds for testing then lists tests without running
+    // them. The JSON output covers XCTest and Swift Testing alike; the text output below is
+    // only a fallback for Xcode versions that ignore the format flags.
+    let jsonPath = XcodebuildOptions.uniqueArtifactPath(prefix: "tests", extension: "json")
+    defer { try? FileManager.default.removeItem(atPath: jsonPath) }
+    var enumerateArgs = [
+      projectFlag, resolvedProject,
+      "-scheme", resolvedScheme,
+      "-destination", destination,
+      "-skipMacroValidation",
+    ]
+    if let plan = await env.session.resolveTestPlan(testplan) {
+      enumerateArgs += ["-testPlan", plan]
+    }
+    enumerateArgs += [
+      "-enumerate-tests",
+      "-test-enumeration-style", "flat",
+      "-test-enumeration-format", "json",
+      "-test-enumeration-output-path", jsonPath,
+      "test",
+    ]
     let enumerateResult = try await Xcodebuild.run(
-      [
-        projectFlag, resolvedProject,
-        "-scheme", resolvedScheme,
-        "-destination", destination,
-        "-skipMacroValidation",
-        "-enumerate-tests",
-        "test",
-      ], timeout: 1800, env: env
-    )
+      enumerateArgs, timeout: await resolveTestTimeout(long: true, env: env), env: env)
+
+    if let data = FileManager.default.contents(atPath: jsonPath),
+      let parsed = parseTestEnumerationJSON(data), !parsed.enabled.isEmpty || !parsed.disabled.isEmpty
+    {
+      let tests = parsed.enabled.compactMap(testIdentifier(from:))
+      return ListTestsResult(
+        tests: tests,
+        targetCount: Set(tests.map(\.target)).count,
+        classCount: Set(tests.map { "\($0.target)/\($0.className)" }).count,
+        testCount: tests.count,
+        disabledTestCount: parsed.disabled.count
+      )
+    }
 
     guard enumerateResult.succeeded || !enumerateResult.stdout.isEmpty else {
       let errorLines = enumerateResult.stderr.split(separator: "\n")
@@ -2841,6 +2937,42 @@ public enum TestTools {
     )
   }
 
+  /// Collect test identifiers from `-test-enumeration-format json` output. Tolerant of the
+  /// exact layout: any object with an `identifier` string counts, and it is disabled when
+  /// it sits under a key containing "disabled".
+  static func parseTestEnumerationJSON(_ data: Data) -> (enabled: [String], disabled: [String])? {
+    guard let root = try? JSONSerialization.jsonObject(with: data) else { return nil }
+    var enabled: [String] = []
+    var disabled: [String] = []
+    var seen = Set<String>()
+    func walk(_ node: Any, disabledBranch: Bool) {
+      if let dict = node as? [String: Any] {
+        if let id = dict["identifier"] as? String, seen.insert(id + "|\(disabledBranch)").inserted {
+          if disabledBranch { disabled.append(id) } else { enabled.append(id) }
+        }
+        for (key, value) in dict where key != "identifier" {
+          walk(value, disabledBranch: disabledBranch || key.lowercased().contains("disabled"))
+        }
+      } else if let array = node as? [Any] {
+        for item in array { walk(item, disabledBranch: disabledBranch) }
+      }
+    }
+    walk(root, disabledBranch: false)
+    return (enabled, disabled)
+  }
+
+  /// Split `Target/Suite[/Nested]/test()` into its parts. The full identifier is kept exactly
+  /// as xcodebuild printed it, which is the form `-only-testing` accepts.
+  static func testIdentifier(from id: String) -> TestIdentifier? {
+    let parts = id.split(separator: "/").map(String.init)
+    guard parts.count >= 2 else { return nil }
+    var method = parts.count >= 3 ? parts[parts.count - 1] : ""
+    if method.hasSuffix("()") { method = String(method.dropLast(2)) }
+    let className = parts.count >= 3 ? parts[1..<(parts.count - 1)].joined(separator: "/") : parts[1]
+    return TestIdentifier(
+      target: parts[0], className: className, methodName: method, fullIdentifier: id)
+  }
+
   // MARK: - Tool Implementations
 
   static func testSim(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -2926,7 +3058,7 @@ public enum TestTools {
 
         let icon = execution.succeeded ? "PASSED" : "FAILED"
         if execution.totalTestCount == 0 {
-          lines.append("No tests matched in \(execution.elapsed)s")
+          lines.append("No tests ran (\(execution.elapsed)s): the filter, scheme or test plan selected none")
         } else {
           lines.append("Tests \(icon) in \(execution.elapsed)s")
           lines.append(
@@ -2970,7 +3102,8 @@ public enum TestTools {
           }
         }
 
-        let zeroMatchWithFilter = execution.totalTestCount == 0 && input.filter != nil
+        let zeroMatchWithFilter =
+          execution.totalTestCount == 0 && (input.filter != nil || execution.hasStructuredSummary)
         let text = lines.joined(separator: "\n")
         return (execution.succeeded && !zeroMatchWithFilter) ? .ok(text) : .fail(text)
       } catch {
@@ -3303,6 +3436,7 @@ public enum TestTools {
           project: input.project,
           scheme: input.scheme,
           simulator: input.simulator,
+          testplan: input.testplan,
           env: env
         )
         return formatListTests(result, filter: input.filter)
@@ -3415,7 +3549,7 @@ public enum TestTools {
       }
       lines.append("Build: OK (\(result.buildElapsed)s)")
       if test.totalTestCount == 0 {
-        lines.append("No tests matched in \(test.elapsed)s")
+        lines.append("No tests ran (\(test.elapsed)s): the filter, scheme or test plan selected none")
       } else {
         let icon = test.succeeded ? "PASSED" : "FAILED"
         lines.append("Tests \(icon) in \(test.elapsed)s")
@@ -3443,7 +3577,8 @@ public enum TestTools {
       }
       let text = lines.joined(separator: "\n") + suffix
       // Filter matched nothing → treat as failure so agents don't assume tests passed
-      let zeroMatchWithFilter = test.totalTestCount == 0 && filter != nil
+      let zeroMatchWithFilter =
+        test.totalTestCount == 0 && (filter != nil || test.hasStructuredSummary)
       return (test.succeeded && !zeroMatchWithFilter) ? .ok(text) : .fail(text)
     }
 
@@ -3490,6 +3625,9 @@ public enum TestTools {
       )
     }
     lines.append("")
+    if let disabled = result.disabledTestCount, disabled > 0 {
+      lines.insert("\(disabled) more disabled by the scheme or test plan", at: lines.count - 1)
+    }
 
     // Group by target/class for readability
     var grouped: [String: [String: [String]]] = [:]  // target -> class -> methods
@@ -3901,10 +4039,22 @@ public enum TestTools {
     )
   }
 
+  /// Parse `file:line:col: error: message` lines from xcodebuild output (stdout and/or
+  /// stderr). The same diagnostic is often printed several times (once per architecture or
+  /// by both the compiler and the build summary), so duplicates are dropped, keeping order.
   static func fallbackBuildIssues(stderr: String) -> [BuildIssueObservation] {
-    stderr
-      .split(separator: "\n")
-      .compactMap { parseFallbackBuildIssue(String($0)) }
+    var seen = Set<String>()
+    var issues: [BuildIssueObservation] = []
+    for line in stderr.split(separator: "\n") {
+      guard let issue = parseFallbackBuildIssue(String(line)) else { continue }
+      let loc = issue.location
+      let key = [
+        issue.severity == .error ? "e" : "w", loc?.filePath ?? "", loc?.line.map(String.init) ?? "",
+        loc?.column.map(String.init) ?? "", issue.message,
+      ].joined(separator: "|")
+      if seen.insert(key).inserted { issues.append(issue) }
+    }
+    return issues
   }
 
   private static func extractExecutionFailureMessage(stderr: String) -> String? {

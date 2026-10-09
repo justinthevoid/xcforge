@@ -19,6 +19,7 @@ public enum Xcodebuild {
     workingDirectory: String? = nil,
     environment: [String: String]? = nil,
     timeout: TimeInterval,
+    idleTimeout: TimeInterval? = nil,
     env: Environment
   ) async throws -> ShellResult {
     let options = XcodebuildOptions.effective(cwd: env.currentDirectoryPath())
@@ -36,9 +37,15 @@ public enum Xcodebuild {
     }
     defer { lock?.release() }
 
+    // Builds and test runs are killed after a stretch of silence rather than a fixed total,
+    // so a slow cold build is never cut off while a hung runner still is.
+    let idle =
+      idleTimeout ?? options.idleTimeoutSeconds
+      ?? (needsLock(args) ? XcodebuildOptions.defaultIdleTimeoutSeconds : nil)
     let result = try await env.shell.run(
       executable, arguments: args, workingDirectory: workingDirectory,
-      environment: environment, timeout: timeout)
+      environment: environment, timeout: timeout,
+      idleTimeout: (idle ?? 0) > 0 ? idle : nil, outputLimit: Shell.defaultOutputLimit)
     if result.exitCode != -2 {
       LastResultStore.recordFromArguments(args)
     }
@@ -71,12 +78,59 @@ public enum Xcodebuild {
     {
       insert += ["-derivedDataPath", dd]
     }
+    if options.continueAfterErrors ?? true,
+      arguments.contains(where: { compileActions.contains($0) }),
+      !arguments.contains(where: { $0.hasPrefix(continueAfterErrorsDefault) })
+    {
+      insert.append(continueAfterErrorsDefault + "=YES")
+    }
     insert += options.extraArgs
     guard !insert.isEmpty else { return arguments }
     let index = arguments.firstIndex { actionTokens.contains($0) } ?? arguments.endIndex
     var result = arguments
     result.insert(contentsOf: insert, at: index)
     return result
+  }
+
+  /// Xcode user default that keeps the build going after the first error, so every
+  /// error in the run is reported instead of only the first target's.
+  static let continueAfterErrorsDefault = "-IDEBuildingContinueBuildingAfterErrors"
+
+  /// Actions that compile sources.
+  static let compileActions: Set<String> = ["build", "build-for-testing", "test", "analyze"]
+
+  /// How xcforge killed a process, or nil when it exited on its own.
+  public enum TimeoutKind: String, Sendable {
+    /// No output for the idle limit: the process was hung.
+    case idle
+    /// The total time limit ran out while the process was still printing.
+    case total
+  }
+
+  public static func timeoutKind(_ result: ShellResult) -> TimeoutKind? {
+    guard result.exitCode == -1 else { return nil }
+    return result.stderr.contains("(idle timeout)") ? .idle : .total
+  }
+
+  /// One line explaining a timeout and how to raise the limit, or nil.
+  public static func timeoutExplanation(_ result: ShellResult) -> String? {
+    switch timeoutKind(result) {
+    case .idle:
+      return result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        + ". Likely hung; raise idleTimeoutSeconds (--idle-timeout) if it was legitimately quiet."
+    case .total:
+      return result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        + ". It was still producing output; raise timeoutSeconds or pass long."
+    case nil:
+      return nil
+    }
+  }
+
+  /// stdout and stderr together. xcodebuild prints compiler diagnostics to stdout.
+  public static func combinedOutput(_ result: ShellResult) -> String {
+    if result.stdout.isEmpty { return result.stderr }
+    if result.stderr.isEmpty { return result.stdout }
+    return result.stdout + "\n" + result.stderr
   }
 
   /// Short description used for lock status: scheme and action.

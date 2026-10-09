@@ -119,7 +119,7 @@ public enum BuildTools {
     let errorIssues = issues.filter { $0.severity == .error }
     if !errorIssues.isEmpty {
       return Array(
-        errorIssues.prefix(20).map { issue in
+        errorIssues.prefix(50).map { issue in
           if let loc = issue.location {
             var s = loc.filePath
             if let line = loc.line { s += ":\(line)" }
@@ -168,7 +168,7 @@ public enum BuildTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for large projects."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -214,7 +214,7 @@ public enum BuildTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for large projects that take longer to build."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -260,7 +260,7 @@ public enum BuildTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for large projects."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -466,21 +466,27 @@ public enum BuildTools {
       var warningCount = xcresultIssues.warningCount
 
       if issues.isEmpty {
-        issues = TestTools.fallbackBuildIssues(stderr: result.stderr)
+        issues = TestTools.fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(result))
         errorCount = issues.filter { $0.severity == .error }.count
         warningCount = issues.filter { $0.severity == .warning }.count
       }
 
       // Classify failure from xcresult issues first, then stderr
+      let output = Xcodebuild.combinedOutput(result)
       let reason: String
-      if !issues.isEmpty {
+      if let timeout = Xcodebuild.timeoutKind(result) {
+        reason = "timeout_\(timeout.rawValue)"
+      } else if !issues.isEmpty {
         reason = classifyFailureFromIssues(issues)
       } else {
-        reason = classifyFailureReason(stderr: result.stderr)
+        reason = classifyFailureReason(stderr: output)
       }
 
-      let structured = extractStructuredErrors(stderr: result.stderr, failureReason: reason)
-      let errors = extractLegacyErrors(from: result.stderr)
+      var structured = extractStructuredErrors(stderr: output, failureReason: reason)
+      if let explanation = Xcodebuild.timeoutExplanation(result) {
+        structured.insert(explanation, at: 0)
+      }
+      let errors = extractLegacyErrors(from: output)
 
       return BuildExecution(
         succeeded: false,
@@ -665,7 +671,8 @@ public enum BuildTools {
   private static func extractLegacyErrors(from stderr: String) -> [String] {
     let errorLines = stderr.split(separator: "\n")
       .filter { $0.contains(": error:") }
-      .prefix(20)
+      .reduce(into: [Substring]()) { if !$0.contains($1) { $0.append($1) } }
+      .prefix(50)
       .map(String.init)
     let stderrTail = String(stderr.suffix(2000))
     return errorLines.isEmpty
@@ -679,6 +686,11 @@ public enum BuildTools {
 
     if let reason = execution.failureReason {
       lines.append("Failure reason: \(reason)")
+      // The timeout explanation is always the first structured line; show it even when
+      // xcresult issues take over the error list below.
+      if reason.hasPrefix("timeout"), let note = execution.structuredErrors?.first {
+        lines.append(note)
+      }
     }
 
     lines.append("Scheme: \(execution.scheme)")
@@ -692,9 +704,10 @@ public enum BuildTools {
       if !errors.isEmpty {
         lines.append("")
         lines.append("Errors (\(errors.count)):")
-        for issue in errors.prefix(20) {
+        for issue in errors.prefix(50) {
           lines.append("  \(formatIssue(issue))")
         }
+        if errors.count > 50 { lines.append("  ... \(errors.count - 50) more in the xcresult") }
       }
       if !warnings.isEmpty {
         lines.append("")
@@ -932,16 +945,21 @@ public enum BuildTools {
       var warningCount = xcresultIssues.warningCount
 
       if issues.isEmpty {
-        issues = TestTools.fallbackBuildIssues(stderr: buildResult.stderr)
+        issues = TestTools.fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(buildResult))
         errorCount = issues.filter { $0.severity == .error }.count
         warningCount = issues.filter { $0.severity == .warning }.count
       }
 
+      let output = Xcodebuild.combinedOutput(buildResult)
       let reason =
-        !issues.isEmpty
-        ? classifyFailureFromIssues(issues) : classifyFailureReason(stderr: buildResult.stderr)
-      let structured = extractStructuredErrors(stderr: buildResult.stderr, failureReason: reason)
-      let legacyErrors = extractLegacyErrors(from: buildResult.stderr)
+        Xcodebuild.timeoutKind(buildResult).map { "timeout_\($0.rawValue)" }
+        ?? (!issues.isEmpty
+          ? classifyFailureFromIssues(issues) : classifyFailureReason(stderr: output))
+      var structured = extractStructuredErrors(stderr: output, failureReason: reason)
+      if let explanation = Xcodebuild.timeoutExplanation(buildResult) {
+        structured.insert(explanation, at: 0)
+      }
+      let legacyErrors = extractLegacyErrors(from: output)
 
       let execution = BuildExecution(
         succeeded: false,

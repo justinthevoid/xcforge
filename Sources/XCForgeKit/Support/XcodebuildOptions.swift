@@ -24,6 +24,11 @@ public struct XcodebuildOptions: Sendable, Equatable {
   public var minFreeGB: Double?
   /// Directory for xcforge-generated result bundles and diagnostics.
   public var artifactDir: String?
+  /// Kill xcodebuild after this many seconds without any output. 0 disables it.
+  public var idleTimeoutSeconds: TimeInterval?
+  /// Keep compiling other files and targets after the first error so one run reports them all.
+  /// Default: on.
+  public var continueAfterErrors: Bool?
 
   public init(
     derivedDataPath: String? = nil,
@@ -32,7 +37,9 @@ public struct XcodebuildOptions: Sendable, Equatable {
     lockPath: String? = nil,
     lockWaitSeconds: TimeInterval? = nil,
     minFreeGB: Double? = nil,
-    artifactDir: String? = nil
+    artifactDir: String? = nil,
+    idleTimeoutSeconds: TimeInterval? = nil,
+    continueAfterErrors: Bool? = nil
   ) {
     self.derivedDataPath = derivedDataPath
     self.resultBundlePath = resultBundlePath
@@ -41,6 +48,8 @@ public struct XcodebuildOptions: Sendable, Equatable {
     self.lockWaitSeconds = lockWaitSeconds
     self.minFreeGB = minFreeGB
     self.artifactDir = artifactDir
+    self.idleTimeoutSeconds = idleTimeoutSeconds
+    self.continueAfterErrors = continueAfterErrors
   }
 
   /// Options set for the current call (CLI flags or MCP arguments).
@@ -48,6 +57,10 @@ public struct XcodebuildOptions: Sendable, Equatable {
 
   /// Default wait in the lock queue: one hour.
   public static let defaultLockWaitSeconds: TimeInterval = 3600
+
+  /// Default silence before a build or test xcodebuild is treated as hung: ten minutes.
+  /// A cold build that keeps printing is never killed by it.
+  public static let defaultIdleTimeoutSeconds: TimeInterval = 600
 
   /// Merge the task-local value over environment variables over `.xcforge.yaml`.
   public static func effective(
@@ -76,6 +89,10 @@ public struct XcodebuildOptions: Sendable, Equatable {
       ?? repo?.minFreeGB
     merged.artifactDir =
       explicit.artifactDir ?? nonEmpty(environment["XCFORGE_ARTIFACT_DIR"]) ?? repo?.artifactDir
+    merged.idleTimeoutSeconds =
+      explicit.idleTimeoutSeconds ?? environment["XCFORGE_IDLE_TIMEOUT"].flatMap { TimeInterval($0) }
+      ?? repo?.idleTimeout
+    merged.continueAfterErrors = explicit.continueAfterErrors
     merged.extraArgs = explicit.extraArgs
     return merged
   }
@@ -154,6 +171,16 @@ public struct XcodebuildOptions: Sendable, Equatable {
       "description": .string(
         "Refuse to build when the DerivedData volume has less free space than this. Default: warn only."),
     ]),
+    "idleTimeoutSeconds": .object([
+      "type": .string("integer"),
+      "description": .string(
+        "Kill xcodebuild after this many seconds with no output. Default: 600. 0 disables it."),
+    ]),
+    "continueAfterErrors": .object([
+      "type": .string("boolean"),
+      "description": .string(
+        "Keep building after the first error so one run reports every error. Default: true."),
+    ]),
   ]
 
   /// Parse the option keys out of an MCP argument dictionary.
@@ -174,7 +201,9 @@ public struct XcodebuildOptions: Sendable, Equatable {
       lockPath: args["buildLock"]?.stringValue,
       lockWaitSeconds: number(args["lockWaitSeconds"]),
       minFreeGB: number(args["minFreeGB"]),
-      artifactDir: nil
+      artifactDir: nil,
+      idleTimeoutSeconds: number(args["idleTimeoutSeconds"]),
+      continueAfterErrors: args["continueAfterErrors"]?.boolValue
     )
   }
 

@@ -30,6 +30,14 @@ struct XcodebuildOptionGroup: ParsableArguments {
   @Option(help: "Refuse to build below this much free disk (GB). Default: warn only.")
   var minFreeGb: Double?
 
+  @Option(help: "Kill xcodebuild after this many seconds with no output. Default: 600. 0 disables.")
+  var idleTimeout: Int?
+
+  @Flag(
+    inversion: .prefixedNo,
+    help: "Keep building after the first error so one run reports every error. Default: on.")
+  var continueAfterErrors: Bool?
+
   var options: XcodebuildOptions {
     XcodebuildOptions(
       derivedDataPath: derivedDataPath.map { ($0 as NSString).expandingTildeInPath },
@@ -37,7 +45,9 @@ struct XcodebuildOptionGroup: ParsableArguments {
       extraArgs: xcodebuildArgs,
       lockPath: lockPath.map { ($0 as NSString).expandingTildeInPath },
       lockWaitSeconds: lockWait.map { TimeInterval($0) },
-      minFreeGB: minFreeGb
+      minFreeGB: minFreeGb,
+      idleTimeoutSeconds: idleTimeout.map { TimeInterval($0) },
+      continueAfterErrors: continueAfterErrors
     )
   }
 

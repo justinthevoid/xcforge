@@ -186,7 +186,9 @@ public actor SessionState {
 
   /// Resolve test watchdog timeout (seconds). Repo-only — never persisted.
   ///
-  /// Order: explicit > `.xcforge.yaml` `testTimeout` > `long ? 1800 : 180`.
+  /// Order: explicit > `.xcforge.yaml` `testTimeout` > `long ? 7200 : 1800`.
+  /// Hangs are caught separately by the idle timeout (no output for 600s), so the total
+  /// limit only has to bound a run that keeps printing.
   ///
   /// `explicit` must be a positive integer. A value `<= 0` is symmetric with the
   /// YAML path's rejection of non-positive values: it falls through to the
@@ -201,7 +203,7 @@ public actor SessionState {
       )
     }
     if let repo = repoDefaults?.testTimeout { return TimeInterval(repo) }
-    return long ? 1800 : 180
+    return long ? 7200 : 1800
   }
 
   /// Resolve simulator and return both its display name and UDID.

@@ -580,7 +580,7 @@ public enum RepoConfig {
     public var configuration: String?
     public var testPlan: String?
     /// Default test watchdog timeout in seconds, applied when no explicit
-    /// `timeoutSeconds` is passed. Overrides the built-in 180s/1800s bimodal.
+    /// `timeoutSeconds` is passed. Overrides the built-in 1800s/7200s defaults.
     public var testTimeout: Int?
     /// When `false`, suppresses the 3-strikes silent promotion of explicit
     /// values to sticky session defaults. Defaults to `true` (legacy behavior)
@@ -594,6 +594,8 @@ public enum RepoConfig {
     public var artifactDir: String?
     /// Refuse to build below this much free disk (GB). Absent means warn only.
     public var minFreeGB: Double?
+    /// Seconds of xcodebuild silence before it is treated as hung. 0 disables.
+    public var idleTimeout: TimeInterval?
 
     public init(
       project: String? = nil,
@@ -606,7 +608,8 @@ public enum RepoConfig {
       derivedDataPath: String? = nil,
       buildLock: String? = nil,
       artifactDir: String? = nil,
-      minFreeGB: Double? = nil
+      minFreeGB: Double? = nil,
+      idleTimeout: TimeInterval? = nil
     ) {
       self.project = project
       self.scheme = scheme
@@ -619,6 +622,7 @@ public enum RepoConfig {
       self.buildLock = buildLock
       self.artifactDir = artifactDir
       self.minFreeGB = minFreeGB
+      self.idleTimeout = idleTimeout
     }
 
     /// True when every field is nil (nothing to apply).
@@ -626,6 +630,7 @@ public enum RepoConfig {
       project == nil && scheme == nil && simulator == nil && configuration == nil
         && testPlan == nil && testTimeout == nil && autoPromote == nil
         && derivedDataPath == nil && buildLock == nil && artifactDir == nil && minFreeGB == nil
+        && idleTimeout == nil
     }
   }
 
@@ -679,6 +684,7 @@ public enum RepoConfig {
     let allowedKeys: Set<String> = [
       "project", "scheme", "simulator", "configuration", "testPlan",
       "testTimeout", "autoPromote", "derivedDataPath", "buildLock", "artifactDir", "minFreeGB",
+      "idleTimeout",
     ]
     for key in dict.keys where !allowedKeys.contains(key) {
       Log.warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'")
@@ -740,6 +746,15 @@ public enum RepoConfig {
       }
     }
 
+    var idleTimeout: TimeInterval?
+    if let raw = dict["idleTimeout"] {
+      if let parsed = TimeInterval(raw), parsed >= 0 {
+        idleTimeout = parsed
+      } else {
+        Log.warn("\(RepoConfig.fileName): ignoring non-numeric idleTimeout '\(raw)'")
+      }
+    }
+
     let result = Values(
       project: project,
       scheme: dict["scheme"],
@@ -751,7 +766,8 @@ public enum RepoConfig {
       derivedDataPath: resolvedPath("derivedDataPath"),
       buildLock: resolvedPath("buildLock"),
       artifactDir: resolvedPath("artifactDir"),
-      minFreeGB: minFreeGB
+      minFreeGB: minFreeGB,
+      idleTimeout: idleTimeout
     )
     return result.isEmpty ? nil : result
   }
@@ -810,7 +826,7 @@ public enum RepoConfig {
     lines.append(
       entry(
         "testTimeout", nil,
-        "Default test watchdog timeout in seconds (e.g. 600). Overrides 180s/1800s bimodal."
+        "Default test watchdog timeout in seconds (e.g. 600). Overrides the 1800s/7200s defaults."
       ).trimmingCharacters(in: .newlines))
     lines.append("")
     lines.append(

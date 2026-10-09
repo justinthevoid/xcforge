@@ -70,7 +70,8 @@ enum DiagnosticSnapshot {
     sections.append("=== xcforge diagnostic snapshot ===")
     sections.append("Timestamp: \(ISO8601DateFormatter().string(from: Date()))")
 
-    let pgrepArgs = processMatch.map { ["-n", "-f", NSRegularExpression.escapedPattern(for: $0)] }
+    let pgrepArgs =
+      processMatch.map { ["-n", "-f", NSRegularExpression.escapedPattern(for: $0)] }
       ?? ["-n", "xcodebuild"]
     let pgrepResult = try? await env.shell.run(
       "/usr/bin/pgrep", arguments: pgrepArgs, timeout: 5)

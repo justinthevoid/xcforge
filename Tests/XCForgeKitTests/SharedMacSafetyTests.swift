@@ -23,14 +23,15 @@ struct SharedMacSafetyTests {
     let result = Xcodebuild.apply(options, to: args)
     #expect(
       result == [
-        "-project", "A.xcodeproj", "-scheme", "A", "-derivedDataPath", "/dd", "-jobs", "6", "build",
+        "-project", "A.xcodeproj", "-scheme", "A", "-derivedDataPath", "/dd",
+        "-IDEBuildingContinueBuildingAfterErrors=YES", "-jobs", "6", "build",
         "COMPILATION_CACHE_ENABLE_CACHING=YES",
       ])
   }
 
   @Test("apply leaves -list and an existing -derivedDataPath alone")
   func applySkipsNonBuildAndDuplicates() {
-    let options = XcodebuildOptions(derivedDataPath: "/dd")
+    let options = XcodebuildOptions(derivedDataPath: "/dd", continueAfterErrors: false)
     let list = ["-project", "A.xcodeproj", "-list", "-json"]
     #expect(Xcodebuild.apply(options, to: list) == list)
     let explicit = ["-derivedDataPath", "/mine", "build"]
@@ -43,6 +44,60 @@ struct SharedMacSafetyTests {
     #expect(Xcodebuild.isBuildInvocation(args))
     #expect(!Xcodebuild.needsLock(args))
     #expect(Xcodebuild.needsLock(["-scheme", "A", "test-without-building"]))
+  }
+
+  @Test("continue-after-errors is on for compiling actions only, and can be turned off")
+  func continueAfterErrors() {
+    let flag = "-IDEBuildingContinueBuildingAfterErrors=YES"
+    #expect(Xcodebuild.apply(XcodebuildOptions(), to: ["build"]) == [flag, "build"])
+    #expect(Xcodebuild.apply(XcodebuildOptions(), to: ["build-for-testing"]).contains(flag))
+    #expect(!Xcodebuild.apply(XcodebuildOptions(), to: ["test-without-building"]).contains(flag))
+    #expect(!Xcodebuild.apply(XcodebuildOptions(), to: ["-showBuildSettings"]).contains(flag))
+    #expect(Xcodebuild.apply(XcodebuildOptions(continueAfterErrors: false), to: ["build"]) == ["build"])
+    let explicit = ["-IDEBuildingContinueBuildingAfterErrors=NO", "build"]
+    #expect(Xcodebuild.apply(XcodebuildOptions(), to: explicit) == explicit)
+  }
+
+  // MARK: - Timeouts
+
+  @Test("timeout kind distinguishes idle kills from total-limit kills")
+  func timeoutKinds() {
+    let idle = ShellResult(
+      stdout: "", stderr: "Process produced no output for 600s and was killed (idle timeout)",
+      exitCode: -1)
+    let total = ShellResult(
+      stdout: "", stderr: "Process timed out after 1800s and was killed (signal 15)", exitCode: -1)
+    let failed = ShellResult(stdout: "", stderr: "error", exitCode: 65)
+    #expect(Xcodebuild.timeoutKind(idle) == .idle)
+    #expect(Xcodebuild.timeoutKind(total) == .total)
+    #expect(Xcodebuild.timeoutKind(failed) == nil)
+    #expect(Xcodebuild.timeoutExplanation(idle)?.contains("idleTimeoutSeconds") == true)
+    #expect(Xcodebuild.timeoutExplanation(failed) == nil)
+  }
+
+  @Test("idle timeout kills a silent process but not a chatty one")
+  func idleTimeoutKillsSilentProcess() async throws {
+    let silent = try await Shell.run(
+      "/bin/sleep", arguments: ["30"], timeout: 60, idleTimeout: 0.5)
+    #expect(silent.exitCode == -1)
+    #expect(silent.stderr.contains("idle timeout"))
+
+    let chatty = try await Shell.run(
+      "/bin/sh", arguments: ["-c", "for i in 1 2 3 4 5 6; do echo $i; sleep 0.2; done"],
+      timeout: 60, idleTimeout: 0.8)
+    #expect(chatty.succeeded)
+    #expect(chatty.stdout.contains("6"))
+  }
+
+  @Test("idle timeout options parse from MCP arguments and the environment")
+  func idleTimeoutOptions() {
+    let parsed = XcodebuildOptions.fromMCPArguments([
+      "idleTimeoutSeconds": .int(120), "continueAfterErrors": .bool(false),
+    ])
+    #expect(parsed.idleTimeoutSeconds == 120)
+    #expect(parsed.continueAfterErrors == false)
+    let fromEnv = XcodebuildOptions.effective(cwd: "/", environment: ["XCFORGE_IDLE_TIMEOUT": "0"])
+    #expect(fromEnv.idleTimeoutSeconds == 0)
   }
 
   // MARK: - Result bundle paths
@@ -116,9 +171,13 @@ struct SharedMacSafetyTests {
     #expect(options.lockWaitSeconds == 30)
 
     let tool = ToolRegistry.allTools.first { $0.name == "build_and_test" }
-    let properties = tool?.inputSchema.objectValue?["properties"]?.objectValue
-    #expect(properties?["derivedDataPath"] != nil)
-    #expect(properties?["buildLock"] != nil)
+    var properties: [String: Value] = [:]
+    if case .object(let schema)? = tool?.inputSchema, case .object(let props)? = schema["properties"] {
+      properties = props
+    }
+    #expect(properties["derivedDataPath"] != nil)
+    #expect(properties["buildLock"] != nil)
+    #expect(properties["idleTimeoutSeconds"] != nil)
   }
 
   // MARK: - Build lock

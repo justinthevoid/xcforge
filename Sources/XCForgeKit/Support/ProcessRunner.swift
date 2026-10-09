@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public struct ShellResult: Sendable {
   public let stdout: String
@@ -22,6 +23,18 @@ public protocol ShellExecutor: Sendable {
     outputLimit: Int
   ) async throws -> ShellResult
 
+  /// Like `run`, but also kills the process after `idleTimeout` seconds without any output.
+  /// The default implementation ignores `idleTimeout`, so test doubles need not implement it.
+  func run(
+    _ executable: String,
+    arguments: [String],
+    workingDirectory: String?,
+    environment: [String: String]?,
+    timeout: TimeInterval,
+    idleTimeout: TimeInterval?,
+    outputLimit: Int
+  ) async throws -> ShellResult
+
   func xcrun(timeout: TimeInterval, arguments: [String]) async throws -> ShellResult
 
   func git(_ arguments: [String], workingDirectory: String, timeout: TimeInterval) async throws
@@ -29,6 +42,20 @@ public protocol ShellExecutor: Sendable {
 }
 
 extension ShellExecutor {
+  public func run(
+    _ executable: String,
+    arguments: [String],
+    workingDirectory: String?,
+    environment: [String: String]?,
+    timeout: TimeInterval,
+    idleTimeout: TimeInterval?,
+    outputLimit: Int
+  ) async throws -> ShellResult {
+    try await run(
+      executable, arguments: arguments, workingDirectory: workingDirectory,
+      environment: environment, timeout: timeout, outputLimit: outputLimit)
+  }
+
   /// Convenience variadic wrapper matching Shell's original API.
   public func xcrun(timeout: TimeInterval = 300, _ args: String...) async throws -> ShellResult {
     try await xcrun(timeout: timeout, arguments: args)
@@ -123,6 +150,21 @@ public struct LiveShell: ShellExecutor {
       environment: environment, timeout: timeout, outputLimit: outputLimit)
   }
 
+  public func run(
+    _ executable: String,
+    arguments: [String],
+    workingDirectory: String?,
+    environment: [String: String]?,
+    timeout: TimeInterval,
+    idleTimeout: TimeInterval?,
+    outputLimit: Int
+  ) async throws -> ShellResult {
+    try await Shell.run(
+      executable, arguments: arguments, workingDirectory: workingDirectory,
+      environment: environment, timeout: timeout, idleTimeout: idleTimeout,
+      outputLimit: outputLimit)
+  }
+
   public func xcrun(timeout: TimeInterval, arguments: [String]) async throws -> ShellResult {
     try await Shell.xcrun(timeout: timeout, arguments: arguments)
   }
@@ -147,6 +189,7 @@ public enum Shell {
     workingDirectory: String? = nil,
     environment: [String: String]? = nil,
     timeout: TimeInterval = 300,
+    idleTimeout: TimeInterval? = nil,
     outputLimit: Int = Shell.defaultOutputLimit
   ) async throws -> ShellResult {
     let process = Process()
@@ -191,9 +234,35 @@ public enum Shell {
       kill(pid, SIGKILL)
     }
 
+    // Idle watchdog: kill the process after `idleTimeout` seconds with no output on either
+    // pipe. A slow but busy build keeps printing and is never killed by it.
+    let lastOutput = OSAllocatedUnfairLock(initialState: Date())
+    let killedForIdle = OSAllocatedUnfairLock(initialState: false)
+    var idleTask: Task<Void, Never>?
+    if let idle = idleTimeout, idle > 0 {
+      let tick = min(5.0, max(0.05, idle / 4))
+      idleTask = Task.detached {
+        while !Task.isCancelled {
+          try? await Task.sleep(nanoseconds: UInt64(tick * 1_000_000_000))
+          if Task.isCancelled { return }
+          let silent = Date().timeIntervalSince(lastOutput.withLock { $0 })
+          if silent >= idle {
+            killedForIdle.withLock { $0 = true }
+            kill(pid, SIGTERM)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            kill(pid, SIGKILL)
+            return
+          }
+        }
+      }
+    }
+    let markOutput: @Sendable () -> Void = { lastOutput.withLock { $0 = Date() } }
+
     // Read output concurrently, capping retained data to avoid OOM on large builds
-    async let stdoutData = stdoutPipe.fileHandleForReading.readTailAsync(limit: outputLimit)
-    async let stderrData = stderrPipe.fileHandleForReading.readTailAsync(limit: outputLimit)
+    async let stdoutData = stdoutPipe.fileHandleForReading.readTailAsync(
+      limit: outputLimit, onData: markOutput)
+    async let stderrData = stderrPipe.fileHandleForReading.readTailAsync(
+      limit: outputLimit, onData: markOutput)
 
     let (out, err) = await (stdoutData, stderrData)
 
@@ -203,6 +272,7 @@ public enum Shell {
     // still-running process — that throws an uncatchable ObjC exception.
     for await _ in terminationContinuation.stream {}
     timeoutTask.cancel()
+    idleTask?.cancel()
 
     // If task was cancelled, the process may still be running
     if process.isRunning {
@@ -213,12 +283,14 @@ public enum Shell {
     // Detect killed process (timeout or crash → uncaughtSignal)
     if process.terminationReason == .uncaughtSignal {
       let partialOut = String(data: out, encoding: .utf8) ?? ""
-      return ShellResult(
-        stdout: partialOut,
-        stderr:
-          "Process timed out after \(Int(timeout))s and was killed (signal \(process.terminationStatus))",
-        exitCode: -1
-      )
+      let reason: String
+      if killedForIdle.withLock({ $0 }), let idle = idleTimeout {
+        reason = "Process produced no output for \(Int(idle))s and was killed (idle timeout)"
+      } else {
+        reason =
+          "Process timed out after \(Int(timeout))s and was killed (signal \(process.terminationStatus))"
+      }
+      return ShellResult(stdout: partialOut, stderr: reason, exitCode: -1)
     }
 
     let stdout =
@@ -254,7 +326,7 @@ extension FileHandle {
   /// Read pipe data incrementally, retaining only the last `limit` bytes.
   /// Prevents unbounded memory growth when subprocesses emit large output
   /// (e.g. xcodebuild builds that produce hundreds of MB).
-  func readTailAsync(limit: Int) async -> Data {
+  func readTailAsync(limit: Int, onData: (@Sendable () -> Void)? = nil) async -> Data {
     precondition(limit > 0, "outputLimit must be positive")
     return await withCheckedContinuation { continuation in
       DispatchQueue.global().async {
@@ -262,6 +334,7 @@ extension FileHandle {
         while true {
           let chunk = self.availableData
           if chunk.isEmpty { break }
+          onData?()
           tail.append(chunk)
           if tail.count > limit {
             tail = Data(tail.suffix(limit))

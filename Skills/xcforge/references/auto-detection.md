@@ -49,7 +49,7 @@ file is warned and skipped (never crashes).
 | `simulator` | Default simulator name or UDID. | shared with defaults model |
 | `configuration` | Build configuration for `build_sim`/`test_sim`/`build_and_test`/`build_and_diagnose` when no `--configuration`/`configuration` arg is given. Default `Debug`. | **repo-only — never written to `defaults.json` or profiles** |
 | `testPlan` | Default `.xctestplan` for `test_sim`/`build_and_test` when no `--testplan`/`testplan` arg is given. | **repo-only — never written to `defaults.json` or profiles** |
-| `testTimeout` | Per-project default test timeout, positive integer seconds. Precedence: explicit `timeoutSeconds` > `testTimeout` > `--long`/180s default. Non-positive values rejected with warning. | **repo-only** |
+| `testTimeout` | Per-project default test timeout, positive integer seconds. Precedence: explicit `timeoutSeconds` > `testTimeout` > `--long` (7200s) > 1800s default. Non-positive values rejected with warning. | **repo-only** |
 | `autoPromote` | `true` (default) keeps the 3-rep auto-promotion. `false` disables it (streak counter held at zero) so explicit values stay explicit across repeated iterative runs. | **repo-only** |
 
 `configuration`, `testPlan`, `testTimeout`, and `autoPromote` are repo-only by
