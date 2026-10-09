@@ -359,7 +359,12 @@ enum UITools {
             "description": .string(
               "Optional accessibility id. Restrict the listing to that element and its descendants."
             ),
-          ])
+          ]),
+          "source": .object([
+            "type": .string("string"),
+            "enum": .array([.string("auto"), .string("wda"), .string("axp")]),
+            "description": .string("Tree to read: auto (default), wda or axp."),
+          ]),
         ]),
       ])
     ),

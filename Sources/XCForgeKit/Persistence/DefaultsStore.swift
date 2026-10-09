@@ -597,6 +597,10 @@ public enum RepoConfig {
     public var idleTimeout: TimeInterval?
     /// False drops the flags xcforge adds to every build.
     public var defaultFlags: Bool?
+    /// Problems found while reading the file (unknown keys, bad values). Shown to agents.
+    public var warnings: [String] = []
+    /// The `.xcforge.yaml` these values came from.
+    public var sourcePath: String?
 
     public init(
       project: String? = nil,
@@ -668,6 +672,12 @@ public enum RepoConfig {
       return nil
     }
 
+    var warnings: [String] = []
+    func warn(_ message: String) {
+      warnings.append(message)
+      Log.warn(message)
+    }
+
     var dict: [String: String] = [:]
     let normalized = contents.replacingOccurrences(of: "\r\n", with: "\n")
       .replacingOccurrences(of: "\r", with: "\n")
@@ -676,21 +686,28 @@ public enum RepoConfig {
       if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
       guard let colonIdx = trimmed.firstIndex(of: ":") else { continue }
       let key = trimmed[trimmed.startIndex..<colonIdx].trimmingCharacters(in: .whitespaces)
-      let value = trimmed[trimmed.index(after: colonIdx)...].trimmingCharacters(in: .whitespaces)
+      let rawValue = String(trimmed[trimmed.index(after: colonIdx)...])
+      let value = cleanValue(rawValue)
       if !key.isEmpty && !value.isEmpty {
         dict[key] = value
       }
     }
 
     if dict.isEmpty { return nil }
+    let fileLabel = path
 
     let allowedKeys: Set<String> = [
       "project", "scheme", "simulator", "configuration", "testPlan",
       "testTimeout", "autoPromote", "derivedDataPath", "buildLock", "artifactDir", "minFreeGB",
       "idleTimeout", "defaultFlags",
     ]
-    for key in dict.keys where !allowedKeys.contains(key) {
-      Log.warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'")
+    for key in dict.keys.sorted() where !allowedKeys.contains(key) {
+      let suggestion =
+        allowedKeys.first { $0.lowercased() == key.lowercased() }
+        ?? FuzzyMatch.fuzzyRank(needle: key, candidates: Array(allowedKeys), maxResults: 1).first?
+        .candidate
+      let hint = suggestion.map { " (did you mean '\($0)'?)" } ?? ""
+      warn("\(RepoConfig.fileName): ignoring unknown key '\(key)'\(hint)")
     }
 
     // Resolve relative project path against config file directory
@@ -701,7 +718,7 @@ public enum RepoConfig {
       if FileManager.default.fileExists(atPath: normalized) {
         project = normalized
       } else {
-        Log.warn(
+        warn(
           "\(RepoConfig.fileName): project path '\(p)' resolved to '\(normalized)' which does not exist — ignoring"
         )
         project = nil
@@ -715,8 +732,7 @@ public enum RepoConfig {
       if let parsed = Int(raw), parsed > 0 {
         testTimeout = parsed
       } else {
-        Log.warn(
-          "\(RepoConfig.fileName): ignoring non-numeric or non-positive testTimeout '\(raw)'")
+        warn("\(RepoConfig.fileName): ignoring non-numeric or non-positive testTimeout '\(raw)'")
       }
     }
 
@@ -727,8 +743,7 @@ public enum RepoConfig {
       case "true": autoPromote = true
       case "false": autoPromote = false
       default:
-        Log.warn(
-          "\(RepoConfig.fileName): ignoring non-boolean autoPromote '\(raw)' (expected true/false)")
+        warn("\(RepoConfig.fileName): ignoring non-boolean autoPromote '\(raw)' (expected true/false)")
       }
     }
 
@@ -745,7 +760,7 @@ public enum RepoConfig {
       if let parsed = Double(raw), parsed >= 0 {
         minFreeGB = parsed
       } else {
-        Log.warn("\(RepoConfig.fileName): ignoring non-numeric minFreeGB '\(raw)'")
+        warn("\(RepoConfig.fileName): ignoring non-numeric minFreeGB '\(raw)'")
       }
     }
 
@@ -754,7 +769,7 @@ public enum RepoConfig {
       if let parsed = TimeInterval(raw), parsed >= 0 {
         idleTimeout = parsed
       } else {
-        Log.warn("\(RepoConfig.fileName): ignoring non-numeric idleTimeout '\(raw)'")
+        warn("\(RepoConfig.fileName): ignoring non-numeric idleTimeout '\(raw)'")
       }
     }
 
@@ -773,7 +788,35 @@ public enum RepoConfig {
       idleTimeout: idleTimeout,
       defaultFlags: dict["defaultFlags"].flatMap(XcodebuildOptions.parseBool)
     )
-    return result.isEmpty ? nil : result
+    var withWarnings = result
+    withWarnings.warnings = warnings
+    withWarnings.sourcePath = fileLabel
+    return result.isEmpty && warnings.isEmpty ? nil : withWarnings
+  }
+
+  /// A yaml scalar without surrounding quotes or a trailing `# comment`.
+  /// `"My App" # dev` → `My App`; `iPhone 16 # dev` → `iPhone 16`; `a#b` stays `a#b`.
+  static func cleanValue(_ raw: String) -> String {
+    let value = raw.trimmingCharacters(in: .whitespaces)
+    if let quote = value.first, quote == "\"" || quote == "'" {
+      let afterOpen = value.index(after: value.startIndex)
+      if let close = value[afterOpen...].firstIndex(of: quote) {
+        return String(value[afterOpen..<close])
+      }
+      return value
+    }
+    var cut = value.endIndex
+    var index = value.startIndex
+    while index < value.endIndex {
+      if value[index] == "#", index > value.startIndex,
+        value[value.index(before: index)].isWhitespace
+      {
+        cut = index
+        break
+      }
+      index = value.index(after: index)
+    }
+    return value[..<cut].trimmingCharacters(in: .whitespaces)
   }
 
   /// Build a documented `.xcforge.yaml` body with commented keys.

@@ -99,7 +99,14 @@ public actor SessionState {
   /// There is no longer a "global persisted project" fallback — project
   /// identity must come from a source the user controls.
   public func resolveProject(_ explicit: String?) async throws -> String {
+    let resolved = try await resolveProjectUncached(explicit)
+    lastResolvedProject = resolved
+    return resolved
+  }
+
+  private func resolveProjectUncached(_ explicit: String?) async throws -> String {
     if let explicit {
+      refreshRepoDefaults(forProject: explicit)
       trackUsage(value: explicit, streak: &projectStreak, stored: &project, source: &projectSource)
       loadRecordIfNeeded(forProject: explicit)
       return explicit
@@ -122,6 +129,35 @@ public actor SessionState {
     Log.warn("Auto-detected project: \((detected as NSString).lastPathComponent)")
     return detected
   }
+
+  /// Use the `.xcforge.yaml` that governs `project`, not the one next to the server's
+  /// working directory. A project in another worktree or repo gets its own scheme, test
+  /// plan and simulator settings; values cached from the previous config are dropped.
+  private func refreshRepoDefaults(forProject project: String) {
+    let expanded = (project as NSString).expandingTildeInPath
+    let absolute =
+      expanded.hasPrefix("/")
+      ? expanded
+      : (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(expanded)
+    let directory = ((absolute as NSString).standardizingPath as NSString).deletingLastPathComponent
+    let values = RepoConfig.discover(from: directory)
+    guard values?.sourcePath != repoDefaults?.sourcePath else { return }
+    repoDefaults = values
+    if schemeSource == .repoConfig { scheme = nil }
+    if simulatorSource == .repoConfig { simulator = nil }
+  }
+
+  /// Problems found in the `.xcforge.yaml` in effect (unknown keys, bad values).
+  public var configWarnings: [String] { repoDefaults?.warnings ?? [] }
+
+  /// The project resolved for this session so far, if any.
+  public var activeProject: String? { lastResolvedProject }
+
+  /// Whatever `resolveProject` returned last, explicit values included.
+  private var lastResolvedProject: String?
+
+  /// Path of the `.xcforge.yaml` in effect, if any.
+  public var configPath: String? { repoDefaults?.sourcePath }
 
   /// Resolve scheme name. Caches auto-detected result for the session.
   public func resolveScheme(_ explicit: String?, project: String) async throws -> String {
@@ -345,6 +381,12 @@ public actor SessionState {
     {
       lines.append(
         "  note: one or more defaults were auto-promoted from repeated explicit use.")
+    }
+    if let path = repoDefaults?.sourcePath {
+      lines.append("  config: \(path)")
+    }
+    for warning in configWarnings {
+      lines.append("  config warning: \(warning)")
     }
     return lines.joined(separator: "\n")
   }

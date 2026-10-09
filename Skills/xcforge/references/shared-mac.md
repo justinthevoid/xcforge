@@ -35,6 +35,16 @@ MCP: `build_lock_status`.
 
 `simRecovery` / `--sim-recovery` defaults to `off` everywhere. `auto` reboots a simulator that isn't Booted. `erase` also erases it when a reboot didn't help. Unknown values are an error.
 
+## Long calls, cancellation and parallel calls
+
+- MCP clients that send a `progressToken` get a progress notification every 10s with the latest output line.
+- Cancelling a call (MCP cancel, client disconnect, Ctrl-C, SIGTERM) stops the xcodebuild xcforge started and every process it spawned. A CLI agent whose shell tool kills `xcforge` after its own timeout no longer leaves an orphaned build behind.
+- Within one MCP server, xcodebuild calls on the same DerivedData folder (or the same project's default one) run one at a time, in arrival order. This is always on; `buildLock` adds the same guarantee across processes.
+
+## Which `.xcforge.yaml` applies
+
+The one nearest the project being built, walking up to its repo root. Passing `project` from another worktree uses that worktree's file. Values may be quoted and may end in a `# comment`. Unknown keys and bad values are listed in `defaults show` and noted once in the first tool result that uses the file.
+
 ## What xcforge never does on a shared Mac
 
 - Kill an xcodebuild it didn't start. Hang diagnostics sample the process matched by this run's result bundle path.

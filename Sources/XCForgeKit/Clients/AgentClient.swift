@@ -322,7 +322,10 @@ public actor WDAClient {
       "-destination", "id=\(udid)",
     ]
     deployTask = Task.detached {
-      _ = try? await Shell.run("/usr/bin/xcrun", arguments: testArgs, timeout: 3600)
+      // The runner outlives this call by design; don't stop it when xcforge exits.
+      _ = try? await ChildProcesses.$untracked.withValue(true) {
+        try await Shell.run("/usr/bin/xcrun", arguments: testArgs, timeout: 3600)
+      }
     }
 
     // Step 3: Poll for server readiness (up to 30s)

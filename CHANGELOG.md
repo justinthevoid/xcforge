@@ -18,9 +18,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **UI automation on physical devices.** `xcforge wda start|status|stop` and MCP `wda_start`/`wda_stop` build xcforgeWDA for the device, sign it with your team (`--team`, `XCFORGE_WDA_TEAM`), launch it with `test-without-building`, find it over the CoreDevice tunnel, and record its URL in `~/.xcforge/wda/`. `XCFORGE_DEVICE=<udid>` points `xcforge ui` commands at it. Locked device, UI Automation off, Developer Mode off, pairing and signing failures each get a one-line explanation
 - `device screenshot` / `device_screenshot` (devicectl capture, falling back to the device's WDA)
 - `device launch --url <deep-link> --env KEY=VALUE --arg A` and matching `url`/`env` on `device_launch`
+- **MCP progress notifications.** When a `tools/call` carries a `progressToken`, xcforge sends `notifications/progress` every 10s with the elapsed time and the latest output line, so clients that time out silent requests keep waiting for long builds and tests
+- Each build and test tool result ends with `project: <absolute path>`, so a build of the wrong checkout or worktree is visible
+- `.xcforge.yaml` problems (unknown keys with a "did you mean", unparseable values) are listed by `set_defaults show` / `defaults show` and once at the end of the first tool result that uses the file
 - **Xcode 27 Device Hub support.** xcforge opens Device Hub when the selected Xcode has no Simulator.app, and screen capture, the accessibility bridge and window scripting accept either app
 
 ### Changed
+- **Cancelling stops the build.** An MCP cancel, a client disconnect, Ctrl-C, SIGTERM or SIGHUP now stops the xcodebuild (or other command) xcforge started, together with every process it spawned. Timeouts kill the whole process tree too, so compiler and test-runner children no longer outlive the call and hold DerivedData ("database is locked" on the next run)
+- Two MCP calls that would run xcodebuild on the same DerivedData folder (or the same project's default one) at once now run one after the other, first come first served
+- An explicit `project` in another repo or worktree uses the `.xcforge.yaml` next to it, for both session defaults (scheme, simulator, test plan) and xcodebuild options (DerivedData, lock, idle timeout)
+- `.xcforge.yaml` values may be quoted and may carry a trailing `# comment`
+- **Unknown MCP arguments are an error** naming the closest real argument (`derived_data_path` → `derivedDataPath`) instead of being ignored
 - **Auto-promotion is opt-in.** Repeated explicit values no longer silently become session defaults unless `.xcforge.yaml` sets `autoPromote: true`
 - `--no-default-flags` / `defaultFlags: false` / `XCFORGE_DEFAULT_FLAGS=0` / `.xcforge.yaml defaultFlags: false` drop the flags xcforge adds to builds (`-skipMacroValidation`, `-parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES`)
 - `lldb_continue` / `debug continue` wait 30s by default and take `timeoutSeconds` / `--timeout` (was a fixed 10s); simulator app launch waits up to 60s (was 15s)
