@@ -133,12 +133,14 @@ enum AutoDetect {
         "-not", "-path", "*/.build/*",
         "-not", "-path", "*/DerivedData/*",
         "-not", "-path", "*/.swiftpm/*",
+        // Every .xcodeproj holds a project.xcworkspace; it isn't a separate workspace.
+        "-not", "-path", "*.xcodeproj/*",
       ], timeout: 10)
 
     let paths = result.stdout
       .split(separator: "\n")
       .map(String.init)
-      .filter { !$0.isEmpty }
+      .filter { !$0.isEmpty && !$0.contains(".xcodeproj/") }
 
     // Prefer .xcworkspace over .xcodeproj when both exist
     let workspaces = paths.filter { $0.hasSuffix(".xcworkspace") }
@@ -165,7 +167,11 @@ enum AutoDetect {
   /// Detect scheme for a project. Returns name if exactly one scheme exists.
   static func scheme(project: String) async throws -> String {
     let schemes = try await availableSchemes(project: project)
+    let projectName = ((project as NSString).lastPathComponent as NSString).deletingPathExtension
 
+    if let preferred = preferredScheme(schemes, projectName: projectName) {
+      return preferred
+    }
     switch schemes.count {
     case 1:
       return schemes[0]
@@ -176,6 +182,15 @@ enum AutoDetect {
     }
   }
 
+  /// The scheme to use without asking: the only one, the one named after the project
+  /// (Xcode's app scheme), or the only one that isn't a test or CocoaPods scheme.
+  static func preferredScheme(_ schemes: [String], projectName: String) -> String? {
+    if schemes.count == 1 { return schemes[0] }
+    if schemes.contains(projectName) { return projectName }
+    let apps = schemes.filter { !$0.hasSuffix("Tests") && !$0.hasPrefix("Pods-") }
+    return apps.count == 1 ? apps[0] : nil
+  }
+
   static func availableSchemes(project: String) async throws -> [String] {
     let isWorkspace = project.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
@@ -184,7 +199,7 @@ enum AutoDetect {
       "/usr/bin/xcodebuild",
       arguments: [
         projectFlag, project, "-list", "-json",
-      ], timeout: 15)
+      ], timeout: 60)  // Package resolution on a cold checkout can take most of a minute.
 
     guard result.succeeded,
       let data = result.stdout.data(using: .utf8),
@@ -238,7 +253,7 @@ enum AutoDetect {
       "/usr/bin/xcodebuild",
       arguments: [
         projectFlag, project, "-list", "-json",
-      ], timeout: 15)
+      ], timeout: 60)  // Package resolution on a cold checkout can take most of a minute.
 
     guard result.succeeded,
       let data = result.stdout.data(using: .utf8),

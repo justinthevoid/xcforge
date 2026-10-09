@@ -174,6 +174,9 @@ enum BuildRenderer {
 
     lines.append("Project: \(execution.project)")
     lines.append("Scheme: \(execution.scheme)")
+    if let removed = execution.removedDerivedData {
+      lines.append("Deleted DerivedData: \(removed)")
+    }
 
     if let error = execution.error, !error.isEmpty {
       lines.append("")

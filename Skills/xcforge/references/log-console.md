@@ -32,7 +32,9 @@ Start capturing OS logs from the simulator.
 start_log_capture(subsystem: "com.apple.SwiftUI")
 ```
 
-**Important:** Start capture BEFORE reproducing the issue. Logs are not retroactive.
+Logs are not retroactive: only what happens after the capture starts is recorded.
+
+From the CLI, `xcforge log start` runs the capture in the background, writing to `~/.xcforge/capture/` (`XCFORGE_CAPTURE_DIR` moves it), until `xcforge log stop`; `log read` and `log wait` in later commands read it.
 
 ---
 
@@ -51,7 +53,7 @@ Read buffered logs with topic filtering. Returns a topic menu showing available 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `include` | No | `["app", "crashes"]` | Array of topic names to include |
-| `last` | No | — | Only return last N lines (applied after topic filtering) |
+| `last` | No | 200 | Return the last N lines, after topic filtering; 0 returns all. The header says how many earlier lines were left out |
 | `clear` | No | false | Clear buffer after reading |
 
 **Response format:**
@@ -68,7 +70,7 @@ Hint: include=["network"] to add SSL/TLS + background transfer logs
 | Topic | Always On | Matches | Use Case |
 |-------|-----------|---------|----------|
 | `app` | Yes | subsystem == bundleId OR process == appName | Your app's os_log, print(), NSLog() |
-| `crashes` | Yes | Fault-level logs from any process | Crash detection |
+| `crashes` | Yes | Error and fault lines from any process | Crash detection |
 | `network` | No | trustd, nsurlsessiond | SSL/TLS certificates, background transfers |
 | `lifecycle` | No | runningboardd, com.apple.runningboard.* | Jetsam, memory pressure, app kills |
 | `springboard` | No | SpringBoard process | Push notifications, app state changes |
@@ -91,7 +93,7 @@ Wait for a specific log pattern with timeout. Eliminates sleep() hacks.
 | `simulator` | No | Auto-detect | Simulator (used if log capture not already running) |
 | `subsystem` | No | — | Filter by subsystem (used if log capture not already running) |
 
-**Returns:** The matching log line, or timeout error.
+**Returns:** The matching lines that arrived after the call started, or a timeout error. It doesn't clear what `read_logs` returns.
 
 **Use case:** Wait for "app launched" signal, wait for network request completion, wait for crash after specific action.
 
@@ -121,7 +123,7 @@ Read buffered console output.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `last` | No | — | Only return last N lines per stream |
+| `last` | No | 200 | Return the last N lines per stream; 0 returns all |
 | `clear` | No | false | Clear buffer after reading |
 | `stream` | No | `both` | Which stream: `stdout`, `stderr`, or `both` |
 

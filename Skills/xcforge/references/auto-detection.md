@@ -77,12 +77,13 @@ xcforge init --force    # overwrite an existing file
 - Scans working directory for `.xcodeproj` and `.xcworkspace` files
 - If exactly one found, uses it automatically
 - If multiple found, returns the list and asks for selection
-- Prefers `.xcworkspace` over `.xcodeproj` when both exist (CocoaPods, SPM workspace)
+- Prefers `.xcworkspace` over `.xcodeproj` when both exist (CocoaPods, SPM workspace). The `project.xcworkspace` inside every `.xcodeproj` doesn't count
 
 ### scheme
 - Queries `xcodebuild -list` for the resolved project
 - If exactly one scheme, uses it
-- If multiple, returns the list
+- If several, uses the one named after the project, else the only one that isn't a test or `Pods-` scheme
+- Otherwise returns the list
 
 ### simulator
 - Finds currently booted simulator via `simctl list devices`

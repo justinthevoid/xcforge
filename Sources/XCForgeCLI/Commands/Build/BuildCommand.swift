@@ -101,6 +101,15 @@ struct BuildRun: AsyncParsableCommand {
   @Flag(help: "Extract structured diagnostics (errors, warnings with file locations).")
   var diagnose = false
 
+  @Option(name: .customLong("arg"), help: "Launch argument for the app (repeatable).")
+  var launchArgs: [String] = []
+
+  @Option(name: .customLong("env"), help: "Environment variable for the app, KEY=VALUE (repeatable).")
+  var launchEnv: [String] = []
+
+  @Option(help: "URL or deep link to open once the app is running.")
+  var url: String?
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -174,15 +183,14 @@ struct BuildRun: AsyncParsableCommand {
         installStatus = installResult.succeeded ? "ok" : "failed: \(installResult.message)"
 
         if installResult.succeeded, let bundleId = execution.bundleId {
+          // The launch reports whether the app survived its first seconds, and why not.
           let launchResult = await SimTools.executeLaunchApp(
-            simulator: resolvedSimulator, bundleId: bundleId, env: env)
+            simulator: resolvedSimulator, bundleId: bundleId, args: launchArgs, environment: launchEnv, url: url,
+            env: env)
           launchStatus = launchResult.succeeded ? "ok" : "failed: \(launchResult.message)"
           if launchResult.succeeded {
-            // simctl launch prints "<bundleId>: <pid>" — extract PID from message
-            appPid = launchResult.message
-              .split(separator: "\n").last
-              .flatMap { $0.split(separator: ":").last }
-              .map { String($0).trimmingCharacters(in: .whitespaces) }
+            appPid = launchResult.message.split(separator: "\n").lazy
+              .compactMap { AppLiveness.pid(fromLaunchOutput: String($0)) }.first.map { String($0) }
             appRunning = true
           }
         } else if !installResult.succeeded {
@@ -279,6 +287,12 @@ struct BuildClean: AsyncParsableCommand {
   @Option(help: "Xcode scheme name. Auto-detected if omitted.")
   var scheme: String?
 
+  @Option(help: "Build configuration (Debug/Release). Default: Debug")
+  var configuration: String?
+
+  @Flag(help: "Also delete this project's DerivedData folder (fixes \"database is locked\" and stale indexes).")
+  var derivedData = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -294,7 +308,9 @@ struct BuildClean: AsyncParsableCommand {
 
     let execution = try await BuildTools.executeClean(
       project: project,
-      scheme: scheme
+      scheme: scheme,
+      configuration: configuration,
+      deleteDerivedData: derivedData
     )
 
     if useJSON {

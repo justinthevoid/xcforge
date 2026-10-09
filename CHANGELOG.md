@@ -25,6 +25,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Test run options:** `retries`, `iterations`, `untilFailure`, `parallel`, `testTimeoutSeconds`, `skipBuild`, `includeConsole`, `env` and `timeoutSeconds` on `test_sim` and `build_and_test`, with matching flags (`--retries`, `--iterations`, `--until-failure`, `--parallel/--no-parallel`, `--test-timeout`, `--no-build`, `--include-console`, `--env`, `--timeout-seconds`) on `test run`, `build-test` and `test rerun-failed`
 - Tests that fail and then pass on retry are listed as flaky (`flaky` in agent JSON)
 - `test rerun-failed` reuses the recorded project, test plan, configuration and env, and skips build-for-testing when no source file changed since the last one (`--build` forces it)
+- **Launches report a crash at startup.** `launch_app`, `build_run_sim`, `sim launch` and `build run` check the app is still running 2s after launch; when it isn't, they fail with the exception, reason, crashed thread's top frames and the `.ips` report path
+- Launch arguments, environment and a deep link: `args`, `env` (KEY=VALUE), `url` and `terminate` on `launch_app` and `build_run_sim`; `--arg`, `--env`, `--url` and `--no-terminate` on `sim launch` and `build run`; `--env` on `console launch`
+- `open_url` / `sim openurl` open a URL or deep link on a simulator
+- `clean` / `build clean` take `configuration` and `derivedData: true` / `--derived-data`, which deletes this project's DerivedData folder (and only that one)
 
 ### Changed
 - **One test ID format.** Results, `list_tests`, last-failures and known-failures all use `Target/Suite/test()` (Swift Testing) or `Target/Class/testMethod` (XCTest), and filters accept it as printed. The target is added to short IDs from the scheme's or test plan's test targets instead of guessed, and the `test()()` spelling xcodebuild needs is written for you
@@ -41,6 +45,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Simulator names resolve the same way everywhere: exact name, the booted match first, else the newest OS; two matches on the same OS ask for a UDID. Prefix matches (`iPhone 16` → `iPhone 16 Pro`) are gone
 - A filter that matches no test lists suggestions from the last build instead of building again
 - `build run` exits non-zero when the app wasn't launched
+- `build_run_sim` boots the simulator once the build succeeds (not alongside it), waits for the boot to finish before installing, and installs the scheme's application target from `-showBuildSettings -json` instead of whichever product was listed last or a `<scheme>.app` found anywhere in DerivedData
+- **CLI log and console capture run in the background.** `log start` and `console launch` keep streaming to `~/.xcforge/capture/` after the command exits (`XCFORGE_CAPTURE_DIR` moves it), so `log read`, `log wait`, `console read` and the `stop` commands in later invocations see it. Before, the capture died with the `start` command
+- `read_logs`, `read_app_console`, `log read` and `console read` return the newest 200 lines by default (`last: 0` for all) and say how many earlier lines were left out; over-long output keeps the end instead of the start
+- `wait_for_log` no longer clears the buffer `read_logs` reads
+- The `crashes` log topic matches error and fault lines; it used to match default-level (`Df`) lines, which is most of the log
+- Auto-detect ignores the `project.xcworkspace` inside every `.xcodeproj`, picks the scheme named after the project (or the only non-test scheme) when there are several, and gives `xcodebuild -list` 60s instead of 15s
+- `clean` cleans the configuration and simulator build folder xcforge builds into, and is limited by the idle timeout instead of a fixed 60s
+- A new CLI process picks up the last build's bundle ID and app path, so `sim launch` and `sim install` work right after `build run` without passing them
 - **Cancelling stops the build.** An MCP cancel, a client disconnect, Ctrl-C, SIGTERM or SIGHUP now stops the xcodebuild (or other command) xcforge started, together with every process it spawned. Timeouts kill the whole process tree too, so compiler and test-runner children no longer outlive the call and hold DerivedData ("database is locked" on the next run)
 - Two MCP calls that would run xcodebuild on the same DerivedData folder (or the same project's default one) at once now run one after the other, first come first served
 - An explicit `project` in another repo or worktree uses the `.xcforge.yaml` next to it, for both session defaults (scheme, simulator, test plan) and xcodebuild options (DerivedData, lock, idle timeout)

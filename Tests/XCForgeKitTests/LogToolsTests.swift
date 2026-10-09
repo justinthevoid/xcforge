@@ -359,17 +359,17 @@ struct ParseLineTests {
   @Test("parses fault level")
   func faultLevel() {
     let line =
-      "2026-03-29 22:26:04.200 Df  MyTestApp[12345:67890] [com.test.myapp:default] Fatal error"
+      "2026-03-29 22:26:04.200 F   MyTestApp[12345:67890] [com.test.myapp:default] Fatal error"
     let parsed = LogTools.parseLine(line)
-    #expect(parsed?.logType == "Df")
+    #expect(parsed?.logType == "F")
   }
 
   @Test("parses error level")
   func errorLevel() {
     let line =
-      "2026-03-29 22:26:04.200 De  MyTestApp[12345:67890] [com.test.myapp:default] Error occurred"
+      "2026-03-29 22:26:04.200 E   MyTestApp[12345:67890] [com.test.myapp:default] Error occurred"
     let parsed = LogTools.parseLine(line)
-    #expect(parsed?.logType == "De")
+    #expect(parsed?.logType == "E")
   }
 
   @Test("returns nil for dedup line")
@@ -425,7 +425,7 @@ struct CategorizeTests {
   @Test("crashes topic for fault level")
   func crashesFault() {
     let parsed = LogTools.ParsedLogLine(
-      processName: "storekitd", logType: "Df",
+      processName: "storekitd", logType: "F",
       subsystem: "com.apple.storekit", category: "default")
     let topics = LogTools.categorize(parsed, bundleId: "com.test.myapp", processName: "MyApp")
     #expect(topics.contains("crashes"))
@@ -506,7 +506,7 @@ struct CategorizeTests {
   @Test("multi-topic: app + crashes for own app fault")
   func multiTopic() {
     let parsed = LogTools.ParsedLogLine(
-      processName: "MyApp", logType: "Df",
+      processName: "MyApp", logType: "F",
       subsystem: "com.test.myapp", category: "default")
     let topics = LogTools.categorize(parsed, bundleId: "com.test.myapp", processName: "MyApp")
     #expect(topics.contains("app"))
@@ -524,7 +524,7 @@ struct FilterByTopicsTests {
   static let appLog =
     "2026-03-29 22:26:04.112 Db  MyTestApp[12345:67890] [com.test.myapp:default] viewDidLoad"
   static let appFault =
-    "2026-03-29 22:26:04.200 Df  MyTestApp[12345:67890] [com.test.myapp:default] Fatal error"
+    "2026-03-29 22:26:04.200 F   MyTestApp[12345:67890] [com.test.myapp:default] Fatal error"
   static let trustdLog =
     "2026-03-29 22:26:04.300 Db  trustd[88:99] [com.apple.trust:policy] evaluating cert"
   static let lifecycleLog =
@@ -568,7 +568,7 @@ struct FilterByTopicsTests {
       bundleId: "com.test.myapp", processName: "MyTestApp"
     )
     #expect(result.topicCounts["app"] == 2, "appLog + appFault")
-    #expect(result.topicCounts["crashes"] == 1, "only appFault is Df")
+    #expect(result.topicCounts["crashes"] == 1, "only appFault is a fault")
     #expect(result.topicCounts["network"] == 1, "trustd")
     #expect(result.topicCounts["lifecycle"] == 1, "runningboardd")
     #expect(result.topicCounts["springboard"] == 1, "SpringBoard")

@@ -23,6 +23,9 @@ enum ConsoleRenderer {
     let status = (result.isRunning ?? false) ? "running" : "stopped"
     let header = "App: \(result.bundleId ?? "?") [\(status)]"
     lines.append(header)
+    if result.message != "Console output read" && result.message != "Buffer cleared after reading" {
+      lines.append(result.message)
+    }
 
     if stream == "stdout" || stream == "both" {
       let stdoutLines = result.stdout ?? []

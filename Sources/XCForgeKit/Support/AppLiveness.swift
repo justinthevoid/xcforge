@@ -1,0 +1,155 @@
+import Foundation
+
+/// Whether an app launched on a simulator is still running a moment later, and why not.
+///
+/// `simctl launch` returns as soon as the process exists, so an app that crashes during
+/// startup still "launches". Simulator apps are host processes, so their pid can be
+/// checked with `ps`, and their crash reports land in the host's DiagnosticReports.
+public enum AppLiveness {
+  /// How long a launched app must survive to count as running.
+  static let settleSeconds: TimeInterval = 2
+
+  enum Outcome: Equatable, Sendable {
+    case running
+    case exited(CrashSummary?)
+  }
+
+  /// The pid in `simctl launch` output (`com.example.app: 1234`).
+  public static func pid(fromLaunchOutput output: String) -> Int32? {
+    for line in output.split(whereSeparator: \.isNewline).reversed() {
+      let parts = line.split(separator: ":", omittingEmptySubsequences: false)
+      // Only `<bundle id>: <pid>`; a URL with a port mustn't read as a pid.
+      guard parts.count == 2, !parts[0].isEmpty, !parts[0].contains(where: \.isWhitespace) else { continue }
+      if let pid = Int32(parts[1].trimmingCharacters(in: .whitespaces)) { return pid }
+    }
+    return nil
+  }
+
+  /// True when `pid` exists and isn't a zombie.
+  static func isRunning(pid: Int32, env: Environment) async -> Bool {
+    let arguments = ["-p", String(pid), "-o", "stat="]
+    // When ps can't run, say running: never report a crash that wasn't seen.
+    guard let result = try? await env.shell.run("/bin/ps", arguments: arguments, timeout: 5) else { return true }
+    let state = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    return result.succeeded && !state.isEmpty && !state.hasPrefix("Z")
+  }
+
+  /// Wait `settleSeconds`, then report whether the app is still up. When it isn't, look
+  /// for the crash report it left.
+  static func check(
+    pid: Int32, bundleId: String, launchedAt: Date, settle: TimeInterval = settleSeconds, env: Environment
+  ) async -> Outcome {
+    try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
+    if await isRunning(pid: pid, env: env) { return .running }
+    // The report is written a moment after the process dies.
+    for _ in 0..<10 {
+      if let path = CrashReports.newest(bundleId: bundleId, after: launchedAt),
+        let text = try? String(contentsOfFile: path, encoding: .utf8),
+        let summary = CrashReports.summarize(text, path: path)
+      {
+        return .exited(summary)
+      }
+      try? await Task.sleep(nanoseconds: 500_000_000)
+    }
+    return .exited(nil)
+  }
+
+  /// One line per fact, for tool output.
+  static func describe(_ outcome: Outcome, bundleId: String) -> String {
+    switch outcome {
+    case .running:
+      return "App running: true"
+    case .exited(nil):
+      return "App running: false (\(bundleId) exited within \(Int(settleSeconds))s of launch; no crash report found)"
+    case .exited(let summary?):
+      var lines = ["App running: false (\(bundleId) crashed at launch)", "Crash: \(summary.headline)"]
+      lines += summary.frames.map { "  \($0)" }
+      lines.append("Crash report: \(summary.path)")
+      return lines.joined(separator: "\n")
+    }
+  }
+}
+
+/// The parts of a crash report an agent needs: what happened and where.
+struct CrashSummary: Equatable, Sendable, Codable {
+  let exception: String
+  let reason: String?
+  let frames: [String]
+  let path: String
+
+  var headline: String {
+    reason.map { "\(exception): \($0)" } ?? exception
+  }
+}
+
+enum CrashReports {
+  static func directory() -> String {
+    if let override = ProcessInfo.processInfo.environment["XCFORGE_CRASH_REPORTS_DIR"], !override.isEmpty {
+      return override
+    }
+    return NSHomeDirectory() + "/Library/Logs/DiagnosticReports"
+  }
+
+  /// The newest `.ips` report for `bundleId` written after `date`.
+  static func newest(bundleId: String, after date: Date, in directory: String = directory()) -> String? {
+    let fm = FileManager.default
+    guard let names = try? fm.contentsOfDirectory(atPath: directory) else { return nil }
+    var best: (path: String, date: Date)?
+    for name in names where name.hasSuffix(".ips") {
+      let path = (directory as NSString).appendingPathComponent(name)
+      guard let modified = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date,
+        modified >= date.addingTimeInterval(-1),
+        best.map({ modified > $0.date }) ?? true,
+        let header = headerLine(path),
+        reportBundleID(header) == bundleId
+      else { continue }
+      best = (path, modified)
+    }
+    return best?.path
+  }
+
+  private static func headerLine(_ path: String) -> String? {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+    defer { try? handle.close() }
+    let data = (try? handle.read(upToCount: 4096)) ?? Data()
+    return String(data: data, encoding: .utf8)?.split(whereSeparator: \.isNewline).first.map(String.init)
+  }
+
+  static func reportBundleID(_ header: String) -> String? {
+    guard let data = header.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    return json["bundleID"] as? String
+  }
+
+  /// Exception, termination reason and the crashed thread's top frames from an `.ips`
+  /// report (a JSON header line, then the JSON body).
+  static func summarize(_ text: String, path: String, frameLimit: Int = 8) -> CrashSummary? {
+    guard let newline = text.firstIndex(where: \.isNewline),
+      let data = String(text[text.index(after: newline)...]).data(using: .utf8),
+      let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+
+    let exception = body["exception"] as? [String: Any]
+    var name = (exception?["type"] as? String) ?? "crash"
+    if let signal = exception?["signal"] as? String { name += " (\(signal))" }
+
+    var reason: String?
+    if let asi = body["asi"] as? [String: [String]], let first = asi.values.flatMap({ $0 }).first {
+      reason = first
+    } else if let termination = body["termination"] as? [String: Any] {
+      reason = termination["indicator"] as? String
+    }
+
+    let images = (body["usedImages"] as? [[String: Any]]) ?? []
+    let threads = (body["threads"] as? [[String: Any]]) ?? []
+    let crashed = threads.first { ($0["triggered"] as? Bool) == true } ?? threads.first
+    let frames = ((crashed?["frames"] as? [[String: Any]]) ?? []).prefix(frameLimit).map { frame -> String in
+      let index = frame["imageIndex"] as? Int
+      let image = index.flatMap { $0 < images.count ? images[$0]["name"] as? String : nil } ?? "?"
+      if let symbol = frame["symbol"] as? String { return "\(image)  \(symbol)" }
+      return "\(image)  +\(frame["imageOffset"] as? Int ?? 0)"
+    }
+    return CrashSummary(exception: name, reason: reason, frames: Array(frames), path: path)
+  }
+}

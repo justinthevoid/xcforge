@@ -49,12 +49,27 @@ Install a .app bundle on a simulator.
 
 ## launch_app
 
-Launch an installed app.
+Launch an installed app, then check it is still running 2s later. When it isn't, the call fails with the exception, reason, crashed thread's top frames and the `.ips` crash report path.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 | `bundle_id` | No | Auto-detect (last build) | App bundle identifier |
+| `args` | No | — | Launch arguments for the app |
+| `env` | No | — | Environment for the app, `KEY=VALUE` strings |
+| `url` | No | — | URL or deep link to open once the app is running |
+| `terminate` | No | true | Terminate a running copy first |
+
+---
+
+## open_url
+
+Open a URL or deep link on a simulator.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `url` | **Yes** | — | URL or deep link |
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 
 ---
 

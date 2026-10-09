@@ -173,7 +173,7 @@ enum ConsoleTools {
         "properties": .object([
           "last": .object([
             "type": .string("number"),
-            "description": .string("Only return last N lines per stream"),
+            "description": .string("Return the last N lines per stream. Default: 200; 0 returns all."),
           ]),
           "clear": .object([
             "type": .string("boolean"),
@@ -247,34 +247,30 @@ enum ConsoleTools {
     let clear = input.clear ?? false
     let stream = input.stream ?? "both"
 
-    let output = await AppConsole.shared.read(last: last, clear: clear)
+    let output = await AppConsole.shared.read(last: nil, clear: clear)
 
     var sections: [String] = []
-
-    if stream == "stdout" || stream == "both" {
-      if output.stdout.isEmpty {
-        sections.append("=== STDOUT (empty) ===")
-      } else {
-        let text = output.stdout.joined(separator: "\n")
-        let truncated = text.count > 30000 ? String(text.prefix(30000)) + "\n... [truncated]" : text
-        sections.append("=== STDOUT (\(output.stdout.count) lines) ===\n\(truncated)")
-      }
-    }
-
-    if stream == "stderr" || stream == "both" {
-      if output.stderr.isEmpty {
-        sections.append("=== STDERR (empty) ===")
-      } else {
-        let text = output.stderr.joined(separator: "\n")
-        let truncated = text.count > 30000 ? String(text.prefix(30000)) + "\n... [truncated]" : text
-        sections.append("=== STDERR (\(output.stderr.count) lines) ===\n\(truncated)")
-      }
+    for (name, lines, wanted) in [
+      ("STDOUT", output.stdout, stream == "stdout" || stream == "both"),
+      ("STDERR", output.stderr, stream == "stderr" || stream == "both"),
+    ] where wanted {
+      sections.append(ConsoleTools.section(name, lines: lines, last: last))
     }
 
     let status = output.isRunning ? "running" : "stopped"
     let header = "App: \(output.bundleId ?? "?") [\(status)]\(clear ? " (buffer cleared)" : "")"
 
     return .ok(header + "\n\n" + sections.joined(separator: "\n\n"))
+  }
+
+  /// One stream's newest lines, with how many earlier ones were left out.
+  static func section(_ name: String, lines: [String], last: Int?) -> String {
+    let lines = lines.filter { !$0.isEmpty }
+    guard !lines.isEmpty else { return "=== \(name) (empty) ===" }
+    let (kept, omitted) = CaptureTail.tail(lines, last: last)
+    var header = "=== \(name) (\(lines.count) lines) ==="
+    if let note = CaptureTail.omittedNote(omitted) { header += " \(note)" }
+    return header + "\n" + CaptureTail.keepEnd(kept.joined(separator: "\n"), limit: 30000)
   }
 
   static func stopAppConsole(_ args: [String: Value]?) async -> CallTool.Result {

@@ -274,8 +274,9 @@ public actor SessionState {
     )
   }
 
-  public func resolveBundleId(_ explicit: String?) -> String? {
+  public func resolveBundleId(_ explicit: String?) async -> String? {
     if let explicit { return explicit }
+    await loadBuildInfoIfNeeded()
     // scheme is no longer eagerly cached from persisted at init, so the
     // build-scheme mismatch guard must consult the effective scheme
     // (session cache → repo config → persisted) to keep stale bundle ids
@@ -285,11 +286,20 @@ public actor SessionState {
     return bundleId
   }
 
-  func resolveAppPath(_ explicit: String?) -> String? {
+  func resolveAppPath(_ explicit: String?) async -> String? {
     if let explicit { return explicit }
+    await loadBuildInfoIfNeeded()
     let effScheme = scheme ?? repoDefaults?.scheme ?? persistedScheme
     if let buildScheme, let effScheme, buildScheme != effScheme { return nil }
     return appPath
+  }
+
+  /// A new process (the CLI, or a restarted MCP server) has no project resolved yet, so
+  /// the last build's bundle ID and app path, saved per project, aren't loaded. Resolve
+  /// the project to load them.
+  private func loadBuildInfoIfNeeded() async {
+    guard loadedRecordForProject == nil else { return }
+    _ = try? await resolveProject(nil)
   }
 
   func clearBuildInfo() {

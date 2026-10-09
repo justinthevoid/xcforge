@@ -45,7 +45,7 @@ Build for iOS Simulator. Returns structured errors from xcresult (not raw xcodeb
 
 ## build_run_sim
 
-Build + boot + install + launch in one call. Runs a parallel 2-phase pipeline: build and boot happen simultaneously, then install and launch. ~9s faster than calling each tool sequentially.
+Build, boot, install and launch in one call (Xcode's Cmd+R). The simulator boots once the build succeeds; the app installed is the scheme's application target (from `-showBuildSettings -json`), not an extension or framework.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -53,21 +53,24 @@ Build + boot + install + launch in one call. Runs a parallel 2-phase pipeline: b
 | `scheme` | No | Auto-detect | Scheme name |
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 | `configuration` | No | Debug | Build configuration |
+| `args` | No | — | Launch arguments for the app |
+| `env` | No | — | Environment for the app, `KEY=VALUE` strings |
+| `url` | No | — | URL or deep link to open once the app is running |
 
-**Returns:** Bundle ID, app path, simulator UDID, build duration. On failure: structured build errors.
-
-This is the **Cmd+R equivalent** — the single most common tool call for iOS development.
+**Returns:** Bundle ID, app path, PID, timings. On failure: structured build errors, or, when the app dies within 2s of launch, `App running: false` with the exception, reason, top frames of the crashed thread and the crash report path.
 
 ---
 
 ## clean
 
-Clean build artifacts (DerivedData for the project).
+Clean the scheme's simulator build products for a configuration. `derivedData: true` also deletes this project's DerivedData folder, found from its `BUILD_ROOT` (never the whole DerivedData directory); that is the fix for "database is locked" or a stale index.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `project` | No | Auto-detect | Path to .xcodeproj or .xcworkspace |
 | `scheme` | No | Auto-detect | Scheme name |
+| `configuration` | No | Debug | Build configuration |
+| `derivedData` | No | false | Also delete this project's DerivedData folder |
 
 ---
 

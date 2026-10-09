@@ -52,9 +52,12 @@ xcforge build --json                             # Machine-readable JSON output 
 | `--simulator <name\|udid>` | Simulator name or UDID. Auto-detected from booted simulator |
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
 | `--diagnose` | Build-only with structured diagnostics (skips boot/install/launch) |
+| `--arg <value>` | Launch argument for the app (repeatable) |
+| `--env KEY=VALUE` | Environment variable for the app (repeatable) |
+| `--url <url>` | URL or deep link to open once the app is running |
 | `--json` | Machine-readable JSON output |
 
-**Pipeline behavior:** On build success, automatically boots the simulator (if not already booted), installs the app, and launches it. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
+**Pipeline behavior:** On build success, boots the simulator (if not already booted) and waits for it, installs the scheme's application target, launches it, and checks it is still running 2s later. A crash at launch fails the command with the crash reason and frames. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
 
 **JSON output:** With `--json`, emits a `BuildRunResult` with `build`, `boot`, `install`, `launch` phase statuses plus `appPid` and `appRunning` fields.
 
@@ -105,6 +108,7 @@ Clean Xcode build artifacts for a project/scheme.
 ```bash
 xcforge build clean
 xcforge build clean --project MyApp.xcodeproj --scheme MyApp
+xcforge build clean --derived-data             # Also delete this project's DerivedData folder
 xcforge build clean --json
 ```
 
@@ -327,7 +331,9 @@ xcforge sim info --simulator "iPhone 16 Pro"     # Get metrics for specific simu
 xcforge sim boot "iPhone 16 Pro"                 # Boot a simulator
 xcforge sim shutdown "iPhone 16 Pro"             # Shutdown (or "all")
 xcforge sim install --app-path /path/to/App.app  # Install app (auto-detects sim)
-xcforge sim launch --bundle-id com.app.id        # Launch app (auto-detects sim)
+xcforge sim launch --bundle-id com.app.id        # Launch app; fails with the crash if it dies within 2s
+xcforge sim launch --arg -UITest --env API=stub --url myapp://screen  # Args, env, deep link
+xcforge sim openurl myapp://settings             # Open a URL or deep link
 xcforge sim terminate --bundle-id com.app.id     # Terminate app
 xcforge sim clone "iPhone 16 Pro" --name "Clone" # Clone simulator
 xcforge sim erase "iPhone 16 Pro"                # Erase to factory state
@@ -395,7 +401,7 @@ All subcommands support `--json`. `--path` defaults to current directory.
 Stream, read, and wait on simulator logs. Four subcommands — `read` is the default.
 
 ```bash
-xcforge log start                                # Start capture (smart mode, debug level)
+xcforge log start                                # Start a background capture (smart mode, debug level)
 xcforge log start --mode app                     # App-only logs + crashes
 xcforge log start --mode verbose                 # Unfiltered system logs
 xcforge log start --process MyApp                # Filter by process name
@@ -403,13 +409,14 @@ xcforge log start --subsystem com.myapp          # Filter by subsystem
 xcforge log read                                 # Read with topic filtering (app + crashes)
 xcforge log read --include network               # Add network topic
 xcforge log read --include lifecycle --last 50   # Last 50 lifecycle + app lines
+xcforge log read --last 0                        # Everything (default: newest 200 lines)
 xcforge log read --clear                         # Clear buffer after reading
 xcforge log stop                                 # Stop capture
 xcforge log wait --pattern "error.*timeout"      # Wait for regex pattern
 xcforge log wait --pattern "launched" --timeout 10
 ```
 
-All subcommands support `--json`.
+All subcommands support `--json`. The capture keeps running in the background after `log start` returns, writing to `~/.xcforge/capture/`, until `log stop`.
 
 ---
 
@@ -421,13 +428,14 @@ Launch, read, and stop app console output capture (print/NSLog). Three subcomman
 xcforge console launch                           # Launch app with console capture
 xcforge console launch --bundle-id com.app.id    # Explicit bundle ID
 xcforge console launch --args "--verbose"         # Pass launch args to app
+xcforge console launch --env API=stub            # Environment for the app (repeatable)
 xcforge console read                             # Read stdout + stderr
 xcforge console read --stream stdout --last 20   # Last 20 stdout lines
 xcforge console read --clear                     # Clear buffer after reading
 xcforge console stop                             # Stop capture and terminate app
 ```
 
-All subcommands support `--json`. Auto-detects simulator and bundle ID from session state.
+All subcommands support `--json`. Auto-detects simulator and bundle ID from session state. The console keeps streaming in the background after `console launch` returns, until `console stop`; reads return the newest 200 lines per stream by default.
 
 ---
 

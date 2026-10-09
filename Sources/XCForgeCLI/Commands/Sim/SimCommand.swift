@@ -13,7 +13,7 @@ struct Sim: ParsableCommand {
       SimOrientation.self, SimRecordStart.self, SimRecordStop.self,
       SimLocation.self, SimLocationReset.self,
       SimAppearance.self, SimStatusBar.self, SimStatusBarClear.self,
-      SimInfo.self,
+      SimInfo.self, SimOpenURL.self,
     ],
     defaultSubcommand: SimList.self
   )
@@ -151,13 +151,26 @@ struct SimLaunch: AsyncParsableCommand {
   @Option(help: "App bundle identifier. Auto-detected from last build if omitted.")
   var bundleId: String?
 
+  @Option(name: .customLong("arg"), help: "Launch argument for the app (repeatable).")
+  var args: [String] = []
+
+  @Option(help: "Environment variable for the app, KEY=VALUE (repeatable).")
+  var env: [String] = []
+
+  @Option(help: "URL or deep link to open once the app is running.")
+  var url: String?
+
+  @Flag(inversion: .prefixedNo, help: "Terminate a running copy first. Default: on.")
+  var terminate = true
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    let env = Environment.live
-    let result = await SimTools.executeLaunchApp(simulator: simulator, bundleId: bundleId, env: env)
+    let result = await SimTools.executeLaunchApp(
+      simulator: simulator, bundleId: bundleId, args: args, environment: env, url: url,
+      terminateFirst: terminate, env: Environment.live)
 
     if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
@@ -613,6 +626,34 @@ struct SimInfo: AsyncParsableCommand {
       } else {
         print(message)
       }
+      throw ExitCode.failure
+    }
+  }
+}
+
+struct SimOpenURL: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "openurl",
+    abstract: "Open a URL or deep link on a simulator."
+  )
+
+  @Argument(help: "URL or deep link to open.")
+  var url: String
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let result = await SimTools.executeOpenURL(simulator: simulator, url: url, env: Environment.live)
+    if shouldOutputJSON(flag: json) {
+      print(try WorkflowJSONRenderer.renderJSON(result))
+    } else {
+      print(SimRenderer.render(result))
+    }
+    if !result.succeeded {
       throw ExitCode.failure
     }
   }
