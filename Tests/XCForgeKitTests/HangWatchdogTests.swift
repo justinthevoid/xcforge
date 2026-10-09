@@ -30,8 +30,8 @@ struct HangWatchdogTests {
 
     let env = Environment(shell: ImmediateShell())
     let watchdog = HangWatchdog(udid: nil, snapshotPath: path, sampleAt: [0.01], env: env)
-    // Allow the deadline to fire
-    try? await Task.sleep(nanoseconds: 200_000_000)
+    // Allow the deadline to fire; a loaded CI runner can take well over 200ms.
+    await waitForFile(path)
     watchdog.cancel()
     let result = await watchdog.latestResult
     #expect(result != nil)
@@ -63,7 +63,7 @@ struct HangWatchdogTests {
 
     let env = Environment(shell: FailingShell())
     let watchdog = HangWatchdog(udid: nil, snapshotPath: path, sampleAt: [0.01], env: env)
-    try? await Task.sleep(nanoseconds: 200_000_000)
+    await waitForFile(path)
     watchdog.cancel()
     let result = await watchdog.latestResult
     // The watchdog result should still be present (soft-fail, not thrown)
@@ -71,6 +71,18 @@ struct HangWatchdogTests {
     let contents = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
     #expect(!contents.isEmpty)
     #expect(contents.contains("sample failed:"))
+  }
+}
+
+/// Wait until the watchdog has written `path`, up to 10 seconds.
+private func waitForFile(_ path: String) async {
+  for _ in 0..<200 {
+    if FileManager.default.fileExists(atPath: path) {
+      // Let the write that created the file finish.
+      try? await Task.sleep(nanoseconds: 100_000_000)
+      return
+    }
+    try? await Task.sleep(nanoseconds: 50_000_000)
   }
 }
 
