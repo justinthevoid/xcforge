@@ -26,6 +26,8 @@ On a 16 GB Mac, `jobs: 4` keeps a build from pushing other sessions into swap. `
 
 The lock is a plain `flock` on the file, the same lock macOS `lockf(1)` takes, so xcforge queues correctly next to shell wrappers such as `lockf /tmp/ios.lock xcodebuild ...`. xcforge waiters are served first-come, first-served through tickets in `<lock>.queue/`. The lock is held only while xcodebuild compiles or runs tests; `-showBuildSettings`, `-list` and WebDriverAgent are not locked.
 
+The queue orders xcforge waiters only. `flock` itself is not fair, so a blocking `lockf` waiter can take the lock ahead of a queued xcforge process when the holder releases it. If most builds on the Mac go through `lockf` wrappers, a queued xcforge command can wait through several of them; run those builds through xcforge with the same `--lock` path so everyone shares the queue.
+
 ```bash
 xcforge lock status --lock /tmp/ios.lock     # holder, queue, wait times
 xcforge build-test --lock /tmp/ios.lock      # wait in line, then build and test

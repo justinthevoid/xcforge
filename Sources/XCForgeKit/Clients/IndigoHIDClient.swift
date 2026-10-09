@@ -537,29 +537,8 @@ actor IndigoHIDClient {
       else { continue }
 
       // Get the device's HID port via lookup: service
-      let portObj: NSObject? =
-        device.perform(
-          Selector(("lookup:error:")),
-          with: "PurpleWorkspacePort" as NSString,
-          with: nil)?
-        .takeUnretainedValue() as? NSObject
-
-      if let portObj = portObj {
-        // The result should be an NSMachPort or similar — extract the port number
-        if let machPort = portObj as? NSMachPort {
-          let port = machPort.machPort
-          if port != mach_port_t(MACH_PORT_NULL) {
-            return port
-          }
-        }
-        // Try extracting as NSNumber
-        if let num = portObj as? NSNumber {
-          let port = mach_port_t(num.uint32Value)
-          if port != mach_port_t(MACH_PORT_NULL) {
-            return port
-          }
-        }
-      }
+      let port = try lookupPort(on: device, name: "PurpleWorkspacePort")
+      if port != mach_port_t(MACH_PORT_NULL) { return port }
 
       throw IndigoHIDError.portLookupFailed(
         "PurpleWorkspacePort lookup failed for \(udid): port object not usable"
@@ -567,6 +546,50 @@ actor IndigoHIDClient {
     }
 
     throw IndigoHIDError.noBootedSimulator
+  }
+
+  /// What a `lookup:error:` method returns, from its Objective-C return type encoding.
+  enum LookupReturn: Equatable {
+    case machPort
+    case object
+  }
+
+  /// `I`/`i` (and the other integer encodings) is a raw `mach_port_t`; `@` is an object. Type
+  /// qualifiers such as `r` or `V` come first and are skipped.
+  static func lookupReturn(encoding: String) -> LookupReturn? {
+    let type = encoding.drop { "rnNoORV".contains($0) }
+    guard let first = type.first else { return nil }
+    if first == "@" { return .object }
+    if "IiLlQqSs".contains(first) { return .machPort }
+    return nil
+  }
+
+  /// Call `-[SimDevice lookup:error:]`. It returns a `mach_port_t`, not an object, so it can't go
+  /// through `perform(_:with:with:)`, which would retain the port number as a pointer and crash.
+  private static func lookupPort(on device: NSObject, name: String) throws -> mach_port_t {
+    let selector = Selector(("lookup:error:"))
+    guard let method = class_getInstanceMethod(type(of: device), selector) else {
+      throw IndigoHIDError.portLookupFailed("SimDevice has no lookup:error: method")
+    }
+    let rawEncoding = method_copyReturnType(method)
+    let encoding = String(cString: rawEncoding)
+    free(rawEncoding)
+    let implementation = method_getImplementation(method)
+    switch lookupReturn(encoding: encoding) {
+    case .machPort:
+      typealias Lookup = @convention(c) (AnyObject, Selector, NSString, UnsafeMutableRawPointer?) -> UInt32
+      let lookup = unsafeBitCast(implementation, to: Lookup.self)
+      return mach_port_t(lookup(device, selector, name as NSString, nil))
+    case .object:
+      typealias Lookup = @convention(c) (AnyObject, Selector, NSString, UnsafeMutableRawPointer?) -> AnyObject?
+      let lookup = unsafeBitCast(implementation, to: Lookup.self)
+      let result = lookup(device, selector, name as NSString, nil)
+      if let machPort = result as? NSMachPort { return machPort.machPort }
+      if let number = result as? NSNumber { return mach_port_t(number.uint32Value) }
+      return mach_port_t(MACH_PORT_NULL)
+    case nil:
+      throw IndigoHIDError.portLookupFailed("lookup:error: returns an unexpected type '\(encoding)'")
+    }
   }
 
   /// Find the UDID of the first booted simulator.

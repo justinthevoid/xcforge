@@ -137,6 +137,30 @@ struct MacVerifyFixesTests {
     #expect(portrait.width == 402 && portrait.height == 874)
   }
 
+  @Test("lookup:error: return types are read from the method encoding")
+  func lookupReturnEncoding() {
+    #expect(IndigoHIDClient.lookupReturn(encoding: "I") == .machPort)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "rI") == .machPort)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "@") == .object)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "v") == nil)
+    #expect(IndigoHIDClient.lookupReturn(encoding: "") == nil)
+  }
+
+  @Test("point sizes follow the interface, not the portrait framebuffer")
+  func interfacePointSize() {
+    let rotated = ScreenshotShaping.interfacePointSize(
+      width: 402, height: 874, pixelWidth: 1206, pixelHeight: 2622, interfaceLandscape: true)
+    #expect(rotated.width == 874 && rotated.height == 402 && rotated.imageRotated)
+    let portrait = ScreenshotShaping.interfacePointSize(
+      width: 402, height: 874, pixelWidth: 1206, pixelHeight: 2622, interfaceLandscape: false)
+    #expect(portrait.width == 402 && portrait.height == 874 && !portrait.imageRotated)
+    let unknown = ScreenshotShaping.interfacePointSize(
+      width: 402, height: 874, pixelWidth: 2622, pixelHeight: 1206, interfaceLandscape: nil)
+    #expect(unknown.width == 874 && !unknown.imageRotated)
+    #expect(ScreenshotShaping.pointSizeText(width: 874, height: 402, imageRotated: true).contains("interface rotated"))
+    #expect(ScreenshotShaping.pointSizeText(width: 402, height: 874, imageRotated: false) == "402×874 pt")
+  }
+
   @Test("set_orientation takes a simulator")
   func orientationTakesSimulator() {
     #expect(UITarget.toolNames.contains("set_orientation"))
