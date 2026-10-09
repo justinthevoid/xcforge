@@ -217,8 +217,9 @@ public enum SkillInstaller {
     }
     try writeManifest(Manifest(files: files.map(\.path).sorted()), in: dir)
 
+    let done = fresh ? "installed" : "updated"
     let message = "\(fresh ? "Installed" : "Updated") the xcforge skill at \(dir)\(detail)."
-    return SkillInstallResult(status: "\(verb)ed", path: dir, written: toWrite, removed: stale, message: message)
+    return SkillInstallResult(status: done, path: dir, written: toWrite, removed: stale, message: message)
   }
 
   static func writeManifest(_ manifest: Manifest, in dir: String) throws {
