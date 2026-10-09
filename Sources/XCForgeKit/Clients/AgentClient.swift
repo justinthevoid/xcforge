@@ -577,8 +577,9 @@ public actor WDAClient {
       "Simulator \(name) (\(udid)) is \(state.lowercased()); boot it first (`xcrun simctl boot \(udid)`). "
       + "xcforge doesn't boot simulators for UI commands."
     if !others.isEmpty {
-      message += " Already booted: \(others.joined(separator: ", ")). Use it with --simulator, "
-        + "or shut it down first: two booted simulators can exhaust memory on a small Mac."
+      let booted = others.joined(separator: ", ")
+      message += " Already booted: \(booted). Use it with --simulator, or shut it down first: "
+      message += "two booted simulators can exhaust memory on a small Mac."
     }
     return message
   }
