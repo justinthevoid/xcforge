@@ -31,6 +31,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Failures carry every message with file and line, the argument or repetition it came from, and their attachments; identical messages are grouped, and text output is capped at 20 failures with a count of the rest
 - A test failure is no longer reported as "test target build failed". When the build or runner fails before any test reports, agent JSON says why (`reason`) and `rerun-failed` refuses instead of running nothing
 - Agent JSON `failed` counts every failure, not only the ones listed
+- Agent JSON includes the result bundle (`xcresult`) and, for a timed-out run, which limit fired and how to raise it (`reason`), even when some failures were read
+- CLI `test run` shows a failed test build as compile errors with file and line, not as failing tests
+- `test failures` / `test_failures` never run tests: without `xcresultPath` they read the project's last test run, say so when there is none, and return the compile errors when that run's build-for-testing failed (instead of the previous run's failures)
+- build-for-testing uses the test plan and, for a filter whose IDs all name a test target, builds only those targets
+- `build compile`, build-for-testing, `test` and `test list` pass the same build flags, so switching between them doesn't rebuild everything
+- The hang watchdog samples at 300s and 540s instead of 60s and 120s, and a snapshot is only reported for a timeout or `diagnose`
+- `build compile` / `build_compile` skip the `-showBuildSettings` call and no longer need a booted simulator (they compile for a booted one if any, else the newest iPhone simulator)
+- Simulator names resolve the same way everywhere: exact name, the booted match first, else the newest OS; two matches on the same OS ask for a UDID. Prefix matches (`iPhone 16` → `iPhone 16 Pro`) are gone
+- A filter that matches no test lists suggestions from the last build instead of building again
+- `build run` exits non-zero when the app wasn't launched
 - **Cancelling stops the build.** An MCP cancel, a client disconnect, Ctrl-C, SIGTERM or SIGHUP now stops the xcodebuild (or other command) xcforge started, together with every process it spawned. Timeouts kill the whole process tree too, so compiler and test-runner children no longer outlive the call and hold DerivedData ("database is locked" on the next run)
 - Two MCP calls that would run xcodebuild on the same DerivedData folder (or the same project's default one) at once now run one after the other, first come first served
 - An explicit `project` in another repo or worktree uses the `.xcforge.yaml` next to it, for both session defaults (scheme, simulator, test plan) and xcodebuild options (DerivedData, lock, idle timeout)

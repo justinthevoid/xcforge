@@ -62,6 +62,7 @@ struct BuildCompile: AsyncParsableCommand {
       configuration: configuration,
       long: long,
       diagnose: diagnose,
+      compileOnly: true,
       env: env
     )
 
@@ -191,7 +192,7 @@ struct BuildRun: AsyncParsableCommand {
         installStatus = "skipped (boot failed)"
         launchStatus = "skipped (boot failed)"
       } else {
-        installStatus = "skipped (no app path)"
+        installStatus = "skipped (couldn't find the built app)"
       }
 
       if useJSON {
@@ -206,10 +207,8 @@ struct BuildRun: AsyncParsableCommand {
             launchStatus: launchStatus, appPid: appPid, appRunning: appRunning))
       }
 
-      let failed =
-        bootStatus.hasPrefix("failed") || installStatus.hasPrefix("failed")
-        || launchStatus.hasPrefix("failed")
-      if failed {
+      // `build run` promises a running app; anything short of that is a failure.
+      if !appRunning {
         throw ExitCode.failure
       }
     }

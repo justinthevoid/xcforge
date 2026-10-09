@@ -59,6 +59,10 @@ Use `list_tests` to discover available identifiers if unsure.
 
 `retries` can't be combined with `iterations` or `untilFailure`.
 
+**Test build scope:** build-for-testing uses the test plan, and a filter whose IDs all name a
+test target builds only those targets. The build uses the same flags as `build_compile`, so
+switching between them doesn't rebuild everything.
+
 **Failure output:** each failure lists every message with `file:line` and, for parameterized or
 repeated tests, the argument or repetition it came from. Failures with the same message are grouped
 ("N tests, same message"). Text output shows 20 failures and says how many more there are;
@@ -83,12 +87,10 @@ Get detailed failure information with optional console output per failed test.
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `xcresult_path` | No* | — | Path to .xcresult bundle |
-| `project` | No* | Auto-detect | Alternative: re-derive from project |
-| `scheme` | No* | Auto-detect | Used with project |
-| `simulator` | No* | Auto-detect | Used with project |
+| `project` | No* | Auto-detect | Read this project's last test run |
 | `include_console` | No | false | Include console output captured during each failed test |
 
-*Provide either `xcresult_path` OR `project`/`scheme`/`simulator`. The xcresult_path from a previous `test_sim` call is preferred.
+*Without `xcresult_path`, reads the project's last test run (`test_sim`, `build_and_test`, `xcforge test run`). It never runs tests; with no recorded run it says so. When that run's build-for-testing failed, it returns the compile errors with file and line instead of failures.
 
 **Returns per failure:**
 - Test class and method name

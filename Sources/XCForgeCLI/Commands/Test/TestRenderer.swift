@@ -5,6 +5,18 @@ enum TestRenderer {
   static func renderTest(_ execution: TestTools.TestExecution) -> String {
     var lines: [String] = []
 
+    // A test build that failed is compile errors, not failing tests.
+    if execution.buildFailed {
+      lines.append("TEST BUILD FAILED in \(execution.elapsed)s, no test ran")
+      lines += TestFailureText.buildErrorLines(execution.failures, indent: "")
+      if let path = execution.hangDiagnosticPath {
+        lines.append("Diagnostic snapshot: \(path)")
+      }
+      lines.append("Scheme: \(execution.scheme)")
+      if !execution.xcresultPath.isEmpty { lines.append("xcresult: \(execution.xcresultPath)") }
+      return lines.joined(separator: "\n")
+    }
+
     let icon = execution.succeeded ? "PASSED" : "FAILED"
     lines.append("Tests \(icon) in \(execution.elapsed)s")
 
@@ -49,6 +61,12 @@ enum TestRenderer {
   static func renderFailures(_ result: TestTools.TestFailuresResult) -> String {
     if result.failures.isEmpty {
       return "No test failures found.\nxcresult: \(result.xcresultPath)"
+    }
+    if result.buildFailed {
+      var lines = ["The last test run failed to build, so no test ran. Build errors:"]
+      lines += TestFailureText.buildErrorLines(result.failures, indent: "")
+      lines.append("xcresult: \(result.xcresultPath)")
+      return lines.joined(separator: "\n")
     }
 
     var lines: [String] = []

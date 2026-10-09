@@ -19,6 +19,8 @@ public enum LastResultStore {
     /// When build-for-testing last succeeded, and for which scheme, configuration and platform.
     public var testBuiltAt: Date?
     public var testBuildKey: String?
+    /// The test targets that build covered; nil when it built every target in the scheme or plan.
+    public var testBuildTargets: [String]?
   }
 
   static func directory() -> String {
@@ -56,31 +58,42 @@ public enum LastResultStore {
     save(record, to: path)
   }
 
-  /// What a test build depends on besides the sources.
-  static func testBuildKey(scheme: String, configuration: String, coverage: Bool, physicalDevice: Bool)
-    -> String
-  {
-    [scheme, configuration, coverage ? "coverage" : "", physicalDevice ? "device" : "simulator"]
-      .joined(separator: "|")
+  /// What a test build depends on besides the sources and the test targets.
+  static func testBuildKey(
+    scheme: String, configuration: String, coverage: Bool, physicalDevice: Bool, testPlan: String? = nil
+  ) -> String {
+    [
+      scheme, configuration, coverage ? "coverage" : "", physicalDevice ? "device" : "simulator",
+      testPlan ?? "",
+    ]
+    .joined(separator: "|")
   }
 
-  /// Note that build-for-testing just succeeded for `project` with `key`.
-  static func recordTestBuild(project: String, key: String, now: Date = Date()) {
+  /// Note that build-for-testing just succeeded for `project` with `key`, covering `targets`
+  /// (nil: every test target).
+  static func recordTestBuild(project: String, key: String, targets: [String]? = nil, now: Date = Date()) {
     let path = filePath(for: project)
     try? FileManager.default.createDirectory(
       atPath: directory(), withIntermediateDirectories: true, attributes: nil)
     var record = load(path) ?? Record(build: nil, test: nil, updatedAt: now)
     record.testBuiltAt = now
     record.testBuildKey = key
+    record.testBuildTargets = targets?.sorted()
     save(record, to: path)
   }
 
-  /// True when the last successful build-for-testing for `project` used `key` and nothing
-  /// under `sourceRoot` changed after it, so its products can be tested as they are.
-  static func testBuildIsCurrent(project: String, key: String, sourceRoot: String) -> Bool {
+  /// True when the last successful build-for-testing for `project` used `key`, built every
+  /// target in `targets` (nil: needs every target), and nothing under `sourceRoot` changed
+  /// after it, so its products can be tested as they are.
+  static func testBuildIsCurrent(
+    project: String, key: String, targets: [String]? = nil, sourceRoot: String
+  ) -> Bool {
     guard let record = load(filePath(for: project)), record.testBuildKey == key,
       let builtAt = record.testBuiltAt
     else { return false }
+    if let built = record.testBuildTargets {
+      guard let targets, Set(targets).isSubset(of: Set(built)) else { return false }
+    }
     return !SourceChanges.anyModified(under: sourceRoot, after: builtAt)
   }
 
@@ -112,7 +125,10 @@ public enum LastResultStore {
   }
 
   /// Record the result bundle named in an xcodebuild argument list, if any.
-  static func recordFromArguments(_ args: [String]) {
+  ///
+  /// A failed build-for-testing counts as the latest test run, so `test failures` reports
+  /// its errors instead of an earlier run's failures.
+  static func recordFromArguments(_ args: [String], succeeded: Bool = true) {
     guard let bundleIndex = args.firstIndex(of: "-resultBundlePath"), bundleIndex + 1 < args.count
     else { return }
     let bundle = args[bundleIndex + 1]
@@ -120,7 +136,8 @@ public enum LastResultStore {
     guard let projectIndex, projectIndex + 1 < args.count else { return }
     let project = args[projectIndex + 1]
     let testActions: Set<String> = ["test", "test-without-building"]
-    let kind: Kind = args.contains { testActions.contains($0) } ? .test : .build
+    let failedTestBuild = !succeeded && args.contains("build-for-testing")
+    let kind: Kind = (failedTestBuild || args.contains { testActions.contains($0) }) ? .test : .build
     record(project: project, kind: kind, bundlePath: bundle)
   }
 }

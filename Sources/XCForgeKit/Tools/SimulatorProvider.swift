@@ -444,31 +444,13 @@ public enum SimTools {
     if nameOrUDID == "booted" { return "booted" }
 
     let result = try await env.shell.xcrun(timeout: 15, "simctl", "list", "devices", "-j")
-    guard let data = result.stdout.data(using: .utf8),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let deviceGroups = json["devices"] as? [String: [[String: Any]]]
-    else {
+    guard let devices = AutoDetect.parseSimulatorDevices(result.stdout) else {
       throw NSError(
         domain: "SimTools", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Failed to parse simulator list"])
     }
-
-    // Exact match only — prefix/substring matching causes false positives on destructive ops
-    // (e.g. "iPhone 16 Pro" would match "iPhone 16 Pro Max" with hasPrefix)
-    let needle = nameOrUDID.lowercased()
-    for (_, devices) in deviceGroups {
-      for device in devices {
-        guard let name = device["name"] as? String,
-          let udid = device["udid"] as? String
-        else { continue }
-        if name.lowercased() == needle { return udid }
-      }
-    }
-    throw NSError(
-      domain: "SimTools", code: 2,
-      userInfo: [
-        NSLocalizedDescriptionKey: "Simulator '\(nameOrUDID)' not found. Use exact name or UDID."
-      ])
+    // The same pick as every other name lookup, so a name never means two devices.
+    return try AutoDetect.pickSimulator(named: nameOrUDID, from: devices).udid
   }
 
   // MARK: - Typed Execute Methods

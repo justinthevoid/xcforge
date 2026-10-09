@@ -46,30 +46,31 @@ struct AgentResultProjectionTests {
     )
   }
 
-  @Test("green run projects to the locked 8-key shape (no knownFailures)")
+  @Test("green run projects to the locked 9-key shape (no knownFailures)")
   func greenShape() throws {
     let exec = makeExecution()
     let projected = AgentResultProjection.project(exec)
     let json = try WorkflowJSONRenderer.renderJSON(projected)
     let obj = try JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
     let keys = Set(obj.keys)
-    #expect(keys == ["succeeded", "buildOk", "total", "passed", "failed", "skipped", "timedOut", "failures"])
+    #expect(
+      keys == ["succeeded", "buildOk", "total", "passed", "failed", "skipped", "timedOut", "failures", "xcresult"])
     #expect(keys.count <= 10)
   }
 
   @Test("encoded JSON has only the locked agent-shape keys at the top level")
   func slimKeys() throws {
-    // `knownFailures`, `flaky` and `reason` appear only when they have something to say.
+    // `knownFailures`, `flaky`, `reason` and `xcresult` appear only when they have something to say.
     let allowed: Set<String> = [
       "succeeded", "buildOk", "total", "passed", "failed", "skipped",
-      "timedOut", "knownFailures", "failures", "flaky", "reason",
+      "timedOut", "knownFailures", "failures", "flaky", "reason", "xcresult",
     ]
     let exec = makeExecution(knownFailures: ["Suite/k"])
     let json = try WorkflowJSONRenderer.renderTestJSON(exec, forAgent: true)
     let obj = try JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
     let keys = Set(obj.keys)
     #expect(keys.isSubset(of: allowed))
-    #expect(keys.count <= 9)
+    #expect(keys.count <= 10)
   }
 
   @Test("all failures gated → succeeded preserved, failed:0, knownFailures populated")

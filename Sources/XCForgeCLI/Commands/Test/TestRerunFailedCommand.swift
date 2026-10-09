@@ -89,7 +89,7 @@ struct TestRerunFailed: AsyncParsableCommand {
     } else {
       skipBuild = await TestTools.lastTestBuildIsCurrent(
         project: resolvedProject, scheme: scheme ?? payload.scheme, simulator: simulator ?? payload.simulator,
-        configuration: configuration, env: env)
+        configuration: configuration, testplan: resolvedTestplan, testIDs: payload.failures, env: env)
     }
 
     // Pass failure IDs as a pre-split list so IDs containing commas (e.g.

@@ -161,6 +161,24 @@ public enum TestFailureText {
   }
 }
 
+extension TestFailureText {
+  /// Compile errors from a failed test build, one per line with file and line, capped.
+  public static func buildErrorLines(
+    _ failures: [TestTools.TestFailureObservation], limit: Int = defaultLimit, indent: String = "  "
+  ) -> [String] {
+    let messages = failures.flatMap { failure in
+      failure.messages ?? [FailureMessage(text: failure.message)]
+    }
+    var out = messages.prefix(limit).map {
+      indent + $0.display.replacingOccurrences(of: "\n", with: "\n\(indent)  ")
+    }
+    if messages.count > limit {
+      out.append("\(indent)+\(messages.count - limit) more errors")
+    }
+    return out
+  }
+}
+
 /// Whether any source under a folder changed after a given time, so a rerun can skip
 /// build-for-testing when nothing was edited.
 enum SourceChanges {

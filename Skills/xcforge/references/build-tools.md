@@ -8,7 +8,7 @@
 
 ## build_compile
 
-Fast compile-only build without install or launch (~5s vs ~20s for full pipeline). Reuses the standard build infrastructure, skips the simulator boot/install/launch chain.
+Compile-only build: no boot, install or launch, and no extra build-settings lookup. Needs no booted simulator: without one configured or booted it compiles for the newest available iPhone simulator.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|

@@ -63,7 +63,7 @@ public enum Xcodebuild {
       environment: environment, timeout: timeout,
       idleTimeout: (idle ?? 0) > 0 ? idle : nil, outputLimit: Shell.defaultOutputLimit)
     if result.exitCode != -2 {
-      LastResultStore.recordFromArguments(args)
+      LastResultStore.recordFromArguments(args, succeeded: result.succeeded)
     }
     return result
   }

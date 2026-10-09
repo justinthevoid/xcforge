@@ -1,9 +1,9 @@
 import Foundation
 
 /// Slim projection of a test run designed for agent consumption.
-/// Encoded JSON omits slowest-test arrays, build diagnostics, xcresult paths,
-/// and other context-burning fields. `knownFailures`, `flaky` and `reason` are
-/// omitted when empty to keep the wire shape tight.
+/// Encoded JSON omits slowest-test arrays, build diagnostics and other context-burning
+/// fields. `knownFailures`, `flaky`, `reason` and `xcresult` are omitted when empty to
+/// keep the wire shape tight.
 public struct AgentTestResult: Codable, Sendable, Equatable {
   public let succeeded: Bool
   public let buildOk: Bool
@@ -16,8 +16,11 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
   public let failures: [AgentFailure]
   /// Tests that failed and then passed on a retry. Omitted when empty.
   public let flaky: [String]?
-  /// Why the run failed when `failures` can't say: nothing ran, or the runner died.
+  /// Why the run failed when `failures` can't say: nothing ran, the runner died, or a
+  /// time limit killed it (which limit, and how to raise it).
   public let reason: String?
+  /// The result bundle, for `test_failures` or xcresulttool.
+  public let xcresult: String?
 
   /// One failing test. `message` is the first line of its first message; `file` and
   /// `line` locate it, `moreMessages` counts the rest.
@@ -44,6 +47,7 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
 
   enum CodingKeys: String, CodingKey {
     case succeeded, buildOk, total, passed, failed, skipped, timedOut, knownFailures, failures, flaky, reason
+    case xcresult
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -63,6 +67,9 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
       try c.encode(flaky, forKey: .flaky)
     }
     try c.encodeIfPresent(reason, forKey: .reason)
+    if let xcresult, !xcresult.isEmpty {
+      try c.encode(xcresult, forKey: .xcresult)
+    }
   }
 
   public init(
@@ -76,7 +83,8 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
     knownFailures: [String]?,
     failures: [AgentFailure],
     flaky: [String]? = nil,
-    reason: String? = nil
+    reason: String? = nil,
+    xcresult: String? = nil
   ) {
     self.succeeded = succeeded
     self.buildOk = buildOk
@@ -89,6 +97,7 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
     self.failures = failures
     self.flaky = flaky
     self.reason = reason
+    self.xcresult = xcresult
   }
 }
 
@@ -126,10 +135,11 @@ public enum AgentResultProjection {
     // The real count of failing tests, less the gated ones, even when parsing lost some of them.
     let failed = max(agentFailures.count, e.failedTestCount - known.count)
     var reason: String?
-    if !e.succeeded && agentFailures.isEmpty {
-      if e.xcforgeTimedOut {
-        reason = "timed out before the tests finished"
-      } else if e.totalTestCount == 0 {
+    if e.xcforgeTimedOut {
+      // Reported even when some failures were read: the run didn't finish.
+      reason = e.timeoutDetail.map(firstLine) ?? "timed out before the tests finished"
+    } else if !e.succeeded && agentFailures.isEmpty {
+      if e.totalTestCount == 0 {
         reason = "no tests ran: the filter, scheme or test plan selected none"
       } else if failed > 0 {
         reason = "\(failed) tests failed but their details couldn't be read from \(e.xcresultPath)"
@@ -148,7 +158,8 @@ public enum AgentResultProjection {
       knownFailures: e.knownFailures,
       failures: agentFailures,
       flaky: e.flakyTests.isEmpty ? nil : e.flakyTests,
-      reason: reason
+      reason: reason,
+      xcresult: e.xcresultPath
     )
   }
 
@@ -167,7 +178,8 @@ public enum AgentResultProjection {
           knownFailures: projected.knownFailures,
           failures: projected.failures,
           flaky: projected.flaky,
-          reason: projected.reason
+          reason: projected.reason,
+          xcresult: projected.xcresult
         )
       }
       return projected
@@ -186,7 +198,8 @@ public enum AgentResultProjection {
       timedOut: b.xcforgeTimedOut,
       knownFailures: known,
       failures: [],
-      reason: b.buildSucceeded ? "the tests didn't run" : "the build failed"
+      reason: b.buildSucceeded ? "the tests didn't run" : "the build failed",
+      xcresult: b.buildXcresultPath
     )
   }
 }

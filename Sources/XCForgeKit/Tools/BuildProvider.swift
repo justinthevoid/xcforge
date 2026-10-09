@@ -371,11 +371,21 @@ public enum BuildTools {
     configuration: String = "Debug",
     long: Bool = false,
     diagnose: Bool = false,
+    compileOnly: Bool = false,
     env: Environment = .live
   ) async throws -> BuildExecution {
     let resolvedProject = try await env.session.resolveProject(project)
     let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
-    let resolvedSimulator = try await env.session.resolveSimulator(simulator)
+    let resolvedSimulator: String
+    do {
+      resolvedSimulator = try await env.session.resolveSimulator(simulator)
+    } catch {
+      // Compiling needs a simulator platform, not a particular booted device.
+      guard compileOnly, simulator == nil, let fallback = await AutoDetect.simulatorForCompile() else {
+        throw error
+      }
+      resolvedSimulator = fallback
+    }
 
     let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
@@ -391,17 +401,15 @@ public enum BuildTools {
       "-configuration", configuration,
       "-destination", destination,
       "-skipMacroValidation",
-      "-parallelizeTargets",
-      "-resultBundlePath", resultPath,
-      "build",
     ]
-    buildArgs += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
+    buildArgs += TestTools.compileFlags
+    buildArgs += ["-resultBundlePath", resultPath, "build"] + TestTools.compileSettings
 
     let start = CFAbsoluteTimeGetCurrent()
     let buildTimeout = await TestTools.resolveTestTimeout(long: long, env: env)
     let snapshotPath = TestTools.diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
-      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120],
+      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: HangWatchdog.defaultSampleAt,
       processMatch: resultPath, env: env)
     let result = try await Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
     watchdog.cancel()
@@ -422,7 +430,8 @@ public enum BuildTools {
           udid: resolvedSimulator, snapshotPath: snapshotPath, processMatch: resultPath, env: env)
       }
     } else {
-      diagResult = watchdogCapture
+      // A sample of a healthy build is noise; only a timeout or `diagnose` reports one.
+      diagResult = nil
     }
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
 
@@ -430,11 +439,15 @@ public enum BuildTools {
     let xcresultIssues = await extractIssuesFromXcresult(resultPath, env: env)
 
     if result.succeeded {
-      let buildInfo = await extractBuildInfo(
-        project: resolvedProject, scheme: resolvedScheme,
-        simulator: resolvedSimulator, configuration: configuration,
-        env: env
-      )
+      // Finding the app costs another xcodebuild call; a compile check doesn't need it.
+      var buildInfo: (bundleId: String?, appPath: String?) = (nil, nil)
+      if !compileOnly {
+        buildInfo = await extractBuildInfo(
+          project: resolvedProject, scheme: resolvedScheme,
+          simulator: resolvedSimulator, configuration: configuration,
+          env: env
+        )
+      }
 
       if let bid = buildInfo.bundleId {
         await env.session.setBuildInfo(
@@ -562,6 +575,7 @@ public enum BuildTools {
           configuration: await env.session.resolveConfiguration(input.configuration),
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
+          compileOnly: true,
           env: env
         )
 
@@ -881,17 +895,16 @@ public enum BuildTools {
     let resultPath = TestTools.xcresultPath(prefix: "build")
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
 
-    let buildArgs = [
+    var args = [
       projectFlag, project,
       "-scheme", scheme,
       "-configuration", configuration,
       "-destination", destination,
       "-skipMacroValidation",
-      "-parallelizeTargets",
-      "-resultBundlePath", resultPath,
-      "build",
-      "COMPILATION_CACHE_ENABLE_CACHING=YES",
     ]
+    args += TestTools.compileFlags
+    args += ["-resultBundlePath", resultPath, "build"] + TestTools.compileSettings
+    let buildArgs = args
 
     let settingsArgs = [
       projectFlag, project,
@@ -908,7 +921,7 @@ public enum BuildTools {
     let buildTimeout = await TestTools.resolveTestTimeout(long: input.long ?? false, env: env)
     let buildSnapshotPath = TestTools.diagnosticSnapshotPath()
     let buildWatchdog = HangWatchdog(
-      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], processMatch: resultPath,
+      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: HangWatchdog.defaultSampleAt, processMatch: resultPath,
       env: env)
     async let buildTask = Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
     async let settingsTask = Xcodebuild.run(settingsArgs, timeout: 30, env: env)
@@ -926,13 +939,14 @@ public enum BuildTools {
     }
     buildWatchdog.cancel()
     let buildDiagResult: DiagnosticSnapshot.Result?
-    if let captured = await buildWatchdog.latestResult {
+    // A sample of a healthy build is noise; only a timeout or `diagnose` reports one.
+    if buildResult.exitCode != -1 && !(input.diagnose ?? false) {
+      buildDiagResult = nil
+    } else if let captured = await buildWatchdog.latestResult {
       buildDiagResult = captured
-    } else if input.diagnose ?? false {
+    } else {
       buildDiagResult = await DiagnosticSnapshot.capture(
         udid: udid, snapshotPath: buildSnapshotPath, processMatch: resultPath, env: env)
-    } else {
-      buildDiagResult = nil
     }
 
     let buildElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - totalStart)

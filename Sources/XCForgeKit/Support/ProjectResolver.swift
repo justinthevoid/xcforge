@@ -16,7 +16,7 @@ struct MultipleSimulatorMatchError: Error, CustomStringConvertible {
 /// Throws ResolverError with rich messages when ambiguous.
 enum AutoDetect {
 
-  private struct SimulatorDevice: Sendable {
+  struct SimulatorDevice: Sendable, Equatable {
     let name: String
     let udid: String
     let runtime: String
@@ -330,35 +330,59 @@ enum AutoDetect {
       return (nameOrUDID, nameOrUDID)
     }
 
-    let devices = try await loadSimulatorDevices()
+    let winner = try pickSimulator(named: nameOrUDID, from: try await loadSimulatorDevices())
+    return (winner.name, winner.udid)
+  }
 
-    // Filter by name, case-insensitive
+  /// The one simulator every name lookup resolves `name` to: an exact, case-insensitive
+  /// name match that is available or booted; a booted one when exactly one match is booted,
+  /// else the one with the newest OS. Two matches on the same newest OS are an error that
+  /// lists their UDIDs.
+  static func pickSimulator(named name: String, from devices: [SimulatorDevice]) throws -> SimulatorDevice {
     let matches = devices.filter {
-      $0.isAvailable && $0.name.caseInsensitiveCompare(nameOrUDID) == .orderedSame
+      ($0.isAvailable || $0.state == "Booted") && $0.name.caseInsensitiveCompare(name) == .orderedSame
     }
-
-    if matches.isEmpty {
-      throw ResolverError("No available simulator found with name '\(nameOrUDID)'.")
+    guard !matches.isEmpty else {
+      throw ResolverError("No available simulator found with name '\(name)'.")
     }
-
-    // Sort by OS version descending to pick highest-OS match
-    let sorted = matches.sorted { lhs, rhs in
-      lhs.runtime > rhs.runtime
-    }
-
-    // If multiple match the same (highest) runtime, that's an ambiguity error
-    let highestRuntime = sorted[0].runtime
-    let topTier = sorted.filter { $0.runtime == highestRuntime }
+    if matches.count == 1 { return matches[0] }
+    let booted = matches.filter { $0.state == "Booted" }
+    if booted.count == 1 { return booted[0] }
+    let candidates = booted.isEmpty ? matches : booted
+    let newest = candidates.map { runtimeVersion($0.runtime) }.max { $0.lexicographicallyPrecedes($1) } ?? []
+    let topTier = candidates.filter { runtimeVersion($0.runtime) == newest }
     if topTier.count > 1 {
       let descriptions = topTier.map { describe($0) }.joined(separator: "\n  ")
       throw MultipleSimulatorMatchError(
-        "Simulator '\(nameOrUDID)' matches \(topTier.count) devices with the same OS version"
-          + " (\(highestRuntime)). Specify a UDID instead:\n  \(descriptions)"
+        "Simulator '\(name)' matches \(topTier.count) devices with the same OS version"
+          + " (\(topTier[0].runtime)). Specify a UDID instead:\n  \(descriptions)"
       )
     }
+    return topTier[0]
+  }
 
-    let winner = sorted[0]
-    return (winner.name, winner.udid)
+  /// `iOS-18-10` → [18, 10], so 18.10 sorts after 18.2.
+  static func runtimeVersion(_ runtime: String) -> [Int] {
+    runtime.split { !$0.isNumber }.compactMap { Int($0) }
+  }
+
+  /// A simulator to compile against when none is configured or booted: the booted one
+  /// with the newest OS, else the available iPhone with the newest OS. Compiling only
+  /// needs the platform and architecture, so any of them gives the same build.
+  static func simulatorForCompile() async -> String? {
+    guard let devices = try? await loadSimulatorDevices() else { return nil }
+    return simulatorForCompile(from: devices)
+  }
+
+  static func simulatorForCompile(from devices: [SimulatorDevice]) -> String? {
+    let ios = devices.filter { $0.isAvailable && $0.runtime.lowercased().hasPrefix("ios") }
+    let booted = ios.filter { $0.state == "Booted" }
+    let pool = booted.isEmpty ? ios.filter { $0.name.hasPrefix("iPhone") } : booted
+    let sorted = pool.sorted {
+      let (l, r) = (runtimeVersion($0.runtime), runtimeVersion($1.runtime))
+      return l == r ? $0.name < $1.name : r.lexicographicallyPrecedes(l)
+    }
+    return sorted.first?.udid
   }
 
   /// Returns true if the string looks like a physical device UDID.
@@ -462,13 +486,18 @@ enum AutoDetect {
       throw ResolverError("Simulator validation failed: \(error)")
     }
 
-    guard shellResult.succeeded,
-      let data = shellResult.stdout.data(using: .utf8),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let devices = json["devices"] as? [String: [[String: Any]]]
-    else {
+    guard shellResult.succeeded, let results = parseSimulatorDevices(shellResult.stdout) else {
       throw ResolverError("Failed to parse simulator list")
     }
+    return results
+  }
+
+  /// Devices from `simctl list devices -j` output, or nil when it doesn't parse.
+  static func parseSimulatorDevices(_ output: String) -> [SimulatorDevice]? {
+    guard let data = output.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let devices = json["devices"] as? [String: [[String: Any]]]
+    else { return nil }
 
     var results: [SimulatorDevice] = []
     for (runtime, deviceList) in devices {
@@ -495,7 +524,7 @@ enum AutoDetect {
     return results
   }
 
-  private static func describe(_ device: SimulatorDevice) -> String {
+  static func describe(_ device: SimulatorDevice) -> String {
     let availabilityLabel = device.isAvailable ? device.state : "Unavailable"
     return "\(device.name) (\(device.runtime)) — \(availabilityLabel) — \(device.udid)"
   }
@@ -576,43 +605,8 @@ enum AutoDetect {
 
   /// Resolve simulator name to UDID via simctl
   private static func resolveNameToUDID(_ name: String) async -> String? {
-    guard let result = try? await Shell.xcrun(timeout: 15, "simctl", "list", "devices", "-j"),
-      result.succeeded,
-      let data = result.stdout.data(using: .utf8),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let devices = json["devices"] as? [String: [[String: Any]]]
-    else {
-      return nil
-    }
-
-    let nameLower = name.lowercased()
-    var exactMatch: String?
-    var caseInsensitive: String?
-    var prefixBooted: String?
-    var prefixMatch: String?
-
-    for (_, deviceList) in devices {
-      for device in deviceList {
-        guard let deviceName = device["name"] as? String,
-          let udid = device["udid"] as? String
-        else { continue }
-        let usable =
-          (device["isAvailable"] as? Bool ?? false) || (device["state"] as? String) == "Booted"
-        guard usable else { continue }
-
-        let isBooted = (device["state"] as? String) == "Booted"
-
-        if deviceName == name {
-          exactMatch = udid
-        } else if exactMatch == nil && deviceName.lowercased() == nameLower {
-          caseInsensitive = udid
-        } else if deviceName.lowercased().hasPrefix(nameLower) {
-          if isBooted { prefixBooted = udid } else if prefixMatch == nil { prefixMatch = udid }
-        }
-      }
-    }
-
-    return exactMatch ?? caseInsensitive ?? prefixBooted ?? prefixMatch
+    guard let devices = try? await loadSimulatorDevices() else { return nil }
+    return try? pickSimulator(named: name, from: devices).udid
   }
 }
 
