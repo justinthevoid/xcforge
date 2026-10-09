@@ -676,10 +676,12 @@ public enum DeviceTools {
       connectionType: property(device, "transportType") as? String ?? "unknown")
   }
 
-  /// devicectl marks hardware as `reality: physical`; simulators read `virtual` or name a
-  /// simulator platform or device type.
+  /// devicectl marks hardware as `reality: physical` and simulators as `simulated`; older or
+  /// partial entries are caught by the simulator visibility class, provider, platform or type.
   static func isSimulatorEntry(_ device: [String: Any]) -> Bool {
     if let reality = property(device, "reality") as? String, reality.lowercased() != "physical" { return true }
+    if (device["visibilityClass"] as? String)?.lowercased() == "simulators" { return true }
+    if let provider = property(device, "provider") as? String, provider.contains("CoreSimulator") { return true }
     for key in ["platform", "deviceType", "transportType"] {
       if let value = property(device, key) as? String, value.lowercased().contains("simulator") { return true }
     }
@@ -710,11 +712,18 @@ public enum DeviceTools {
     return list.devices.contains { $0.udid == identifier || $0.name == identifier }
   }
 
-  /// Read a device field from devicectl JSON. Xcode 27 groups fields under `properties`;
-  /// earlier versions split them across `deviceProperties`, `hardwareProperties` and
-  /// `connectionProperties`. Both layouts are read.
+  /// Read a device field from devicectl JSON. Xcode 27 groups fields under `properties`
+  /// (`properties.hardware.udid`, `properties.state.name`, ...); earlier versions split them
+  /// across `deviceProperties`, `hardwareProperties` and `connectionProperties`, which Xcode 27
+  /// still writes. Both layouts are read.
   static func property(_ device: [String: Any], _ key: String) -> Any? {
-    for container in ["properties", "deviceProperties", "hardwareProperties", "connectionProperties"] {
+    if let properties = device["properties"] as? [String: Any] {
+      if let value = properties[key], !(value is [String: Any]) { return value }
+      for group in ["hardware", "state", "connection", "device"] {
+        if let dict = properties[group] as? [String: Any], let value = dict[key] { return value }
+      }
+    }
+    for container in ["deviceProperties", "hardwareProperties", "connectionProperties"] {
       if let dict = device[container] as? [String: Any], let value = dict[key] { return value }
     }
     return device[key]
