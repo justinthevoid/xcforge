@@ -184,7 +184,7 @@ public enum BuildTools {
       name: "build_run_sim",
       description: """
         Build, install, and launch an iOS app on a simulator in one call. \
-        Runs build, settings extraction, simulator boot, and Simulator.app \
+        Runs build, settings extraction, simulator boot, and Simulator/Device Hub \
         in parallel for maximum speed. Equivalent to Xcode's Cmd+R. \
         Project, scheme, and simulator are auto-detected if omitted.
         """,
@@ -914,8 +914,7 @@ public enum BuildTools {
     async let settingsTask = Xcodebuild.run(settingsArgs, timeout: 30, env: env)
     async let bootTask = env.shell.run(
       "/usr/bin/xcrun", arguments: ["simctl", "boot", udid], timeout: 60)
-    async let openTask = env.shell.run(
-      "/usr/bin/open", arguments: ["-a", "Simulator"], timeout: 10)
+    async let openTask: Void = SimulatorApp.open(shell: env.shell)
 
     // Await build first (critical — abort if it fails)
     let buildResult: ShellResult
@@ -1079,7 +1078,7 @@ public enum BuildTools {
     }
 
     // Await Simulator.app (fire and forget)
-    _ = try? await openTask
+    await openTask
 
     // ── Phase 2: Sequential (needs build artifacts + booted simulator) ──
 

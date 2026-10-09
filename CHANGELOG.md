@@ -15,8 +15,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `test-without-building` is retried once when the test runner never started ("Test runner hung before establishing connection", "Early unexpected exit…", "Failed to launch…" with no test begun)
 - `test list --testplan` / `list_tests testplan`: lists via `-test-enumeration-format json`, which includes Swift Testing tests and reports how many the scheme or plan disables
 - `test_plan_inspect` shows skipped tests, selected-only targets and every tag filter in the plan, and warns when a multi-tag filter may require all tags
+- **UI automation on physical devices.** `xcforge wda start|status|stop` and MCP `wda_start`/`wda_stop` build xcforgeWDA for the device, sign it with your team (`--team`, `XCFORGE_WDA_TEAM`), launch it with `test-without-building`, find it over the CoreDevice tunnel, and record its URL in `~/.xcforge/wda/`. `XCFORGE_DEVICE=<udid>` points `xcforge ui` commands at it. Locked device, UI Automation off, Developer Mode off, pairing and signing failures each get a one-line explanation
+- `device screenshot` / `device_screenshot` (devicectl capture, falling back to the device's WDA)
+- `device launch --url <deep-link> --env KEY=VALUE --arg A` and matching `url`/`env` on `device_launch`
+- **Xcode 27 Device Hub support.** xcforge opens Device Hub when the selected Xcode has no Simulator.app, and screen capture, the accessibility bridge and window scripting accept either app
 
 ### Changed
+- UI tools no longer run simulator recovery (terminate, rebuild, redeploy) when WDA is on a physical device; they report `device_runner_not_reachable` and point at `wda start`
+- xcforgeWDA's iOS deployment target is 15.0 (Xcode 27 no longer builds for 13)
+- devicectl output is read from Xcode 27's `properties` dictionary as well as the older split keys; `device info` adds tunnel, pairing and Developer Mode state
 - **Default total time limit for builds and tests is 1800s** (was 180s); `--long` / `long: true` raises it to 7200s. Hangs are caught by the idle timeout instead
 - **Builds continue after the first error** (`-IDEBuildingContinueBuildingAfterErrors=YES`), so one run reports every error. Opt out with `--no-continue-after-errors` / `continueAfterErrors: false`
 - Build errors are read from stdout as well as stderr (xcodebuild prints compiler diagnostics on stdout), duplicates are dropped, and up to 50 are shown

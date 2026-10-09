@@ -300,7 +300,7 @@ public actor AXPBridge {
     let ws = NSWorkspace.shared
     guard
       let app = ws.runningApplications.first(where: {
-        $0.bundleIdentifier == "com.apple.iphonesimulator"
+        SimulatorApp.isSimulatorApp(bundleID: $0.bundleIdentifier)
       })
     else {
       throw AXPError.simulatorNotRunning
@@ -320,7 +320,7 @@ public actor AXPBridge {
     var description: String {
       switch self {
       case .simulatorNotRunning:
-        return "Simulator.app not running"
+        return "Simulator.app (Device Hub on Xcode 27) is not running"
       case .noBootedDevice:
         return
           "Simulator.app is running but no device is booted. Boot a device with: xcrun simctl boot <UDID>"

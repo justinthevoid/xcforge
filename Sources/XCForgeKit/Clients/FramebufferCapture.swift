@@ -143,7 +143,7 @@ enum FramebufferCapture {
   static func findSimulatorWindow(simulator: String = "booted") async throws -> SCWindow {
     let content = try await SCShareableContent.current
     let simWindows = content.windows.filter {
-      $0.owningApplication?.bundleIdentifier == "com.apple.iphonesimulator"
+      SimulatorApp.isSimulatorApp(bundleID: $0.owningApplication?.bundleIdentifier)
         && $0.frame.width > 100 && $0.frame.height > 100
     }
 

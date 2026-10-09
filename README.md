@@ -219,7 +219,7 @@ Every tool available over MCP has a matching CLI command. Every CLI command supp
 | **Build**             | 6     | `build_sim`, `build_compile` (fast compile-only), `build_run_sim`, `clean`, project/scheme discovery |
 | **Test**              | 7     | `test_sim` with xcresult parsing, `test_failures`, `test_coverage`, `list_tests`, `test_plan_inspect`, agent output mode, known-failures gating |
 | **Simulator**         | 18    | Full lifecycle + video recording, location simulation, dark mode toggle, status bar override, info |
-| **Physical Devices**  | 7     | Via `devicectl` — list, install, launch, screenshot, pair                                         |
+| **Physical Devices**  | 10    | Via `devicectl` — list, install, launch (deep links, env), screenshot, WebDriverAgent on device   |
 | **UI Automation**     | 20    | WebDriverAgent + native AX bridge — find, tap (point or pixel), swipe, drag, type, alerts        |
 | **Screenshots**       | 3     | Framebuffer capture (0.3s), point-space coordinate alignment, optional grid overlay              |
 | **Visual Regression** | 3     | Pixel-diff baselines, multi-device checks (Dark Mode, Landscape, iPad), `bless` workflow          |
@@ -285,7 +285,7 @@ Use alongside logs and screenshots for systematic root-cause analysis.
 
 ### Physical Device Support
 
-7 tools wrapping Apple's `devicectl` for real devices — list connected devices, install/launch/terminate apps, take screenshots, and manage pairing.
+Tools wrapping Apple's `devicectl` for real devices: list connected devices, install, launch (with deep links and environment variables) and terminate apps, and take screenshots. `xcforge wda start --device <udid> --team <TEAM>` (MCP `wda_start`) builds, signs and starts WebDriverAgent on the device so the UI automation tools work there too; see [device-tools.md](Skills/xcforge/references/device-tools.md).
 
 ---
 
@@ -394,7 +394,7 @@ Then add `XCFORGE_WDA_DIR` to your MCP config:
 }
 ```
 
-xcforge builds and deploys WDA automatically on the first UI tool call (~30–60s on first run, instant thereafter). See the [full UI Automation Setup guide](https://xcforge.dev/docs/guides/ui-automation-setup) for alternative configurations, custom ports, and troubleshooting.
+xcforge builds and deploys WDA automatically on the first UI tool call on a simulator (~30–60s on first run, instant thereafter). For a physical device run `xcforge wda start --device <udid> --team <TEAM>` (MCP `wda_start`) first, with the device unlocked and Settings > Developer > Enable UI Automation on. See the [full UI Automation Setup guide](https://xcforge.dev/docs/guides/ui-automation-setup) for alternative configurations, custom ports, and troubleshooting.
 
 ---
 

@@ -30,8 +30,28 @@ public enum WDABackend: String, Sendable {
 public actor WDAClient {
   public init() {}
 
-  private var baseURL =
-    ProcessInfo.processInfo.environment["WDA_BASE_URL"] ?? "http://localhost:8100"
+  /// `WDA_BASE_URL` wins; otherwise `XCFORGE_DEVICE` selects the URL `xcforge wda start`
+  /// saved for that device; otherwise the simulator default.
+  private var baseURL = WDAClient.defaultBaseURL()
+
+  static func defaultBaseURL(
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> String {
+    if let explicit = environment["WDA_BASE_URL"], !explicit.isEmpty { return explicit }
+    if let device = environment["XCFORGE_DEVICE"], !device.isEmpty,
+      let state = DeviceWDA.load(device: device)
+    {
+      return state.url
+    }
+    return "http://localhost:8100"
+  }
+
+  /// True when WDA runs somewhere other than this Mac (a physical device). Simulator
+  /// recovery (terminate, rebuild, redeploy) never applies there.
+  public var isRemote: Bool {
+    guard let host = URL(string: baseURL)?.host else { return false }
+    return !["localhost", "127.0.0.1", "::1"].contains(host)
+  }
   private var sessionId: String?
   private var knownSessionIds: [String] = []  // Track all created sessions
 
@@ -258,29 +278,7 @@ public actor WDAClient {
     deployTask = nil
     await cleanupWDAProcesses(simulator: simulator)
 
-    // Find xcforgeWDA project — check env var first, then common relative location
-    let projectDir: String
-    if let envDir = ProcessInfo.processInfo.environment["XCFORGE_WDA_DIR"],
-      FileManager.default.fileExists(atPath: envDir + "/xcforgeWDA.xcodeproj")
-    {
-      projectDir = envDir
-    } else {
-      // Search order: CWD-relative (developer running from a clone) → Homebrew share dirs.
-      let candidates = [
-        FileManager.default.currentDirectoryPath + "/xcforgeWDA",
-        FileManager.default.currentDirectoryPath + "/../xcforgeWDA",
-        "/opt/homebrew/share/xcforge/xcforgeWDA",
-        "/usr/local/share/xcforge/xcforgeWDA",
-      ]
-      guard
-        let found = candidates.first(where: {
-          FileManager.default.fileExists(atPath: $0 + "/xcforgeWDA.xcodeproj")
-        })
-      else {
-        return false
-      }
-      projectDir = found
-    }
+    guard let projectDir = Self.locateXCForgeWDAProject() else { return false }
 
     // Resolve UDID for xcodebuild destination
     let udid = await resolveSimulatorUDID(simulator)
@@ -337,6 +335,24 @@ public actor WDAClient {
     return false
   }
 
+  /// Folder containing `xcforgeWDA.xcodeproj`: `XCFORGE_WDA_DIR`, then a clone next to the
+  /// working directory, then the Homebrew share directories.
+  public static func locateXCForgeWDAProject() -> String? {
+    let fm = FileManager.default
+    if let envDir = ProcessInfo.processInfo.environment["XCFORGE_WDA_DIR"],
+      fm.fileExists(atPath: envDir + "/xcforgeWDA.xcodeproj")
+    {
+      return envDir
+    }
+    let candidates = [
+      fm.currentDirectoryPath + "/xcforgeWDA",
+      fm.currentDirectoryPath + "/../xcforgeWDA",
+      "/opt/homebrew/share/xcforge/xcforgeWDA",
+      "/usr/local/share/xcforge/xcforgeWDA",
+    ]
+    return candidates.first { fm.fileExists(atPath: $0 + "/xcforgeWDA.xcodeproj") }
+  }
+
   /// Find the xctestrun file in DerivedData/Build/Products.
   private func findXctestrun(derivedData: String) async -> String? {
     let productsDir = derivedData + "/Build/Products"
@@ -387,6 +403,9 @@ public actor WDAClient {
   public func ensureWDARunning(simulator: String = "booted") async throws {
     // 1. Already healthy? Done — whatever backend is active, it works.
     if await isHealthy() { return }
+
+    // A device runner can't be restarted from here; say what to do instead.
+    if isRemote { throw WDAError.remoteNotResponding(baseURL) }
 
     // 2. Try restarting current backend
     do {
@@ -1122,6 +1141,7 @@ public enum WDASessionCause: String, Codable, Sendable {
   case noBootedSimulator = "no_booted_simulator"
   case bundleNotInstalled = "bundle_not_installed"
   case sessionBindRejected = "session_bind_rejected"
+  case deviceRunnerNotReachable = "device_runner_not_reachable"
   case unknown = "unknown"
 
   /// A copy-pasteable remediation command for this cause.
@@ -1139,6 +1159,8 @@ public enum WDASessionCause: String, Codable, Sendable {
     case .sessionBindRejected:
       return
         "Verify the bundle id is installed and runnable on the booted simulator, then retry"
+    case .deviceRunnerNotReachable:
+      return "xcforge wda start --device <udid>   # unlock the device and enable UI Automation first"
     case .unknown:
       return "xcforge ui status   # inspect WDA; attach the raw detail when filing an issue"
     }
@@ -1172,6 +1194,7 @@ enum WDAError: Error, CustomStringConvertible {
   case wdaRestart(String)
   case wdaNotResponding
   case noBackendAvailable
+  case remoteNotResponding(String)
 
   var description: String {
     switch self {
@@ -1186,6 +1209,10 @@ enum WDAError: Error, CustomStringConvertible {
     case .noBackendAvailable:
       return
         "No WDA backend available. Neither xcforgeWDA nor Original WDA could be started. Install xcforgeWDA or start WebDriverAgent."
+    case .remoteNotResponding(let url):
+      return "WebDriverAgent at \(url) is not responding. Start it with `xcforge wda start --device <udid>` "
+        + "(MCP: wda_start). If it was running: unlock the device, check Settings > Developer > "
+        + "Enable UI Automation, and check the device is still connected."
     }
   }
 }
