@@ -597,6 +597,12 @@ public enum RepoConfig {
     public var idleTimeout: TimeInterval?
     /// False drops the flags xcforge adds to every build.
     public var defaultFlags: Bool?
+    /// `-jobs` for compiling actions.
+    public var jobs: Int?
+    /// DerivedData for `allErrors` builds, separate from the main cache.
+    public var diagnosticDerivedDataPath: String?
+    /// Swift package used by the SwiftPM tools when none is passed (e.g. a shared logic package).
+    public var packagePath: String?
     /// Problems found while reading the file (unknown keys, bad values). Shown to agents.
     public var warnings: [String] = []
     /// The `.xcforge.yaml` these values came from.
@@ -615,7 +621,10 @@ public enum RepoConfig {
       artifactDir: String? = nil,
       minFreeGB: Double? = nil,
       idleTimeout: TimeInterval? = nil,
-      defaultFlags: Bool? = nil
+      defaultFlags: Bool? = nil,
+      jobs: Int? = nil,
+      diagnosticDerivedDataPath: String? = nil,
+      packagePath: String? = nil
     ) {
       self.project = project
       self.scheme = scheme
@@ -630,6 +639,9 @@ public enum RepoConfig {
       self.minFreeGB = minFreeGB
       self.idleTimeout = idleTimeout
       self.defaultFlags = defaultFlags
+      self.jobs = jobs
+      self.diagnosticDerivedDataPath = diagnosticDerivedDataPath
+      self.packagePath = packagePath
     }
 
     /// True when every field is nil (nothing to apply).
@@ -637,7 +649,8 @@ public enum RepoConfig {
       project == nil && scheme == nil && simulator == nil && configuration == nil
         && testPlan == nil && testTimeout == nil && autoPromote == nil
         && derivedDataPath == nil && buildLock == nil && artifactDir == nil && minFreeGB == nil
-        && idleTimeout == nil && defaultFlags == nil
+        && idleTimeout == nil && defaultFlags == nil && jobs == nil && diagnosticDerivedDataPath == nil
+        && packagePath == nil
     }
   }
 
@@ -699,7 +712,7 @@ public enum RepoConfig {
     let allowedKeys: Set<String> = [
       "project", "scheme", "simulator", "configuration", "testPlan",
       "testTimeout", "autoPromote", "derivedDataPath", "buildLock", "artifactDir", "minFreeGB",
-      "idleTimeout", "defaultFlags",
+      "idleTimeout", "defaultFlags", "jobs", "diagnosticDerivedDataPath", "packagePath",
     ]
     for key in dict.keys.sorted() where !allowedKeys.contains(key) {
       let suggestion =
@@ -773,6 +786,15 @@ public enum RepoConfig {
       }
     }
 
+    var jobs: Int?
+    if let raw = dict["jobs"] {
+      if let parsed = Int(raw), parsed > 0 {
+        jobs = parsed
+      } else {
+        warn("\(RepoConfig.fileName): ignoring non-numeric or non-positive jobs '\(raw)'")
+      }
+    }
+
     let result = Values(
       project: project,
       scheme: dict["scheme"],
@@ -786,7 +808,10 @@ public enum RepoConfig {
       artifactDir: resolvedPath("artifactDir"),
       minFreeGB: minFreeGB,
       idleTimeout: idleTimeout,
-      defaultFlags: dict["defaultFlags"].flatMap(XcodebuildOptions.parseBool)
+      defaultFlags: dict["defaultFlags"].flatMap(XcodebuildOptions.parseBool),
+      jobs: jobs,
+      diagnosticDerivedDataPath: resolvedPath("diagnosticDerivedDataPath"),
+      packagePath: resolvedPath("packagePath")
     )
     var withWarnings = result
     withWarnings.warnings = warnings

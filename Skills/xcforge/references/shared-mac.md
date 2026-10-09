@@ -11,10 +11,16 @@ Every xcodebuild call xcforge makes goes through one entry point, which applies 
 | Max wait for the lock | `--lock-wait` | `lockWaitSeconds` | `XCFORGE_LOCK_WAIT` | |
 | Refuse below free disk (GB) | `--min-free-gb` | `minFreeGB` | `XCFORGE_MIN_FREE_GB` | `minFreeGB` |
 | Artifact folder | | | `XCFORGE_ARTIFACT_DIR` | `artifactDir` |
+| Parallel compile jobs | `--jobs` | `jobs` | `XCFORGE_JOBS` | `jobs` |
+| Report every error in a separate cache | `--all-errors` | `allErrors` | | |
+| DerivedData for `--all-errors` | | | `XCFORGE_DIAGNOSTIC_DERIVED_DATA_PATH` | `diagnosticDerivedDataPath` |
+| Swift package for `spm` tools | | | | `packagePath` |
 
 Precedence: flag/argument, then env var, then `.xcforge.yaml`. Relative yaml paths resolve against the yaml's folder.
 
 They apply to `build compile|run|clean`, `build-test`, `test run|failures|list|rerun-failed` and the MCP tools `build_sim`, `build_run_sim`, `build_compile`, `clean`, `test_sim`, `test_failures`, `test_coverage`, `build_and_diagnose`, `build_and_test`, `list_tests`, `bless`.
+
+On a 16 GB Mac, `jobs: 4` keeps a build from pushing other sessions into swap. `--all-errors` builds go to their own DerivedData so a "show me every error" run doesn't throw away the main incremental cache. `--from-snapshot` builds share one worktree per repo and take turns on its lock.
 
 ## Build lock
 

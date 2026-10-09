@@ -37,6 +37,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `screenshot` takes `crop` (x,y,width,height in device points) and `max_dimension` (longest side in pixels, with how many points one pixel covers); `screenshot capture --crop`, `--max-dimension`
 - Simulator setup tools: `sim_content_size`, `sim_locale`, `app_container`, `sim_push` and `sim_privacy` (grant/revoke/reset), and `sim content-size|locale|container|push|privacy`. Setters report the value they replaced
 
+- **`build typecheck <target>` / `build_typecheck`** compiles one target for the simulator (its own scheme when it has one, else `-target` in the project that defines it), reusing the workspace's DerivedData
+- **`--from-snapshot` / `fromSnapshot`** on `build compile` and `build typecheck` builds a snapshot of the working tree (a git worktree per repo under `~/.xcforge/snapshots`, `XCFORGE_SNAPSHOT_DIR`), so edits other agents make mid-build don't break it. Errors name the real files
+- **`lsp setup` / `lsp_setup`** writes `buildServer.json` with xcode-build-server and points its `build_root` at the DerivedData xcforge builds into, so SourceKit-LSP stops reporting "No such module"
+- `--jobs` / `jobs` (also `XCFORGE_JOBS`, `.xcforge.yaml jobs`) passes `-jobs N` to compiling xcodebuild calls and `-j N` to SwiftPM
+- `--all-errors` / `allErrors` builds in a separate diagnostic DerivedData slot (`diagnosticDerivedDataPath`, `XCFORGE_DIAGNOSTIC_DERIVED_DATA_PATH`; default a per-project folder beside Xcode's) and keeps going after errors, leaving the main cache alone
+- **SwiftPM tools find the package:** `path`, then `.xcforge.yaml packagePath`, then the current folder, then the only `Package.swift` in the repo. `swift_package_build`/`swift_package_test` results list compiler errors with file:line, failing tests (XCTest and Swift Testing) and test counts, keeping only the end of the raw output when nothing parses. They take the build lock and the idle timeout
+
 ### Changed
 - **One test ID format.** Results, `list_tests`, last-failures and known-failures all use `Target/Suite/test()` (Swift Testing) or `Target/Class/testMethod` (XCTest), and filters accept it as printed. The target is added to short IDs from the scheme's or test plan's test targets instead of guessed, and the `test()()` spelling xcodebuild needs is written for you
 - Failures carry every message with file and line, the argument or repetition it came from, and their attachments; identical messages are grouped, and text output is capped at 20 failures with a count of the rest

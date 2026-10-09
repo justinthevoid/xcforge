@@ -135,7 +135,9 @@ public enum BuildTools {
     return tail.isEmpty ? [] : [tail]
   }
 
-  public static let tools: [Tool] = [
+  public static let tools: [Tool] = coreTools + typecheckTools
+
+  static let coreTools: [Tool] = [
     Tool(
       name: "build_sim",
       description: """
@@ -281,6 +283,12 @@ public enum BuildTools {
               "Capture a diagnostic snapshot on completion even without a hang."
             ),
           ]),
+          "fromSnapshot": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Build a snapshot of the working tree (a git worktree under ~/.xcforge/snapshots), so edits made during the build don't affect it. Errors name the real files."
+            ),
+          ]),
         ]),
       ])
     ),
@@ -371,6 +379,7 @@ public enum BuildTools {
     var args: [String]? = nil
     var env: [String]? = nil
     var url: String? = nil
+    var fromSnapshot: Bool? = nil
   }
 
   struct CleanInput: Decodable {
@@ -398,10 +407,45 @@ public enum BuildTools {
     long: Bool = false,
     diagnose: Bool = false,
     compileOnly: Bool = false,
+    target: String? = nil,
+    fromSnapshot: Bool = false,
     env: Environment = .live
   ) async throws -> BuildExecution {
-    let resolvedProject = try await env.session.resolveProject(project)
-    let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
+    guard fromSnapshot else {
+      return try await runBuild(
+        project: project, scheme: scheme, simulator: simulator, configuration: configuration, long: long,
+        diagnose: diagnose, compileOnly: compileOnly, target: target, buildProject: nil, env: env)
+    }
+    // Build a frozen copy of the tree so other agents' edits mid-build don't land in it, and
+    // report file paths in the real tree, where the agent edits.
+    let source = try await env.session.resolveProject(project)
+    let handle = try await SourceSnapshot.prepare(project: source, env: env)
+    defer { handle.release() }
+    let execution = try await runBuild(
+      project: source, scheme: scheme, simulator: simulator, configuration: configuration, long: long,
+      diagnose: diagnose, compileOnly: compileOnly, target: target, buildProject: handle.project, env: env)
+    return SourceSnapshot.remap(execution, from: handle.worktree, to: handle.repoRoot)
+  }
+
+  /// `buildProject` is the project actually built (a snapshot's copy) when it isn't `project`.
+  private static func runBuild(
+    project: String?, scheme: String?, simulator: String?, configuration: String, long: Bool, diagnose: Bool,
+    compileOnly: Bool, target: String?, buildProject: String?, env: Environment
+  ) async throws -> BuildExecution {
+    let sourceProject = try await env.session.resolveProject(project)
+    let resolvedProject = buildProject ?? sourceProject
+    let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
+    let projectFlag = isWorkspace ? "-workspace" : "-project"
+    // One target compiles through its own scheme, or `-target` when it has none.
+    let resolvedScheme: String
+    let selector: [String]
+    if let target {
+      selector = try await resolveTargetSelector(target, project: resolvedProject, env: env)
+      resolvedScheme = target
+    } else {
+      resolvedScheme = try await env.session.resolveScheme(scheme, project: sourceProject)
+      selector = [projectFlag, resolvedProject, "-scheme", resolvedScheme]
+    }
     let resolvedSimulator: String
     do {
       resolvedSimulator = try await env.session.resolveSimulator(simulator)
@@ -413,21 +457,28 @@ public enum BuildTools {
       resolvedSimulator = fallback
     }
 
-    let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
-    let projectFlag = isWorkspace ? "-workspace" : "-project"
     let destination = await AutoDetect.buildDestination(resolvedSimulator)
 
     // Always generate an xcresult bundle for structured diagnostics
     let resultPath = TestTools.xcresultPath(prefix: "build")
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
 
-    var buildArgs = [
-      projectFlag, resolvedProject,
-      "-scheme", resolvedScheme,
-      "-configuration", configuration,
-      "-destination", destination,
-      "-skipMacroValidation",
-    ]
+    var buildArgs = selector + ["-configuration", configuration]
+    if selector.contains("-target") {
+      // -target builds take an SDK, not a destination; DerivedData is the scheme's so the
+      // dependencies it already built are reused.
+      buildArgs += ["-sdk", "iphonesimulator", "ONLY_ACTIVE_ARCH=YES"]
+      let projectDir = (resolvedProject as NSString).deletingLastPathComponent
+      if XcodebuildOptions.effective(cwd: projectDir).derivedDataPath == nil,
+        let defaultScheme = try? await env.session.resolveScheme(nil, project: sourceProject),
+        let derivedData = await schemeDerivedData(project: resolvedProject, scheme: defaultScheme, env: env)
+      {
+        buildArgs += ["-derivedDataPath", derivedData]
+      }
+    } else {
+      buildArgs += ["-destination", destination]
+    }
+    buildArgs.append("-skipMacroValidation")
     buildArgs += TestTools.compileFlags
     buildArgs += ["-resultBundlePath", resultPath, "build"] + TestTools.compileSettings
 
@@ -602,6 +653,7 @@ public enum BuildTools {
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
           compileOnly: true,
+          fromSnapshot: input.fromSnapshot ?? false,
           env: env
         )
 
@@ -1411,6 +1463,8 @@ extension BuildTools: ToolProvider {
     switch name {
     case "build_sim": return await buildSim(args, env: env)
     case "build_compile": return await buildCompile(args, env: env)
+    case "build_typecheck": return await buildTypecheck(args, env: env)
+    case "lsp_setup": return await lspSetup(args, env: env)
     case "build_run_sim": return await buildRunSim(args, env: env)
     case "clean": return await clean(args, env: env)
     case "discover_projects": return await discoverProjects(args, env: env)

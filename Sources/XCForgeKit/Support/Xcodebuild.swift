@@ -25,7 +25,9 @@ public enum Xcodebuild {
     // Settings come from the .xcforge.yaml next to the project being built, so a build of
     // another worktree doesn't pick up this checkout's DerivedData or lock.
     let configDir = projectDirectory(arguments, workingDirectory: workingDirectory)
+    let project = projectPath(arguments, workingDirectory: workingDirectory)
     let options = XcodebuildOptions.effective(cwd: configDir ?? env.currentDirectoryPath())
+      .withDiagnosticSlot(project: project).forSnapshot(project: project)
     let args = apply(options, to: arguments)
 
     // Two tool calls in one server (parallel MCP calls) never run xcodebuild against the same
@@ -135,6 +137,11 @@ public enum Xcodebuild {
       !arguments.contains(where: { $0.hasPrefix(continueAfterErrorsDefault) })
     {
       insert.append(continueAfterErrorsDefault + "=YES")
+    }
+    if let jobs = options.jobs, jobs > 0, arguments.contains(where: { compileActions.contains($0) }),
+      !arguments.contains("-jobs"), !options.extraArgs.contains("-jobs")
+    {
+      insert += ["-jobs", String(jobs)]
     }
     insert += options.extraArgs
     guard !insert.isEmpty else { return arguments }

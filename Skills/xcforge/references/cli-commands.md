@@ -88,6 +88,8 @@ xcforge build compile --project MyApp.xcodeproj --scheme MyApp
 xcforge build compile --configuration Release
 xcforge build compile --long                       # 7200s total limit instead of 1800s
 xcforge build compile --json
+xcforge build compile --from-snapshot              # Build a snapshot; edits made meanwhile don't matter
+xcforge build compile --all-errors --jobs 4        # Every error, in the diagnostic DerivedData slot
 ```
 
 | Flag | Description |
@@ -100,6 +102,15 @@ xcforge build compile --json
 | `--json` | Machine-readable JSON output |
 
 **Use case:** Rapid code iteration without deployment latency. Does not boot simulator or install app.
+
+### build typecheck
+
+Compile one target (its scheme, else `-target`), reusing the workspace's DerivedData.
+
+```bash
+xcforge build typecheck ShutterCoachShared
+xcforge build typecheck Widget --from-snapshot
+```
 
 ### build clean
 
@@ -397,7 +408,18 @@ xcforge spm list                                 # Show dependency tree (JSON)
 xcforge spm clean                                # Clean build artifacts
 ```
 
-All subcommands support `--json`. `--path` defaults to current directory.
+All subcommands support `--json`. Without `--path`, the package is `.xcforge.yaml packagePath`, else the current folder, else the only `Package.swift` in the repo.
+
+---
+
+## xcforge lsp
+
+```bash
+xcforge lsp setup                                # buildServer.json for the auto-detected project and scheme
+xcforge lsp setup --scheme ShutterCoachDev
+```
+
+Runs `xcode-build-server config` and points `build_root` at the DerivedData xcforge builds into.
 
 ---
 

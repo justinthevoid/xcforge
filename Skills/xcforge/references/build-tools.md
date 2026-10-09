@@ -1,4 +1,4 @@
-# Build Tools (6 tools)
+# Build Tools (8 tools)
 
 > **Defaults note:** the `Default` column shows the *fallback*. `project`,
 > `scheme`, `simulator`, and `configuration` are resolved through the parameter
@@ -17,12 +17,42 @@ Compile-only build: no boot, install or launch, and no extra build-settings look
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID (for SDK selection) |
 | `configuration` | No | Debug | Build configuration (Debug/Release) |
 | `long` | No | false | Raise the total time limit from 1800s to 7200s |
+| `fromSnapshot` | No | false | Build a snapshot of the working tree (git worktree under `~/.xcforge/snapshots`), unaffected by edits made during the build. Errors name the real files |
+| `jobs` | No | — | `-jobs N` for compiling. Also `XCFORGE_JOBS` and yaml `jobs` |
+| `allErrors` | No | false | Build in the diagnostic DerivedData slot (`diagnosticDerivedDataPath`) and report every error, leaving the main cache alone |
 
 **Returns:** Bundle ID, app path, build duration, warnings count. On failure: structured errors with file:line from xcresult.
 
 **Use case:** Rapid iteration on code without deployment latency. Does not boot simulator or install app.
 
 **Build flags applied:** `parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES` for speed.
+
+---
+
+## build_typecheck
+
+Compile one target for the simulator: its own scheme when it has one (sharing the workspace's DerivedData), else `-project <p> -target <t>` in the project that defines it. Seconds instead of a full scheme build when checking one changed file.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `target` | Yes | — | Target or package product, e.g. `ShutterCoachShared` |
+| `project` | No | Auto-detect | Path to .xcodeproj or .xcworkspace |
+| `simulator` | No | Booted, else newest iPhone | Simulator for SDK selection |
+| `configuration` | No | Debug | Build configuration |
+| `fromSnapshot` | No | false | As on `build_compile` |
+
+An unknown target fails with the schemes and targets that exist.
+
+---
+
+## lsp_setup
+
+Run `xcode-build-server config` for the project and scheme, then set `build_root` in `buildServer.json` to the DerivedData folder xcforge builds into (`derivedDataPath` when configured, else the scheme's own). Needs `brew install xcode-build-server`. Build the scheme once afterwards so the index exists, then restart the language server.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `project` | No | Auto-detect | Path to .xcodeproj or .xcworkspace |
+| `scheme` | No | Auto-detect | Scheme to index |
 
 ---
 

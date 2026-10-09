@@ -7,8 +7,8 @@ struct Build: AsyncParsableCommand {
     commandName: "build",
     abstract: "Build, clean, and inspect Xcode projects.",
     subcommands: [
-      BuildRun.self, BuildCompile.self, BuildDiagnose.self, BuildClean.self, BuildDiscover.self,
-      BuildSchemes.self,
+      BuildRun.self, BuildCompile.self, BuildTypecheck.self, BuildDiagnose.self, BuildClean.self,
+      BuildDiscover.self, BuildSchemes.self,
     ],
     defaultSubcommand: BuildRun.self
   )
@@ -40,6 +40,12 @@ struct BuildCompile: AsyncParsableCommand {
   @Flag(help: "Capture a diagnostic snapshot on completion even without a hang.")
   var diagnose = false
 
+  @Flag(
+    help:
+      "Build a snapshot of the working tree (a git worktree under ~/.xcforge/snapshots), unaffected by edits made during the build."
+  )
+  var fromSnapshot = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -63,6 +69,7 @@ struct BuildCompile: AsyncParsableCommand {
       long: long,
       diagnose: diagnose,
       compileOnly: true,
+      fromSnapshot: fromSnapshot,
       env: env
     )
 
@@ -75,6 +82,54 @@ struct BuildCompile: AsyncParsableCommand {
     if !execution.succeeded {
       throw ExitCode.failure
     }
+  }
+}
+
+// MARK: - build typecheck
+
+struct BuildTypecheck: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "typecheck",
+    abstract: "Compile one target for the simulator, reusing the workspace's DerivedData."
+  )
+
+  @Option(help: "Target or package product to compile (its own scheme when it has one, else -target).")
+  var target: String
+
+  @Option(help: "Path to .xcodeproj or .xcworkspace. Auto-detected if omitted.")
+  var project: String?
+
+  @Option(help: "Simulator name or UDID. Default: booted, else the newest iPhone.")
+  var simulator: String?
+
+  @Option(help: "Build configuration (Debug/Release). Default: Debug")
+  var configuration: String?
+
+  @Flag(help: "Compile a snapshot of the working tree, unaffected by edits made meanwhile.")
+  var fromSnapshot = false
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  @OptionGroup var xcodebuild: XcodebuildOptionGroup
+
+  mutating func run() async throws {
+    let command = self
+    try await xcodebuild.scoped { try await command.execute() }
+  }
+
+  func execute() async throws {
+    let env = Environment.live
+    let execution = try await BuildTools.executeBuild(
+      project: project, simulator: simulator,
+      configuration: await env.session.resolveConfiguration(configuration), compileOnly: true, target: target,
+      fromSnapshot: fromSnapshot, env: env)
+    if shouldOutputJSON(flag: json) {
+      print(try WorkflowJSONRenderer.renderJSON(execution))
+    } else {
+      print(BuildRenderer.renderBuild(execution))
+    }
+    if !execution.succeeded { throw ExitCode.failure }
   }
 }
 
