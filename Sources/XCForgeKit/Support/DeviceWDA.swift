@@ -90,7 +90,8 @@ public enum DeviceWDA {
     guard let result = listJSON["result"] as? [String: Any],
       let devices = result["devices"] as? [[String: Any]]
     else { return nil }
-    for entry in devices {
+    // Xcode 27 lists simulators here too; a simulator with the same name is not the phone.
+    for entry in devices where !DeviceTools.isSimulatorEntry(entry) {
       let udid = DeviceTools.property(entry, "udid") as? String
       let identifier = entry["identifier"] as? String
       let name = DeviceTools.property(entry, "name") as? String

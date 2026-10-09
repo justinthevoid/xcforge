@@ -108,6 +108,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Screenshots report the device's point size, not the Simulator window's, and the fallback writes a new file per capture instead of one shared `/tmp` file; CLI `screenshot capture` writes a new file unless `--output` is given
 
 ### Fixed
+- With Xcode 27, `device list` (and anything resolving a phone by name) no longer lists simulators, which Device Hub's `devicectl` now includes, and the state column shows the tunnel state (connected, disconnected, unavailable) instead of `devicectl`'s display hint
 - A timed-out `build-for-testing` is reported as a build failure instead of continuing to `test-without-building` against stale products
 - `test_plan_inspect` finds plans inside `App.xcodeproj/xcshareddata/xctestplans` and decodes Xcode's string-form `skippedTests` and plans with missing sections
 - A hung build's fallback no longer runs `pkill -x xcodebuild`, which killed every session's build on the Mac. Hang snapshots sample the xcodebuild matched by this run's result bundle path instead of the newest xcodebuild on the system

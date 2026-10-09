@@ -47,6 +47,38 @@ struct DeviceSupportTests {
     #expect(DeviceWDA.findDevice("nope", listJSON: list) == nil)
   }
 
+  @Test("Xcode 27 simulators in devicectl output are dropped, and state comes from the tunnel")
+  func devicectlSimulatorsAndState() {
+    let phone: [String: Any] = [
+      "identifier": "CORE-1",
+      "visibilityClass": "default",
+      "hardwareProperties": ["udid": "00008110-AAA", "reality": "physical", "platform": "iOS"],
+      "deviceProperties": ["name": "Phone", "osVersionNumber": "27.0"],
+      "connectionProperties": ["tunnelState": "disconnected", "pairingState": "paired", "transportType": "wired"],
+    ]
+    let virtual: [String: Any] = [
+      "identifier": "SIM-1",
+      "properties": ["name": "iPhone 17", "udid": "SIM-1", "reality": "virtual", "bootState": "booted"],
+    ]
+    let simPlatform: [String: Any] = [
+      "identifier": "SIM-2",
+      "properties": ["name": "iPad Air", "udid": "SIM-2", "platform": "iOS Simulator"],
+    ]
+    let unlabeled: [String: Any] = ["identifier": "SIM-3", "properties": ["name": "iPhone Air", "udid": "sim-3"]]
+
+    let entry = DeviceTools.physicalEntry(phone)
+    #expect(entry?.state == "disconnected")
+    #expect(entry?.connectionType == "wired")
+    #expect(DeviceTools.physicalEntry(virtual) == nil)
+    #expect(DeviceTools.physicalEntry(simPlatform) == nil)
+    #expect(DeviceTools.physicalEntry(unlabeled, simulatorUDIDs: ["SIM-3"]) == nil)
+    #expect(DeviceTools.physicalEntry(unlabeled)?.state == "unknown")
+
+    let list: [String: Any] = ["result": ["devices": [virtual, phone]]]
+    #expect(DeviceWDA.findDevice("iPhone 17", listJSON: list) == nil)
+    #expect(DeviceWDA.findDevice("Phone", listJSON: list)?.udid == "00008110-AAA")
+  }
+
   // MARK: - WDA URL discovery
 
   @Test("the URL WDA logs is extracted, and the tunnel address is tried first")
