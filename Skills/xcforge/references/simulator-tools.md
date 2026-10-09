@@ -317,4 +317,4 @@ Get simulator display metrics.
 }
 ```
 
-**Use case:** Determine screen resolution and pixel scale for coordinate conversion in UI automation (e.g., converting pixel coordinates to point coordinates for `tap_coordinates`).
+**Use case:** Determine screen resolution and pixel scale for coordinate conversion in UI automation (e.g., converting pixel coordinates to point coordinates for `tap`).

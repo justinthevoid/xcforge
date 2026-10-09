@@ -199,9 +199,14 @@ public actor SessionState {
       return repo
     }
     if let persisted = persistedSimulator {
-      self.simulator = persisted
-      self.simulatorSource = .persisted
-      return persisted
+      // A saved simulator may have been deleted or renamed since it was saved.
+      if await AutoDetect.simulatorExists(persisted) {
+        self.simulator = persisted
+        self.simulatorSource = .persisted
+        return persisted
+      }
+      Log.warn("Saved default simulator '\(persisted)' no longer exists; auto-detecting instead.")
+      persistedSimulator = nil
     }
     return try await AutoDetect.simulator()
   }
@@ -749,6 +754,8 @@ public actor SessionState {
           return .ok(await state.showDefaults())
         }
 
+        // Defaults are saved per project: find it first, so a fresh process doesn't drop them.
+        if input.project == nil { _ = try? await state.resolveProject(nil) }
         let persisted = await state.setDefaults(
           project: input.project, scheme: input.scheme, simulator: input.simulator)
         var body = await state.showDefaults()

@@ -6,6 +6,7 @@ struct XCForgeCLI: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "xcforge",
     abstract: "CLI-first workflow entrypoints for xcforge.",
+    version: XCForgeVersion.current,
     subcommands: [
       Build.self, Test.self, BuildTest.self, Sim.self, Device.self, Diagnose.self, Defaults.self,
       Console.self, Git.self, Logs.self, Screenshot.self, UI.self, Accessibility.self, Plan.self,
@@ -57,9 +58,20 @@ struct DefaultsSet: AsyncParsableCommand {
     }
 
     let env = Environment.live
-    await env.session.setDefaults(
-      project: project, scheme: scheme, simulator: simulator
-    )
+    // Defaults are saved per project, so find it first; without one nothing would be written.
+    if project == nil {
+      do {
+        _ = try await env.session.resolveProject(nil)
+      } catch {
+        print("Not saved: couldn't find a project (\(error)). Pass --project.")
+        throw ExitCode.failure
+      }
+    }
+    let saved = await env.session.setDefaults(project: project, scheme: scheme, simulator: simulator)
+    guard saved else {
+      print("Not saved: no project is active. Pass --project.")
+      throw ExitCode.failure
+    }
     print(await env.session.showDefaults())
   }
 }
@@ -133,7 +145,8 @@ func rethrowOrJSONError(_ error: Error, json: Bool) throws {
   if let data = try? JSONEncoder().encode(envelope),
     let jsonString = String(data: data, encoding: .utf8)
   {
-    fputs(jsonString + "\n", stderr)
+    // On stdout like JSON results, so a caller parsing stdout sees the error too.
+    print(jsonString)
   }
   throw ExitCode.failure
 }

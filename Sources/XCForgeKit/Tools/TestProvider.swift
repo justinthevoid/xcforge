@@ -308,6 +308,7 @@ public enum TestTools {
     var parallel: Bool?
     var testTimeoutSeconds: Int?
     var includeConsole: Bool?
+    var rerunFailed: Bool?
   }
 
   struct TestFailuresInput: Decodable {
@@ -632,9 +633,14 @@ public enum TestTools {
             "for": .object([
               "type": .string("string"),
               "description": .string(
-                "Output audience. 'human' (default) preserves the full JSON shape; 'agent' returns a slim ≤10-field projection."
-              ),
+                "Output audience. 'agent' (default) returns slim JSON; 'human' returns the full text report."),
               "enum": .array([.string("human"), .string("agent")]),
+            ]),
+            "rerunFailed": .object([
+              "type": .string("boolean"),
+              "description": .string(
+                "Rerun only the tests that failed in this repo's last run, with that run's project, scheme, simulator, plan, configuration and env unless given. Skips the build when no source changed."
+              ),
             ]),
             "gate": .object([
               "type": .string("boolean"),
@@ -828,8 +834,7 @@ public enum TestTools {
             "for": .object([
               "type": .string("string"),
               "description": .string(
-                "Output audience. 'human' (default) preserves the full JSON shape; 'agent' returns a slim ≤10-field projection."
-              ),
+                "Output audience. 'agent' (default) returns slim JSON; 'human' returns the full text report."),
               "enum": .array([.string("human"), .string("agent")]),
             ]),
             "gate": .object([
@@ -3038,10 +3043,59 @@ public enum TestTools {
 
   // MARK: - Tool Implementations
 
+  enum RerunSelection {
+    case ids([String])
+    case refusal(CallTool.Result)
+  }
+
+  /// For `rerunFailed`: the IDs that failed in this repo's last run. That run's project,
+  /// scheme, simulator, plan, configuration and env fill in what the call didn't pass, and the
+  /// build is skipped when nothing changed since the last one.
+  static func applyRerunFailed(_ input: inout TestSimInput, env: Environment) async -> RerunSelection {
+    if input.filter != nil {
+      return .refusal(.fail("rerunFailed reruns the last run's failures; drop filter or rerunFailed."))
+    }
+    let cwd = FileManager.default.currentDirectoryPath
+    var repoRoot = RepoRoot.discover(from: cwd) ?? cwd
+    if let project = input.project, let resolved = try? await env.session.resolveProject(project) {
+      repoRoot = RepoRoot.discover(from: (resolved as NSString).deletingLastPathComponent) ?? repoRoot
+    }
+    guard let payload = LastFailuresStore.read(at: repoRoot) else {
+      return .refusal(.fail("No failures recorded in \(repoRoot); run test_sim first."))
+    }
+    if let reason = payload.infraFailure {
+      return .refusal(
+        .fail("The last run failed before any test reported a result (\(reason)); there are no failures to rerun."))
+    }
+    if payload.failures.isEmpty { return .refusal(.ok("No failures to rerun: the last run passed.")) }
+    let recorded = payload.run
+    input.project = input.project ?? recorded?.project
+    input.scheme = input.scheme ?? payload.scheme
+    input.simulator = input.simulator ?? payload.simulator
+    input.configuration = input.configuration ?? recorded?.configuration
+    input.testplan = input.testplan ?? recorded?.testPlan
+    if input.env == nil { input.env = recorded?.env }
+    if input.skipBuild == nil {
+      let configuration = await env.session.resolveConfiguration(input.configuration)
+      let testplan = await env.session.resolveTestPlan(input.testplan)
+      input.skipBuild = await lastTestBuildIsCurrent(
+        project: input.project, scheme: input.scheme, simulator: input.simulator, configuration: configuration,
+        testplan: testplan, testIDs: payload.failures, env: env)
+    }
+    return .ids(payload.failures)
+  }
+
   static func testSim(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
     switch ToolInput.decode(TestSimInput.self, from: args) {
     case .failure(let err): return err
-    case .success(let input):
+    case .success(var input):
+      var filterIDs: [String]?
+      if input.rerunFailed == true {
+        switch await applyRerunFailed(&input, env: env) {
+        case .refusal(let result): return result
+        case .ids(let ids): filterIDs = ids
+        }
+      }
       // Resolve simRecovery mode (default: off for test_sim)
       let recoveryMode: SimRecoveryMode
       do {
@@ -3064,8 +3118,8 @@ public enum TestTools {
           + " Tests not matching the filter will be skipped regardless of testplan.\n"
       }
 
-      let forMode: OutputAudience =
-        (input.for?.lowercased() == "agent") ? .agent : .human
+      // Slim JSON unless the caller asks for the text report.
+      let forMode: OutputAudience = (input.for?.lowercased() == "human") ? .human : .agent
       do {
         let execution = try await executeTest(
           project: input.project,
@@ -3074,6 +3128,7 @@ public enum TestTools {
           configuration: await env.session.resolveConfiguration(input.configuration),
           testplan: testplan,
           filter: input.filter,
+          filterIDs: filterIDs,
           coverage: input.coverage ?? false,
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
@@ -3376,8 +3431,8 @@ public enum TestTools {
       } catch {
         return .fail("\(error)")
       }
-      let forMode: OutputAudience =
-        (input.for?.lowercased() == "agent") ? .agent : .human
+      // Slim JSON unless the caller asks for the text report.
+      let forMode: OutputAudience = (input.for?.lowercased() == "human") ? .human : .agent
       do {
         let result = try await executeBuildAndTest(
           project: project,

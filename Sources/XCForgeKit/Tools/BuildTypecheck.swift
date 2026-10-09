@@ -235,6 +235,7 @@ extension BuildTools {
           project: input.project, simulator: input.simulator,
           configuration: await env.session.resolveConfiguration(input.configuration), compileOnly: true,
           target: input.target, fromSnapshot: input.fromSnapshot ?? false, env: env)
+        if wantsAgentJSON(args) { return agentJSON(execution, action: "Typecheck of \(input.target)") }
         if execution.succeeded {
           var output = "\(input.target) compiled in \(execution.elapsed)s"
           if let warnings = execution.warningCount, warnings > 0 { output += " (\(warnings) warnings)" }

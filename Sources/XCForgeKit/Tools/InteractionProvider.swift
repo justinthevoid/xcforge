@@ -2,7 +2,7 @@ import Foundation
 import MCP
 
 enum UITools {
-  public static let tools: [Tool] = [
+  static let coreTools: [Tool] = [
     Tool(
       name: "wda_status",
       description:
@@ -35,7 +35,7 @@ enum UITools {
     Tool(
       name: "wda_create_session",
       description:
-        "Create a new WebDriverAgent session, optionally targeting a specific app by bundle ID. A session is required before using UI interaction tools (find_element, click_element, type_text, etc.). Sessions are auto-created by most tools, so this is only needed to explicitly switch the target app.",
+        "Create a new WebDriverAgent session, optionally targeting a specific app by bundle ID. A session is required before using UI interaction tools (find_element, tap, type_text, etc.). Sessions are auto-created by most tools, so this is only needed to explicitly switch the target app.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -58,10 +58,14 @@ enum UITools {
     Tool(
       name: "find_element",
       description:
-        "Find a single UI element matching a query. Returns the element ID for use with click_element, get_text, etc. With scroll: true, automatically scrolls the nearest ScrollView/List until the element appears (one call, no manual swipe loop needed). Use find_elements instead when you need all matches (e.g. counting list items).",
+        "Find a single UI element matching a query. Returns the element ID for use with tap, get_text, etc. With scroll: true, automatically scrolls the nearest ScrollView/List until the element appears (one call, no manual swipe loop needed). all: true returns every match (e.g. counting list items).",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
+          "all": .object([
+            "type": .string("boolean"),
+            "description": .string("Return every matching element's ID instead of one."),
+          ]),
           "using": .object([
             "type": .string("string"),
             "description": .string(
@@ -187,6 +191,10 @@ enum UITools {
           "duration_ms": .object([
             "type": .string("number"), "description": .string("Swipe duration in ms. Default: 300"),
           ]),
+          "hid": .object([
+            "type": .string("boolean"),
+            "description": .string("Swipe with native HID events on a simulator (bypasses WDA, falls back to it)."),
+          ]),
         ]),
         "required": .array([
           .string("start_x"), .string("start_y"), .string("end_x"), .string("end_y"),
@@ -305,14 +313,25 @@ enum UITools {
     Tool(
       name: "get_source",
       description:
-        "Get the full view hierarchy (source tree) of the current screen. Returns all elements with their types, labels, frames, and accessibility identifiers. Use to discover element identifiers before using find_element, or to debug layout issues.",
+        "Get the view hierarchy of the current screen. format: list gives one line per element (`<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>`), the cheapest way to see what's tappable; json, xml and description give the full tree.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
           "format": .object([
             "type": .string("string"),
-            "description": .string("Format: json, xml, or description. Default: json"),
-          ])
+            "enum": .array([.string("list"), .string("json"), .string("xml"), .string("description")]),
+            "description": .string("list, json, xml or description. Default: json"),
+          ]),
+          "scope": .object([
+            "type": .string("string"),
+            "description": .string(
+              "format: list only. Accessibility id to restrict the listing to, with its descendants."),
+          ]),
+          "source": .object([
+            "type": .string("string"),
+            "enum": .array([.string("auto"), .string("wda"), .string("axp")]),
+            "description": .string("format: list only. Tree to read: auto (default), wda or axp."),
+          ]),
         ]),
       ])
     ),
@@ -1750,11 +1769,11 @@ enum UITools {
           await DeviceStateStore.shared.update(
             .screen(elementCount: max(elementCount, 1), summary: format), for: udid)
         }
-        // Over 50,000 characters, a raw tree cut mid-JSON is useless: point at list_elements.
+        // Over 50,000 characters, a raw tree cut mid-JSON is useless: point at format: list.
         let truncated =
           source.count > 50000
           ? String(source.prefix(50000))
-            + "\n... [truncated at 50,000 of \(source.count) characters; list_elements returns one line per element]"
+            + "\n... [truncated at 50,000 of \(source.count) characters; format: list returns one line per element]"
           : source
         return .ok("View hierarchy (wda, \(elapsed)s, \(source.count) chars):\n\(truncated)")
       } catch {
@@ -1856,21 +1875,28 @@ extension UITools: ToolProvider {
       return await handleAlert(args, session: env.session, wdaClient: env.wdaClient)
     case "wda_status": return await wdaStatus(args, session: env.session, wdaClient: env.wdaClient)
     case "wda_create_session": return await wdaCreateSession(args, env: env)
-    case "find_element": return await findElement(args, env: env)
+    case "find_element":
+      if args?["all"]?.boolValue == true { return await findElements(args, wdaClient: env.wdaClient) }
+      return await findElement(args, env: env)
+    case "tap": return await tap(args, env: env)
     case "find_elements": return await findElements(args, wdaClient: env.wdaClient)
     case "click_element": return await clickElement(args, env: env)
     case "tap_coordinates": return await tapCoordinates(args, wdaClient: env.wdaClient)
     case "ui_tap_pixel": return await tapPixel(args, env: env)
     case "double_tap": return await doubleTap(args, wdaClient: env.wdaClient)
     case "long_press": return await longPress(args, wdaClient: env.wdaClient)
-    case "swipe": return await swipeAction(args, wdaClient: env.wdaClient)
+    case "swipe":
+      if args?["hid"]?.boolValue == true { return await indigoSwipe(args, wdaClient: env.wdaClient) }
+      return await swipeAction(args, wdaClient: env.wdaClient)
     case "pinch": return await pinchAction(args, wdaClient: env.wdaClient)
     case "indigo_tap": return await indigoTap(args, wdaClient: env.wdaClient)
     case "indigo_swipe": return await indigoSwipe(args, wdaClient: env.wdaClient)
     case "drag_and_drop": return await dragAndDrop(args, wdaClient: env.wdaClient)
     case "type_text": return await typeText(args, wdaClient: env.wdaClient)
     case "get_text": return await getText(args, env: env)
-    case "get_source": return await getSource(args, env: env)
+    case "get_source":
+      if args?["format"]?.stringValue == "list" { return await listElements(args, env: env) }
+      return await getSource(args, env: env)
     case "list_elements": return await listElements(args, env: env)
     case "tap_by_id": return await tapByID(args, env: env)
     case "tap_by": return await tapBy(args, env: env)

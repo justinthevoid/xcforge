@@ -603,6 +603,8 @@ public enum RepoConfig {
     public var diagnosticDerivedDataPath: String?
     /// Swift package used by the SwiftPM tools when none is passed (e.g. a shared logic package).
     public var packagePath: String?
+    /// Which MCP tool groups the server lists at start, e.g. `-diagnose,+git` or `build,test,ui`.
+    public var toolGroups: String?
     /// Problems found while reading the file (unknown keys, bad values). Shown to agents.
     public var warnings: [String] = []
     /// The `.xcforge.yaml` these values came from.
@@ -624,7 +626,8 @@ public enum RepoConfig {
       defaultFlags: Bool? = nil,
       jobs: Int? = nil,
       diagnosticDerivedDataPath: String? = nil,
-      packagePath: String? = nil
+      packagePath: String? = nil,
+      toolGroups: String? = nil
     ) {
       self.project = project
       self.scheme = scheme
@@ -642,6 +645,7 @@ public enum RepoConfig {
       self.jobs = jobs
       self.diagnosticDerivedDataPath = diagnosticDerivedDataPath
       self.packagePath = packagePath
+      self.toolGroups = toolGroups
     }
 
     /// True when every field is nil (nothing to apply).
@@ -650,7 +654,7 @@ public enum RepoConfig {
         && testPlan == nil && testTimeout == nil && autoPromote == nil
         && derivedDataPath == nil && buildLock == nil && artifactDir == nil && minFreeGB == nil
         && idleTimeout == nil && defaultFlags == nil && jobs == nil && diagnosticDerivedDataPath == nil
-        && packagePath == nil
+        && packagePath == nil && toolGroups == nil
     }
   }
 
@@ -713,6 +717,7 @@ public enum RepoConfig {
       "project", "scheme", "simulator", "configuration", "testPlan",
       "testTimeout", "autoPromote", "derivedDataPath", "buildLock", "artifactDir", "minFreeGB",
       "idleTimeout", "defaultFlags", "jobs", "diagnosticDerivedDataPath", "packagePath",
+      "toolGroups",
     ]
     for key in dict.keys.sorted() where !allowedKeys.contains(key) {
       let suggestion =
@@ -811,7 +816,8 @@ public enum RepoConfig {
       defaultFlags: dict["defaultFlags"].flatMap(XcodebuildOptions.parseBool),
       jobs: jobs,
       diagnosticDerivedDataPath: resolvedPath("diagnosticDerivedDataPath"),
-      packagePath: resolvedPath("packagePath")
+      packagePath: resolvedPath("packagePath"),
+      toolGroups: dict["toolGroups"]
     )
     var withWarnings = result
     withWarnings.warnings = warnings

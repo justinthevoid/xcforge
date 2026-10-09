@@ -44,7 +44,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `--all-errors` / `allErrors` builds in a separate diagnostic DerivedData slot (`diagnosticDerivedDataPath`, `XCFORGE_DIAGNOSTIC_DERIVED_DATA_PATH`; default a per-project folder beside Xcode's) and keeps going after errors, leaving the main cache alone
 - **SwiftPM tools find the package:** `path`, then `.xcforge.yaml packagePath`, then the current folder, then the only `Package.swift` in the repo. `swift_package_build`/`swift_package_test` results list compiler errors with file:line, failing tests (XCTest and Swift Testing) and test counts, keeping only the end of the raw output when nothing parses. They take the build lock and the idle timeout
 
+- `test_sim` takes `rerunFailed`: the MCP form of `test rerun-failed`, reusing the last run's settings and skipping the build when nothing changed
+- **`XCFORGE_TOOL_GROUPS` and `.xcforge.yaml toolGroups`** pick the tool groups the server lists at start (`+diagnose`, `-git`, `build,test,ui`, `all`), and `tool_groups` changes now send `notifications/tools/list_changed`
+- Read-only tools carry `readOnlyHint`, so clients can run them without asking
+- `xcforge --version`
+- `plan decide` works from the CLI: `plan run` saves a suspended plan to `~/.xcforge/plan-sessions/` for an hour, and the time spent waiting for the decision doesn't count against the plan's timeout
+
 ### Changed
+- **Merged tools.** `tap` replaces `click_element`, `tap_by_id`, `tap_by`, `tap_coordinates`, `double_tap`, `long_press`, `ui_tap_pixel` and `indigo_tap`; `swipe` takes `hid` (was `indigo_swipe`), `get_source` takes `format: list` (was `list_elements`), `find_element` takes `all` (was `find_elements`), and `screenshot` takes `device` (was `device_screenshot`). The old names are no longer listed but still work for one release, with a note naming the replacement
+- **The diagnose workflow tools are off by default** (`XCFORGE_TOOL_GROUPS=+diagnose` or `tool_groups` turns them on); calling one while off says how. The server lists 104 tools instead of 118
+- **Every argument is listed in camelCase** (`includeConsole`, `waitFor`, `elementId`); snake_case spellings are still accepted
+- **Build and test tools return compact JSON by default over MCP** (`build_compile`, `build_sim`, `build_typecheck`, `test_sim`, `build_and_test`): `ok`, `summary`, errors with full paths, the result bundle. `for: "human"` gives the text report. Diagnose and plan JSON are no longer indented
+- `defaults set` finds the project before saving and exits non-zero when nothing was saved; it used to print success without writing in a fresh process
+- A saved default simulator that no longer exists is ignored with a warning instead of failing the build
+- Last build and test records are keyed on the absolute, symlink-resolved project path (a relative `App.xcodeproj` in two worktrees no longer shares one record) and written under a lock
+- CLI JSON errors go to stdout like JSON results
 - **One test ID format.** Results, `list_tests`, last-failures and known-failures all use `Target/Suite/test()` (Swift Testing) or `Target/Class/testMethod` (XCTest), and filters accept it as printed. The target is added to short IDs from the scheme's or test plan's test targets instead of guessed, and the `test()()` spelling xcodebuild needs is written for you
 - Failures carry every message with file and line, the argument or repetition it came from, and their attachments; identical messages are grouped, and text output is capped at 20 failures with a count of the rest
 - A test failure is no longer reported as "test target build failed". When the build or runner fails before any test reports, agent JSON says why (`reason`) and `rerun-failed` refuses instead of running nothing

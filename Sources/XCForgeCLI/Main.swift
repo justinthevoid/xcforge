@@ -20,9 +20,14 @@ struct Main {
 
       let server = Server(
         name: "xcforge",
-        version: "1.6.1",
+        version: XCForgeVersion.current,
         capabilities: .init(tools: .init(listChanged: true))
       )
+
+      // tool_groups changes the list; tell clients so they fetch it again.
+      ToolRegistry.onToolListChanged {
+        try? await server.notify(ToolListChangedNotification.message())
+      }
 
       await server.withMethodHandler(ListTools.self) { _ in
         .init(tools: ToolRegistry.allTools)

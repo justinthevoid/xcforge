@@ -18,10 +18,14 @@ enum ScreenshotTools {
     Tool(
       name: "screenshot",
       description:
-        "Take a screenshot of a booted simulator and return the image inline. Automatically selects the fastest available capture method (native framebuffer <10ms, ScreenCaptureKit ~20ms, or simctl ~320ms fallback). Use after any UI interaction to verify the result visually. Simulator is auto-detected if omitted.",
+        "Take a screenshot of a booted simulator and return the image inline. Automatically selects the fastest available capture method (native framebuffer <10ms, ScreenCaptureKit ~20ms, or simctl ~320ms fallback). Use after any UI interaction to verify the result visually. Simulator is auto-detected if omitted. device takes a physical device's screenshot instead.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
+          "device": .object([
+            "type": .string("string"),
+            "description": .string("Physical device name or UDID. Captures that device instead of a simulator."),
+          ]),
           "simulator": .object([
             "type": .string("string"),
             "description": .string(
@@ -580,7 +584,13 @@ extension ScreenshotTools: ToolProvider {
     -> CallTool.Result?
   {
     switch name {
-    case "screenshot": return await screenshot(args, env: env)
+    case "screenshot":
+      // A physical device: devicectl capture, falling back to the device's WDA.
+      if let device = args?["device"] {
+        return await DeviceTools.dispatch("device_screenshot", ["device": device], env: env)
+          ?? .fail("device screenshots are unavailable")
+      }
+      return await screenshot(args, env: env)
     default: return nil
     }
   }

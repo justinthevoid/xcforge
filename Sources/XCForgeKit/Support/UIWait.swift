@@ -32,7 +32,7 @@ enum UIWait {
 
   /// Action tools that accept `wait_for`, `until_gone` and `timeout`.
   static let actionToolNames: Set<String> = [
-    "click_element", "tap_coordinates", "double_tap", "long_press", "swipe", "pinch", "drag_and_drop",
+    "tap", "click_element", "tap_coordinates", "double_tap", "long_press", "swipe", "pinch", "drag_and_drop",
     "type_text", "tap_by_id", "tap_by", "indigo_tap", "indigo_swipe", "ui_tap_pixel", "handle_alert",
   ]
 

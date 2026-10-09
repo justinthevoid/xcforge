@@ -12,7 +12,7 @@
 
 An MCP server and CLI for iOS development — build, test, automate, and diagnose from any AI agent or terminal.
 
-**109 MCP tools. 19 CLI command groups. Single native binary (~8 MB stripped, ~18 MB with debug symbols). Zero external runtime dependencies.**
+**104 MCP tools. 19 CLI command groups. Single native binary (~8 MB stripped, ~18 MB with debug symbols). Zero external runtime dependencies.**
 
 ---
 
@@ -204,7 +204,7 @@ Once installed, Claude will automatically load the right reference files when yo
 ## Two Modes, Same Tools
 
 ```bash
-xcforge                          # MCP server (stdio JSON-RPC, 109 tools)
+xcforge                          # MCP server (stdio JSON-RPC, 104 tools)
 xcforge build --scheme MyApp     # CLI mode (19 command groups)
 ```
 
@@ -281,7 +281,7 @@ Use alongside logs and screenshots for systematic root-cause analysis.
 
 ### Diagnosis Workflows
 
-10 tools that chain together into structured diagnostic pipelines — start a session, build, launch, capture runtime signals, collect evidence (screenshots, logs, accessibility state), compare against previous runs, and verify fixes. Designed for agents to systematically debug issues across multiple iterations.
+10 tools (off by default: turn them on with `XCFORGE_TOOL_GROUPS=+diagnose` or `tool_groups`) that chain together into structured diagnostic pipelines — start a session, build, launch, capture runtime signals, collect evidence (screenshots, logs, accessibility state), compare against previous runs, and verify fixes. Designed for agents to systematically debug issues across multiple iterations.
 
 ### Physical Device Support
 
@@ -334,7 +334,7 @@ There are several iOS-focused MCP servers worth knowing about:
 
 | Server                                                               | Stars | Scope     | Build   | Test | UI Automation | Screenshots | Visual Regression | Accessibility | Physical Devices | SPM | Git | Logs |
 | -------------------------------------------------------------------- | ----- | --------- | ------- | ---- | ------------- | ----------- | ----------------- | ------------- | ---------------- | --- | --- | ---- |
-| **xcforge**                                                          | —     | 109 tools | Yes     | Yes  | Yes           | Yes         | Yes               | Yes           | Yes              | Yes | Yes | Yes  |
+| **xcforge**                                                          | —     | 104 tools | Yes     | Yes  | Yes           | Yes         | Yes               | Yes           | Yes              | Yes | Yes | Yes  |
 | [XcodeBuildMCP](https://github.com/getsentry/XcodeBuildMCP)          | ~5k   | ~15 tools | Yes     | Yes  | Partial       | No          | No                | No            | No               | No  | No  | No   |
 | [ios-simulator-mcp](https://github.com/joshuayoes/ios-simulator-mcp) | ~1.8k | ~10 tools | No      | No   | Yes           | Yes         | No                | No            | No               | No  | No  | No   |
 | [xcode-mcp-server](https://github.com/r-huijts/xcode-mcp-server)     | ~370  | ~8 tools  | Partial | No   | No            | No          | No                | No            | No               | No  | No  | No   |

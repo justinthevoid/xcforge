@@ -446,7 +446,7 @@ enum DiagnoseTools {
 
   private static func encodeResult<T: Encodable>(_ value: T, isError: Bool) -> CallTool.Result {
     do {
-      let json = try WorkflowJSONRenderer.renderJSON(value)
+      let json = try WorkflowJSONRenderer.renderJSON(value, compact: true)
       return .init(content: [.text(text: json, annotations: nil, _meta: nil)], isError: isError)
     } catch {
       return .fail("JSON encoding error: \(error)")

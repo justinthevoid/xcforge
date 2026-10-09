@@ -25,7 +25,10 @@ xcforge plan ...           # CLI mode
 xcforge pose ...           # CLI mode
 xcforge bless ...          # CLI mode
 xcforge debug ...          # CLI mode
+xcforge --version          # Version (the MCP server reports the same)
 ```
+
+With `--json` (or when stdout isn't a terminal), errors are a JSON object `{"error": ..., "code": ...}` on stdout, like results.
 
 ---
 
@@ -896,7 +899,7 @@ cat plan.json | xcforge plan run --stdin
 
 ### plan decide
 
-Resume a suspended plan with a decision.
+Resume a plan that `plan run` suspended, from a new process. Sessions are saved in `~/.xcforge/plan-sessions/` for an hour and used once.
 
 ```bash
 xcforge plan decide --session-id <UUID> --decision accept

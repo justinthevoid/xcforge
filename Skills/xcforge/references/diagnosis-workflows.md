@@ -1,5 +1,7 @@
 # Diagnosis Workflow Tools (10 MCP tools)
 
+**Off by default.** The diagnose group is not listed until you turn it on: `XCFORGE_TOOL_GROUPS=+diagnose`, `toolGroups: +diagnose` in `.xcforge.yaml`, or `tool_groups(enable: ["diagnose"])`. For most work `build_and_diagnose`, `test_sim` and `test_failures` cover the same ground.
+
 These tools provide structured diagnosis workflows via MCP. They mirror the `xcforge diagnose` CLI commands but are callable from any MCP client.
 
 Each tool corresponds to a workflow phase. A diagnosis "run" tracks state across phases.

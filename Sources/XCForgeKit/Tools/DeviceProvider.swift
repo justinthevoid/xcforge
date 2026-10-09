@@ -201,7 +201,7 @@ public enum DeviceTools {
     Tool(
       name: "wda_start",
       description:
-        "Build, sign and start WebDriverAgent on a connected physical device, then point this server's UI tools (find_element, click_element, ...) at it. Reuses a runner that is already answering.",
+        "Build, sign and start WebDriverAgent on a connected physical device, then point this server's UI tools (find_element, tap, ...) at it. Reuses a runner that is already answering.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([

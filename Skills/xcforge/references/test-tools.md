@@ -28,7 +28,8 @@ Run tests and return structured xcresult summary.
 | `testplan` | No | — | Test plan name (if project uses test plans) |
 | `filter` | No | — | Test filter — accepts relaxed formats (see below) |
 | `coverage` | No | false | Enable code coverage collection |
-| `for` | No | `human` | Output audience: `human` preserves full JSON; `agent` returns a slim ≤10-field projection |
+| `for` | No | `agent` | `agent` returns slim JSON (≤10 fields); `human` returns the full text report |
+| `rerunFailed` | No | false | Rerun only the last run's failures with its project, scheme, simulator, plan, configuration and env (unless given); skips the build when nothing changed. MCP form of `xcforge test rerun-failed` |
 | `gate` | No | false | Subtract IDs in `.xcforge/known-failures.yaml` when computing `succeeded`. Raw failure list unchanged |
 
 **Test IDs:** one format everywhere: `Target/Suite/test()` for Swift Testing,
@@ -149,7 +150,7 @@ Build then test in one call. Stops on a build failure with structured diagnostic
 | `testplan` | No | — | Test plan name |
 | `filter` | No | — | Test filter — accepts relaxed formats (auto-resolves target prefix) |
 | `coverage` | No | false | Enable code coverage collection |
-| `for` | No | `human` | Output audience: `human` preserves full JSON; `agent` returns a slim ≤10-field projection |
+| `for` | No | `agent` | `agent` returns slim JSON (≤10 fields); `human` returns the full text report |
 | `gate` | No | false | Subtract IDs in `.xcforge/known-failures.yaml` when computing `succeeded`. Raw failure list unchanged |
 
 **Behavior:**
@@ -159,7 +160,7 @@ Build then test in one call. Stops on a build failure with structured diagnostic
 
 **Returns:** Phase indicator (`build` or `test`), build elapsed time, build diagnostics (on failure), test execution result (on success).
 
-**Failure persistence:** On a failing run, failure IDs and the run settings (project, test plan, configuration, env) are saved to `.xcforge/last-failures.json` (cleared on green). `xcforge test rerun-failed` replays exactly those IDs with the same settings, and skips the build when nothing changed.
+**Failure persistence:** On a failing run, failure IDs and the run settings (project, test plan, configuration, env) are saved to `.xcforge/last-failures.json` (cleared on green). `xcforge test rerun-failed` (or `test_sim` with `rerunFailed: true`) replays exactly those IDs with the same settings, and skips the build when nothing changed.
 
 ---
 

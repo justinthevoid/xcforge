@@ -19,6 +19,7 @@ Compile-only build: no boot, install or launch, and no extra build-settings look
 | `long` | No | false | Raise the total time limit from 1800s to 7200s |
 | `fromSnapshot` | No | false | Build a snapshot of the working tree (git worktree under `~/.xcforge/snapshots`), unaffected by edits made during the build. Errors name the real files |
 | `jobs` | No | — | `-jobs N` for compiling. Also `XCFORGE_JOBS` and yaml `jobs` |
+| `for` | No | `agent` | `agent` returns compact JSON (`ok`, `summary`, `errors` with full paths, `warnings`, `xcresult`, ...); `human` returns the text report. Also on `build_sim` and `build_typecheck` |
 | `allErrors` | No | false | Build in the diagnostic DerivedData slot (`diagnosticDerivedDataPath`) and report every error, leaving the main cache alone |
 
 **Returns:** Bundle ID, app path, build duration, warnings count. On failure: structured errors with file:line from xcresult.

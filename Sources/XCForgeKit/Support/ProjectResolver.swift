@@ -493,6 +493,17 @@ enum AutoDetect {
     }
   }
 
+  /// False only when the simulator list loads and has no simulator with this name or UDID.
+  /// Physical device UDIDs are taken as they are.
+  static func simulatorExists(_ nameOrUDID: String) async -> Bool {
+    if isPhysicalDeviceUDID(nameOrUDID) { return true }
+    guard let devices = try? await loadSimulatorDevices() else { return true }
+    return devices.contains {
+      $0.udid.caseInsensitiveCompare(nameOrUDID) == .orderedSame
+        || $0.name.caseInsensitiveCompare(nameOrUDID) == .orderedSame
+    }
+  }
+
   private static func loadSimulatorDevices() async throws -> [SimulatorDevice] {
     let shellResult: ShellResult
     do {

@@ -1,4 +1,4 @@
-# Screenshot & Visual Tools (5 tools)
+# Screenshot & Visual Tools (7 tools)
 
 ## screenshot
 
@@ -7,14 +7,15 @@ Take a simulator screenshot. 0.3s latency — 44x faster than alternatives.
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `device` | No | — | A physical device's name or UDID: captures it instead (was `device_screenshot`) |
 | `format` | No | jpeg | Image format: `png` or `jpeg` |
 | `grid` | No | false | Overlay a point-coordinate grid on the image |
 | `crop` | No | — | `x,y,width,height` in device points (the coordinates taps use) |
-| `max_dimension` | No | — | Shrink so the longer side is at most this many pixels |
+| `maxDimension` | No | — | Shrink so the longer side is at most this many pixels |
 | `waitFor` / `timeout` | No | — | Readiness signal to wait for before capturing |
 
 **Token budget.** A full-resolution iPhone screenshot costs several thousand tokens. Pass
-`max_dimension: 800` for a look at the screen, and `crop` to see one area at full detail. The
+`maxDimension: 800` for a look at the screen, and `crop` to see one area at full detail. The
 result line gives the device's point size, the crop, the output pixels and, when scaled, how
 many points one pixel covers, so coordinates read off the image map back to taps.
 
@@ -107,3 +108,34 @@ Codify the baseline-write → test → diff → commit cycle in one call. Saves 
 **Returns:** Pass/fail status, baseline path, test result summary, and visual diff result. Returns failure if any test fails.
 
 **CLI:** `xcforge bless --baseline <name> --tests <filter>`
+
+---
+
+## accessibility_check
+
+Screenshot the current screen at several Dynamic Type sizes and compare each with the first, to
+spot truncation and layout breaks. Restores the text size it found.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `sizes` | No | XS, L, XXXL, AccessibilityXXXL | Comma-separated content size categories, or `all` |
+| `threshold` | No | 5.0 | Max diff % against the base size |
+| `settleTime` | No | 1.5 | Seconds to wait after each size change |
+
+---
+
+## localization_check
+
+Relaunch the app in several languages (including right-to-left ones) and compare each screenshot
+with the first. Relaunches without the locale arguments afterwards.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `bundleId` | No | Last build | App to relaunch |
+| `locales` | No | en, de, ja, ar, he | Comma-separated locales, or `all` for 10 |
+| `threshold` | No | 10.0 | Max diff % against the base locale |
+| `settleTime` | No | 3.0 | Seconds to wait after each relaunch |
+
+CLI: `xcforge accessibility dynamic-type` and `xcforge accessibility localization`.

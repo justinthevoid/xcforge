@@ -143,7 +143,8 @@ struct PlanRun: AsyncParsableCommand {
       if report.failed > 0 { throw ExitCode.failure }
 
     case .suspended(let suspended, _):
-      let sessionId = await PlanSessionStore.shared.store(suspended)
+      // Saved to disk: `plan decide` runs in a new process.
+      let sessionId = try PlanSessionFile.save(suspended, steps: steps)
       let report = PlanReport(
         steps: suspended.completedResults,
         sessionId: sessionId,
@@ -178,20 +179,23 @@ struct PlanDecide: AsyncParsableCommand {
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
-    guard let suspended = await PlanSessionStore.shared.consume(sessionId) else {
-      let msg = "Session '\(sessionId)' not found or expired (5-minute TTL). Re-run the plan."
+    let resumed: PlanSessionFile.Resumed
+    do {
+      resumed = try PlanSessionFile.consume(sessionId)
+    } catch {
       if useJSON {
-        let envelope = CLIErrorEnvelope(error: msg, code: "session_not_found")
+        let envelope = CLIErrorEnvelope(error: "\(error)", code: "session_not_found")
         if let data = try? JSONEncoder().encode(envelope),
           let jsonString = String(data: data, encoding: .utf8)
         {
-          fputs(jsonString + "\n", stderr)
+          print(jsonString)
         }
       } else {
-        print(msg)
+        print(error)
       }
       throw ExitCode.failure
     }
+    let suspended = resumed.plan
 
     if decision == "abort" {
       let report = PlanReport(steps: suspended.completedResults)
@@ -234,7 +238,7 @@ struct PlanDecide: AsyncParsableCommand {
       if report.failed > 0 { throw ExitCode.failure }
 
     case .suspended(let newSuspended, _):
-      let newSessionId = await PlanSessionStore.shared.store(newSuspended)
+      let newSessionId = try PlanSessionFile.save(newSuspended, steps: resumed.steps)
       let report = PlanReport(
         steps: newSuspended.completedResults,
         sessionId: newSessionId,

@@ -656,6 +656,7 @@ public enum BuildTools {
           fromSnapshot: input.fromSnapshot ?? false,
           env: env
         )
+        if wantsAgentJSON(args) { return agentJSON(execution, action: "Compile") }
 
         if execution.succeeded {
           var output = "Compile succeeded in \(execution.elapsed)s"
@@ -715,6 +716,7 @@ public enum BuildTools {
           diagnose: input.diagnose ?? false,
           env: env
         )
+        if wantsAgentJSON(args) { return agentJSON(execution, action: "Build") }
 
         if execution.succeeded {
           var output =

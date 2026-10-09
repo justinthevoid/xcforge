@@ -127,9 +127,10 @@ struct DiagnoseToolsTests {
       "diagnose_inspect", "diagnose_verify", "diagnose_compare",
       "diagnose_result",
     ]
-    let allRegisteredNames = ToolRegistry.allTools.map(\.name)
+    // The diagnose group starts off, so look among every registered tool, not the listed ones.
     for name in diagnoseNames {
-      #expect(allRegisteredNames.contains(name), "ToolRegistry.allTools missing \(name)")
+      #expect(ToolRegistry.declaredTool(name) != nil, "ToolRegistry missing \(name)")
+      #expect(ToolRegistry.group(of: name) == "diagnose")
     }
   }
 
