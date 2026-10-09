@@ -7,12 +7,12 @@ extension SkillBundle {
     SkillFile(path: "SKILL.md", contents: #"""
 ---
 name: xcforge
-description: Complete reference for xcforge — 109 MCP tools + 113 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, bless workflow, agent-optimized test output, and full CLI parity across 19 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, iterating with visual poses, or any xcforge tool.
+description: Complete reference for xcforge — 104 MCP tools (114 with the diagnose group) + 113 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, bless workflow, agent-optimized test output, and a CLI covering nearly every tool across 19 command groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, iterating with visual poses, or any xcforge tool.
 ---
 
 # xcforge — iOS Development MCP Server & CLI
 
-xcforge is a native Swift MCP server and CLI for iOS development. 109 MCP tools, 113 CLI commands across 19 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, multi-step plan execution, visual pose iteration, bless (baseline+test+diff in one call), agent-optimized test output with known-failures gating, and test plan inspection. Every MCP tool has a CLI equivalent.
+xcforge is a native Swift MCP server and CLI for iOS development. 104 MCP tools (114 with the off-by-default diagnose group), 113 CLI commands across 19 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, multi-step plan execution, visual pose iteration, bless (baseline+test+diff in one call), agent-optimized test output with known-failures gating, and test plan inspection. Nearly every MCP tool has a CLI equivalent; session profiles, clipboard, `multi_device_check` and `tool_groups` are MCP-only.
 
 ## References
 
@@ -33,6 +33,7 @@ Each reference covers one tool category with exact parameters, return values, an
 | **[Git Tools](references/git-tools.md)** | Git status, diff, log, commit, branch operations |
 | **[Diagnosis Workflows](references/diagnosis-workflows.md)** | Running structured diagnosis: start, build, test, runtime, status, evidence, inspect, verify, compare, result |
 | **[Plan Execution](references/plan-execution.md)** | Multi-step UI automation plans: run_plan, run_plan_decide, step types, variable binding, verification, suspend/resume |
+| **[Tool Surface](references/tool-surface.md)** | Tool groups (`XCFORGE_TOOL_GROUPS`), merged tools and their old names, argument casing, JSON results |
 | **[Auto-Detection & Defaults](references/auto-detection.md)** | Understanding parameter resolution, setting defaults, session profiles |
 | **[LLDB Debugger](references/lldb-debugger.md)** | Attach LLDB to running simulator processes — breakpoints, variable inspection, stack traces, step execution, arbitrary commands; 8 MCP tools + `xcforge debug` CLI |
 | **[Pose & Visual Iteration](references/pose.md)** | Build → install → launch + screenshot with named poses for visual design iteration. Supports app-side argument routing and pixel-coordinate tapping for layout work. |
@@ -106,7 +107,7 @@ bless(baseline: "login-screen", tests: "UITests/LoginTests")
 build_run_sim()                               → app running in simulator
 handle_alert(action: "accept_all")            → dismiss permission dialogs
 find_element(using: "accessibility id", value: "Save", scroll: true)
-click_element(element_id: "...")
+tap(elementId: "...")                         → or tap(id: "Save") in one call
 screenshot()                                  → verify result
 ```
 
@@ -195,7 +196,7 @@ device_install(device: "iPhone", app_path: "/path/to/App.app")
 device_launch(device: "iPhone", bundle_id: "com.app.id")
 device_apps(device: "iPhone")                 → list installed apps
 device_terminate(device: "iPhone", identifier: "com.app.id")
-device_screenshot(device: "iPhone")
+screenshot(device: "iPhone")
 wda_start(device: "iPhone", team: "ABCDE12345")  → UI tools now drive the phone
 ```
 
@@ -327,6 +328,9 @@ file is warned and skipped (never crashes).
 | `testPlan` | Default `.xctestplan` for `test_sim`/`build_and_test` when no `--testplan`/`testplan` arg is given. | **repo-only — never written to `defaults.json` or profiles** |
 | `testTimeout` | Per-project default test timeout, positive integer seconds. Precedence: explicit `timeoutSeconds` > `testTimeout` > `--long` (7200s) > 1800s default. Non-positive values rejected with warning. | **repo-only** |
 | `autoPromote` | `true` turns on 3-rep auto-promotion of explicit values to session defaults. Off (`false`) by default. | **repo-only** |
+| `toolGroups` | Which MCP tool groups the server lists at start, e.g. `+diagnose` or `build,test,ui`. See [Tool surface](tool-surface.md). `XCFORGE_TOOL_GROUPS` wins over it. | **repo-only** |
+
+The shared-Mac keys (`derivedDataPath`, `buildLock`, `jobs`, ...) are listed in [Shared Mac](shared-mac.md); `packagePath` in [SPM Tools](spm-tools.md).
 
 `configuration`, `testPlan`, `testTimeout`, and `autoPromote` are repo-only by
 design and never flow into the machine-global persisted JSON or named profiles.
@@ -466,6 +470,8 @@ xcforge defaults clear                   # Clear ONLY the active project's recor
 xcforge defaults clear --all             # Wipe every project's record on this machine
 ```
 
+`set` finds the project first (as a build would) and exits non-zero without writing when there is none: pass `--project`. A saved simulator that no longer exists is ignored with a warning and auto-detection is used instead.
+
 `clear` (no `--all`) auto-resolves the active project before clearing; if no project can be detected from cwd, it reports that and exits cleanly without touching disk.
 
 See [CLI Commands](cli-commands.md) for full details.
@@ -495,6 +501,7 @@ Compile-only build: no boot, install or launch, and no extra build-settings look
 | `long` | No | false | Raise the total time limit from 1800s to 7200s |
 | `fromSnapshot` | No | false | Build a snapshot of the working tree (git worktree under `~/.xcforge/snapshots`), unaffected by edits made during the build. Errors name the real files |
 | `jobs` | No | — | `-jobs N` for compiling. Also `XCFORGE_JOBS` and yaml `jobs` |
+| `for` | No | `agent` | `agent` returns compact JSON (`ok`, `summary`, `errors` with full paths, `warnings`, `xcresult`, ...); `human` returns the text report. Also on `build_sim` and `build_typecheck` |
 | `allErrors` | No | false | Build in the diagnostic DerivedData slot (`diagnosticDerivedDataPath`) and report every error, leaving the main cache alone |
 
 **Returns:** Bundle ID, app path, build duration, warnings count. On failure: structured errors with file:line from xcresult.
@@ -563,7 +570,7 @@ Build, boot, install and launch in one call (Xcode's Cmd+R). The simulator boots
 | `env` | No | — | Environment for the app, `KEY=VALUE` strings |
 | `url` | No | — | URL or deep link to open once the app is running |
 
-**Returns:** Bundle ID, app path, PID, timings. On failure: structured build errors, or, when the app dies within 2s of launch, `App running: false` with the exception, reason, top frames of the crashed thread and the crash report path.
+**Returns:** Bundle ID, app path, PID, timings. On failure: structured build errors, or, when the app dies within 8s of launch, `App running: false` with the exception, reason, top frames of the crashed thread and the crash report path.
 
 ---
 
@@ -631,7 +638,10 @@ xcforge plan ...           # CLI mode
 xcforge pose ...           # CLI mode
 xcforge bless ...          # CLI mode
 xcforge debug ...          # CLI mode
+xcforge --version          # Version (the MCP server reports the same)
 ```
+
+With `--json` (or when stdout isn't a terminal), errors are a JSON object `{"error": ..., "code": ...}` on stdout, like results.
 
 ---
 
@@ -663,7 +673,7 @@ xcforge build --json                             # Machine-readable JSON output 
 | `--url <url>` | URL or deep link to open once the app is running |
 | `--json` | Machine-readable JSON output |
 
-**Pipeline behavior:** On build success, boots the simulator (if not already booted) and waits for it, installs the scheme's application target, launches it, and checks it is still running 2s later. A crash at launch fails the command with the crash reason and frames. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
+**Pipeline behavior:** On build success, boots the simulator (if not already booted) and waits for it, installs the scheme's application target, launches it, and watches it for 8s (`XCFORGE_LAUNCH_WATCH_SECONDS`). A crash at launch fails the command with the crash reason and frames. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
 
 **JSON output:** With `--json`, emits a `BuildRunResult` with `build`, `boot`, `install`, `launch` phase statuses plus `appPid` and `appRunning` fields.
 
@@ -711,7 +721,7 @@ xcforge build compile --all-errors --jobs 4        # Every error, in the diagnos
 
 ### build typecheck
 
-Compile one target (its scheme, else `-target`), reusing the workspace's DerivedData.
+Compile one target (its scheme, else `-target`), reusing the workspace's DerivedData. A `-target` build writes into the configured `derivedDataPath` (or the scheme's DerivedData) through SYMROOT/OBJROOT, since xcodebuild rejects `-derivedDataPath` with `-target`.
 
 ```bash
 xcforge build typecheck ShutterCoachShared
@@ -1128,6 +1138,8 @@ xcforge wait-ready --for a11y:x --json
 
 UI automation via WebDriverAgent. 17 subcommands — `status` is the default.
 
+Every subcommand takes `--simulator <name|udid>`; each simulator has its own WDA, and the last one named is used when it's omitted. The first WDA start on a Mac builds xcforgeWDA (up to 15 minutes) and then waits up to 180s for the runner to answer (`XCFORGE_WDA_START_SECONDS`).
+
 ```bash
 xcforge ui status                                # Check WDA health
 xcforge ui session                               # Create WDA session
@@ -1502,7 +1514,7 @@ cat plan.json | xcforge plan run --stdin
 
 ### plan decide
 
-Resume a suspended plan with a decision.
+Resume a plan that `plan run` suspended, from a new process. Sessions are saved in `~/.xcforge/plan-sessions/` for an hour and used once.
 
 ```bash
 xcforge plan decide --session-id <UUID> --decision accept
@@ -1561,7 +1573,7 @@ See the [Pose & Visual Iteration](pose.md) reference for app-side routing patter
 
 ## xcforge bless
 
-Save a visual baseline, run tests, compare visual output, and suggest a commit message — all in one call.
+Save a visual baseline, run tests and compare visual output in one call.
 
 ```bash
 xcforge bless --baseline login-screen --tests "UITests/LoginTests"
@@ -1778,9 +1790,9 @@ List apps installed on a connected physical device.
 
 ---
 
-## device_screenshot
+## device_screenshot (deprecated: `screenshot` with `device`)
 
-Save a PNG of the device screen. Uses `devicectl device capture screenshot` (Xcode 26.6 and later), then the device's WebDriverAgent when `wda_start` has one running.
+Over MCP, call `screenshot(device: ...)`; `device_screenshot` still works for one release. Save a PNG of the device screen. Uses `devicectl device capture screenshot` (Xcode 26.6 and later), then the device's WebDriverAgent when `wda_start` has one running.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -1791,9 +1803,9 @@ CLI: `xcforge device screenshot --device <udid> [--output shot.png]`.
 
 ---
 
-## wda_start / wda_stop (UI automation on a real device)
+## `wda_start` / `wda_stop` (UI automation on a real device)
 
-`wda_start` builds xcforgeWDA for the device, signs it with your team (`-allowProvisioningUpdates`), launches it with `xcodebuild test-without-building` in the background, and finds its URL (the CoreDevice tunnel address, else the URL WDA logs). The MCP session's UI tools (`find_element`, `click_element`, `type_text`, ...) then target the device. A runner that already answers is reused.
+`wda_start` builds xcforgeWDA for the device, signs it with your team (`-allowProvisioningUpdates`), launches it with `xcodebuild test-without-building` in the background, and finds its URL (the CoreDevice tunnel address, else the URL WDA logs). The MCP session's UI tools (`find_element`, `tap`, `type_text`, ...) then target the device. A runner that already answers is reused.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -1819,6 +1831,8 @@ State lives in `~/.xcforge/wda/<udid>.json` (URL, runner pid, log path), so othe
 """#),
     SkillFile(path: "references/diagnosis-workflows.md", contents: #"""
 # Diagnosis Workflow Tools (10 MCP tools)
+
+**Off by default.** The diagnose group is not listed until you turn it on: `XCFORGE_TOOL_GROUPS=+diagnose`, `toolGroups: +diagnose` in `.xcforge.yaml`, or `tool_groups(enable: ["diagnose"])`. For most work `build_and_diagnose`, `test_sim` and `test_failures` cover the same ground.
 
 These tools provide structured diagnosis workflows via MCP. They mirror the `xcforge diagnose` CLI commands but are callable from any MCP client.
 
@@ -2856,7 +2870,7 @@ These steps pause execution and return a `session_id`. Call `run_plan_decide` to
 3. `run_plan` returns `session_id`, `suspendQuestion`, and screenshot
 4. Agent analyzes and calls `run_plan_decide(session_id, decision)`
 5. Execution resumes from the next step
-6. Sessions expire after 5 minutes
+6. MCP sessions live in the server's memory for 5 minutes. CLI sessions (`xcforge plan run`) are saved to `~/.xcforge/plan-sessions/` (`XCFORGE_PLAN_SESSION_DIR`) so `xcforge plan decide` in a new process can resume them for an hour; time spent waiting for the decision doesn't count against the plan's timeout
 
 ## Example: Complete Login Flow
 
@@ -3060,7 +3074,7 @@ Then visually compare all three screenshots.
 
 """#),
     SkillFile(path: "references/screenshot-visual.md", contents: #"""
-# Screenshot & Visual Tools (5 tools)
+# Screenshot & Visual Tools (7 tools)
 
 ## screenshot
 
@@ -3069,14 +3083,15 @@ Take a simulator screenshot. 0.3s latency — 44x faster than alternatives.
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `device` | No | — | A physical device's name or UDID: captures it instead (was `device_screenshot`) |
 | `format` | No | jpeg | Image format: `png` or `jpeg` |
 | `grid` | No | false | Overlay a point-coordinate grid on the image |
 | `crop` | No | — | `x,y,width,height` in device points (the coordinates taps use) |
-| `max_dimension` | No | — | Shrink so the longer side is at most this many pixels |
+| `maxDimension` | No | — | Shrink so the longer side is at most this many pixels |
 | `waitFor` / `timeout` | No | — | Readiness signal to wait for before capturing |
 
 **Token budget.** A full-resolution iPhone screenshot costs several thousand tokens. Pass
-`max_dimension: 800` for a look at the screen, and `crop` to see one area at full detail. The
+`maxDimension: 800` for a look at the screen, and `crop` to see one area at full detail. The
 result line gives the device's point size, the crop, the output pixels and, when scaled, how
 many points one pixel covers, so coordinates read off the image map back to taps.
 
@@ -3170,6 +3185,37 @@ Codify the baseline-write → test → diff → commit cycle in one call. Saves 
 
 **CLI:** `xcforge bless --baseline <name> --tests <filter>`
 
+---
+
+## accessibility_check
+
+Screenshot the current screen at several Dynamic Type sizes and compare each with the first, to
+spot truncation and layout breaks. Restores the text size it found.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `sizes` | No | XS, L, XXXL, AccessibilityXXXL | Comma-separated content size categories, or `all` |
+| `threshold` | No | 5.0 | Max diff % against the base size |
+| `settleTime` | No | 1.5 | Seconds to wait after each size change |
+
+---
+
+## localization_check
+
+Relaunch the app in several languages (including right-to-left ones) and compare each screenshot
+with the first. Relaunches without the locale arguments afterwards.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `bundleId` | No | Last build | App to relaunch |
+| `locales` | No | en, de, ja, ar, he | Comma-separated locales, or `all` for 10 |
+| `threshold` | No | 10.0 | Max diff % against the base locale |
+| `settleTime` | No | 3.0 | Seconds to wait after each relaunch |
+
+CLI: `xcforge accessibility dynamic-type` and `xcforge accessibility localization`.
+
 """#),
     SkillFile(path: "references/shared-mac.md", contents: #"""
 # Sharing one Mac between sessions
@@ -3194,7 +3240,7 @@ Precedence: flag/argument, then env var, then `.xcforge.yaml`. Relative yaml pat
 
 They apply to `build compile|run|clean`, `build-test`, `test run|failures|list|rerun-failed` and the MCP tools `build_sim`, `build_run_sim`, `build_compile`, `clean`, `test_sim`, `test_failures`, `test_coverage`, `build_and_diagnose`, `build_and_test`, `list_tests`, `bless`.
 
-On a 16 GB Mac, `jobs: 4` keeps a build from pushing other sessions into swap. `--all-errors` builds go to their own DerivedData so a "show me every error" run doesn't throw away the main incremental cache. `--from-snapshot` builds share one worktree per repo and take turns on its lock.
+On a 16 GB Mac, `jobs: 4` keeps a build from pushing other sessions into swap. `--all-errors` builds go to their own DerivedData so a "show me every error" run doesn't throw away the main incremental cache. `--from-snapshot` builds share one worktree per repo and take turns on its lock. The worktree stays registered in the repo (`git worktree list` shows it under `~/.xcforge/snapshots`) so the next snapshot build is incremental; remove it with `git worktree remove --force <path>` when you no longer need it.
 
 ## Build lock
 
@@ -3289,7 +3335,7 @@ Install a .app bundle on a simulator.
 
 ## launch_app
 
-Launch an installed app, then check it is still running 2s later. When it isn't, the call fails with the exception, reason, crashed thread's top frames and the `.ips` crash report path.
+Launch an installed app, then watch it for 8s (`XCFORGE_LAUNCH_WATCH_SECONDS`). When it dies, the call fails with the exception, reason, crashed thread's top frames and the `.ips` crash report path.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -3528,6 +3574,7 @@ Set device orientation via WebDriverAgent.
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `orientation` | **Yes** | — | One of: `PORTRAIT`, `LANDSCAPE`, `LANDSCAPE_LEFT`, `LANDSCAPE_RIGHT` |
+| `simulator` | No | last one used | Simulator name or UDID; each simulator has its own WDA |
 
 **Requires:** WDA running on the simulator.
 
@@ -3557,7 +3604,7 @@ Get simulator display metrics.
 }
 ```
 
-**Use case:** Determine screen resolution and pixel scale for coordinate conversion in UI automation (e.g., converting pixel coordinates to point coordinates for `tap_coordinates`).
+**Use case:** Determine screen resolution and pixel scale for coordinate conversion in UI automation (e.g., converting pixel coordinates to point coordinates for `tap`).
 
 """#),
     SkillFile(path: "references/spm-tools.md", contents: #"""
@@ -3664,7 +3711,8 @@ Run tests and return structured xcresult summary.
 | `testplan` | No | — | Test plan name (if project uses test plans) |
 | `filter` | No | — | Test filter — accepts relaxed formats (see below) |
 | `coverage` | No | false | Enable code coverage collection |
-| `for` | No | `human` | Output audience: `human` preserves full JSON; `agent` returns a slim ≤10-field projection |
+| `for` | No | `agent` | `agent` returns slim JSON (≤10 fields); `human` returns the full text report |
+| `rerunFailed` | No | false | Rerun only the last run's failures with its project, scheme, simulator, plan, configuration and env (unless given); skips the build when nothing changed. MCP form of `xcforge test rerun-failed` |
 | `gate` | No | false | Subtract IDs in `.xcforge/known-failures.yaml` when computing `succeeded`. Raw failure list unchanged |
 
 **Test IDs:** one format everywhere: `Target/Suite/test()` for Swift Testing,
@@ -3785,7 +3833,7 @@ Build then test in one call. Stops on a build failure with structured diagnostic
 | `testplan` | No | — | Test plan name |
 | `filter` | No | — | Test filter — accepts relaxed formats (auto-resolves target prefix) |
 | `coverage` | No | false | Enable code coverage collection |
-| `for` | No | `human` | Output audience: `human` preserves full JSON; `agent` returns a slim ≤10-field projection |
+| `for` | No | `agent` | `agent` returns slim JSON (≤10 fields); `human` returns the full text report |
 | `gate` | No | false | Subtract IDs in `.xcforge/known-failures.yaml` when computing `succeeded`. Raw failure list unchanged |
 
 **Behavior:**
@@ -3795,7 +3843,7 @@ Build then test in one call. Stops on a build failure with structured diagnostic
 
 **Returns:** Phase indicator (`build` or `test`), build elapsed time, build diagnostics (on failure), test execution result (on success).
 
-**Failure persistence:** On a failing run, failure IDs and the run settings (project, test plan, configuration, env) are saved to `.xcforge/last-failures.json` (cleared on green). `xcforge test rerun-failed` replays exactly those IDs with the same settings, and skips the build when nothing changed.
+**Failure persistence:** On a failing run, failure IDs and the run settings (project, test plan, configuration, env) are saved to `.xcforge/last-failures.json` (cleared on green). `xcforge test rerun-failed` (or `test_sim` with `rerunFailed: true`) replays exactly those IDs with the same settings, and skips the build when nothing changed.
 
 ---
 
@@ -3827,8 +3875,77 @@ Parse and summarize a `.xctestplan` file without running tests.
 **Returns:** Test plan name, version, default options (coverage, sanitizers), configurations list, test targets with parallelizable flag and skipped-test counts. Searches `xcshareddata/xctestplans/` and recursively under the project directory.
 
 """#),
+    SkillFile(path: "references/tool-surface.md", contents: #"""
+# Tool surface: groups, names, arguments and results
+
+How the MCP tool list looks to an agent, and how to make it smaller.
+
+## Tool groups
+
+Tools come in groups (`build`, `test`, `ui`, `sim`, `git`, `diagnose`, ...; `tool_groups` lists them). The `diagnose` group
+starts **off**: its ten workflow tools mostly repeat `build_and_diagnose`, `test_sim` and
+`test_failures`. Calling one while it is off says how to turn it on.
+
+Choose the starting set with `XCFORGE_TOOL_GROUPS` or the `.xcforge.yaml` key `toolGroups`
+(the environment variable wins):
+
+| Value | Effect |
+|-------|--------|
+| `+diagnose` | Defaults plus the diagnose group |
+| `-git,-visual` | Defaults without these groups |
+| `build,test,ui` | Only these groups (and `session-state`, which can't be turned off) |
+| `all` | Every group |
+
+At runtime, `tool_groups` lists groups and enables or disables them (`enable: ["diagnose"]`).
+After a change xcforge sends `notifications/tools/list_changed`, so clients that follow it fetch the
+new list.
+
+## Merged tools and deprecated names
+
+| Old name (works for one release) | Use instead |
+|----------------------------------|-------------|
+| `click_element` | `tap` with `elementId` |
+| `tap_by_id` | `tap` with `id` |
+| `tap_by` | `tap` with `using`, `value` |
+| `tap_coordinates` | `tap` with `x`, `y` |
+| `double_tap` | `tap` with `x`, `y`, `count: 2` |
+| `long_press` | `tap` with `x`, `y`, `durationMs` |
+| `ui_tap_pixel` | `tap` with `x`, `y`, `pixels: true` |
+| `indigo_tap` | `tap` with `x`, `y`, `hid: true` |
+| `indigo_swipe` | `swipe` with `hid: true` |
+| `list_elements` | `get_source` with `format: list` |
+| `find_elements` | `find_element` with `all: true` |
+| `device_screenshot` | `screenshot` with `device` |
+
+Old names are not listed but still run, and their result ends with a note naming the replacement.
+The log tools (`start_log_capture`/`read_logs`, the app console tools) stay separate: one reads the
+system log, the other the app's own stdout and stderr.
+
+## Argument names
+
+Every argument is listed in camelCase (`includeConsole`, `derivedDataPath`, `waitFor`). The
+snake_case spelling (`include_console`) is accepted too, so older prompts keep working. An argument
+that matches nothing is rejected with the closest real name.
+
+## Results
+
+- Build and test tools (`build_compile`, `build_sim`, `build_typecheck`, `test_sim`,
+  `build_and_test`) return compact JSON by default over MCP: `ok`, a one-line `summary`, errors with
+  full paths, and where to look next. Pass `for: "human"` for the text report. The CLI keeps text
+  unless `--json` or `--for agent` is given.
+- Diagnose and plan tools return compact JSON (no indentation).
+- `isError` is true when the call didn't do what was asked: the build or tests failed, a check
+  failed its threshold, a wait timed out, or the arguments were wrong.
+- Read-only tools (status, lists, logs, screenshots, `get_source`, `git_status`, ...) carry
+  `readOnlyHint`, so clients can run them without asking.
+
+## Version
+
+`xcforge --version` prints the version the MCP server also reports in its `initialize` response.
+
+"""#),
     SkillFile(path: "references/ui-automation.md", contents: #"""
-# UI Automation Tools (20 tools)
+# UI Automation Tools (13 tools)
 
 All UI tools communicate directly with WebDriverAgent via HTTP — no Appium, no Node.js, no Python.
 
@@ -3840,9 +3957,13 @@ two simulators booted the screenshot and the taps go to the same one. The last s
 used when a call names none; until then calls go to the booted simulator. From the CLI, set
 `XCFORGE_SIMULATOR=<name or UDID>` (`XCFORGE_DEVICE` for a phone).
 
-**Waiting instead of sleeping.** Taps, swipes, typing and `handle_alert` take `wait_for` (an
-accessibility id or label to appear), `until_gone` (one to disappear) and `timeout` (seconds,
+**Waiting instead of sleeping.** Taps, swipes, typing and `handle_alert` take `waitFor` (an
+accessibility id or label to appear), `untilGone` (one to disappear) and `timeout` (seconds,
 default 10). The result says whether the wait held; a wait that times out marks the call as an error.
+
+**Merged tools.** `tap` replaces eight tap tools, `swipe` takes `hid`, `get_source` takes
+`format: list` (was `list_elements`), and `find_element` takes `all` (was `find_elements`). The old
+names still work for one release and say what replaces them.
 
 **Permission alerts.** `alert_action: accept|dismiss` on `wda_create_session` (or
 `XCFORGE_ALERT_ACTION`) has WDA answer system alerts by itself. `sim_privacy grant` grants a
@@ -3927,23 +4048,6 @@ additive (`encodeIfPresent`; old consumers ignore unknown keys).
 
 ---
 
-## list_elements (CLI: `xcforge ui ls`)
-
-Flat one-line-per-element listing. Format: `<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>`, then ` | value=…`, ` | disabled` and ` | selected` when they apply. Wrapper containers with nothing to say, hidden elements and off-screen elements are left out; output is cut at an element boundary at 50KB. Optional scope filter restricts the listing to a single a11y-id and its descendants.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `scope` | No | — | a11y-id to scope the listing to |
-| `source` | No | `auto` | Tree source: `auto` (WDA when sim is booted, else AXP), `wda` (iOS app via WebDriverAgent), `axp` (macOS Accessibility) |
-
-**Source policy.** `auto` uses WDA (starting it when needed) whenever a simulator is booted or
-WDA points at a phone, with no fallback: a failure is reported rather than answered from the
-Simulator app's own accessibility tree. The macOS accessibility tree (`axp`) reads only the
-simulator's windows and is used as a shortcut only when exactly one simulator is booted and no
-phone is attached.
-
----
-
 ## handle_alert
 
 The smartest alert handler available. Handles system permission dialogs, ContactsUI dialogs, and in-app alerts.
@@ -3968,6 +4072,31 @@ The smartest alert handler available. Handles system permission dialogs, Contact
 
 ---
 
+## tap
+
+Tap one target. Pass exactly one of `elementId`, `id`, `using` + `value`, or `x` + `y`.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `elementId` | One target | — | Element ID from `find_element` |
+| `id` | One target | — | Accessibility id; found and tapped in one call, re-found and retried once if stale |
+| `using` + `value` | One target | — | Any WDA query (`accessibility id`, `class name`, `predicate string`, `class chain`), same retry |
+| `x` + `y` | One target | — | Point coordinates (screenshot pixels with `pixels: true`) |
+| `count` | No | 1 | 2 double-taps. Needs `x`, `y` |
+| `durationMs` | No | — | Hold this long (long press). Needs `x`, `y` |
+| `pixels` | No | false | `x`, `y` are screenshot pixels, divided by the simulator's scale |
+| `hid` | No | false | Native HID on a simulator (sub-5ms, bypasses WDA, falls back to it) |
+
+Coordinates are in the interface's own points. With `hid`, WDA's orientation is read first so taps
+land correctly in landscape and upside down (inferred mapping; check on a Mac).
+
+**Replaces** (still callable for one release, with a note in the result): `click_element`
+(`elementId`), `tap_by_id` (`id`), `tap_by` (`using`, `value`), `tap_coordinates` (`x`, `y`),
+`double_tap` (`count: 2`), `long_press` (`durationMs`), `ui_tap_pixel` (`pixels: true`),
+`indigo_tap` (`hid: true`).
+
+---
+
 ## find_element
 
 Find a single UI element. Supports auto-scrolling to off-screen elements.
@@ -3978,10 +4107,11 @@ Find a single UI element. Supports auto-scrolling to off-screen elements.
 | `value` | **Yes** | — | Search value matching the strategy |
 | `scroll` | No | false | Enable auto-scroll to find off-screen elements |
 | `direction` | No | auto | Scroll direction: `auto` (smart — detects boundaries, reverses automatically), `up`, `down`, `left`, `right` |
-| `max_swipes` | No | 10 | Maximum scroll attempts |
+| `maxSwipes` | No | 10 | Maximum scroll attempts |
 | `index` | No | 0 | Which match to use when several match |
 | `timeout` | No | — | Seconds to wait for the element to appear |
-| `until_gone` | No | false | Wait for the element to disappear instead |
+| `untilGone` | No | false | Wait for the element to disappear instead |
+| `all` | No | false | Return every match's element ID, rect, label and type (counting list items) |
 
 When several elements match, the result says how many and lists up to 10 with their label and
 frame, so you can pick one with `index` or tighten the query.
@@ -3991,7 +4121,7 @@ frame, so you can pick one with `index` or tighten the query.
 2. Calculated drag — computed from screen geometry
 3. Iterative swipe — with stall detection and automatic direction reversal
 
-**Returns:** Element ID (use with `click_element`, `get_text`, etc.), element rect, label, type.
+**Returns:** Element ID (use with `tap`, `get_text`, etc.), element rect, label, type.
 
 ### Strategy Guide
 
@@ -4004,94 +4134,18 @@ frame, so you can pick one with `index` or tighten the query.
 
 ---
 
-## find_elements
-
-Find multiple matching elements.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `using` | **Yes** | — | Same strategies as `find_element` |
-| `value` | **Yes** | — | Search value |
-
-**Returns:** Array of element IDs with rects, labels, types.
-
----
-
-## click_element
-
-Tap a UI element by ID.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `element_id` | **Yes** | — | Element ID from `find_element`/`find_elements` |
-
----
-
-## tap_coordinates
-
-Tap at specific screen coordinates (point coordinates).
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `x` | **Yes** | — | X coordinate in points |
-| `y` | **Yes** | — | Y coordinate in points |
-
-**Note:** Use point coordinates, not pixels. For pixel coordinates, see `ui_tap_pixel`.
-
----
-
-## ui_tap_pixel
-
-Tap at pixel coordinates, automatically converting to point coordinates via simulator scale. Useful for screenshot annotation workflows or tools that report pixel positions.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `x` | **Yes** | — | X coordinate in pixels |
-| `y` | **Yes** | — | Y coordinate in pixels |
-| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
-
-**Returns:** Confirmation of tap, including both pixel and point coordinates for verification.
-
-**Error handling:** If simulator scale cannot be determined, returns error with hint to use `tap_coordinates` with point coordinates instead.
-
-**Conversion:** Internally divides pixel coordinates by simulator scale (e.g., pixel 100 on 2x scale = point 50). Get scale via `sim_info`.
-
----
-
-## double_tap
-
-Double-tap at coordinates.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `x` | **Yes** | — | X coordinate |
-| `y` | **Yes** | — | Y coordinate |
-
----
-
-## long_press
-
-Long-press at coordinates with optional duration.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `x` | **Yes** | — | X coordinate |
-| `y` | **Yes** | — | Y coordinate |
-| `duration_ms` | No | 1000 | Press duration in milliseconds |
-
----
-
 ## swipe
 
 Swipe from one point to another.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `start_x` | **Yes** | — | Start X coordinate |
-| `start_y` | **Yes** | — | Start Y coordinate |
-| `end_x` | **Yes** | — | End X coordinate |
-| `end_y` | **Yes** | — | End Y coordinate |
-| `duration_ms` | No | 300 | Swipe duration in milliseconds |
+| `startX` | **Yes** | — | Start X (points) |
+| `startY` | **Yes** | — | Start Y (points) |
+| `endX` | **Yes** | — | End X (points) |
+| `endY` | **Yes** | — | End Y (points) |
+| `durationMs` | No | 300 | Swipe duration in milliseconds |
+| `hid` | No | false | Native HID on a simulator (sub-5ms per step, bypasses WDA, falls back to it) |
 
 ---
 
@@ -4157,46 +4211,26 @@ Get text content of an element.
 
 ## get_source
 
-Get the full view hierarchy.
+The on-screen view hierarchy. Starts WebDriverAgent when it isn't running.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
-| `format` | No | json | Output format: `json`, `xml`, `description` |
+| `format` | No | json | `list`, `json`, `xml` or `description` |
+| `scope` | No | — | `format: list` only: a11y-id to restrict the listing to, with its descendants |
+| `source` | No | `auto` | `format: list` only: `auto` (WDA when a simulator is booted, else AXP), `wda`, `axp` |
 
-Starts WebDriverAgent when it isn't running. **Use sparingly** — returns the entire UI tree.
-Prefer `list_elements` (one line per element) or `find_element` for targeted lookups.
+**`format: list`** (CLI: `xcforge ui ls`) is the cheap one: one line per element,
+`<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>`, then ` | value=…`, ` | disabled` and ` | selected`
+when they apply. Wrapper containers with nothing to say, hidden elements and off-screen elements are
+left out; output is cut at an element boundary at 50KB.
 
----
+**Source policy.** `auto` uses WDA (starting it when needed) whenever a simulator is booted or
+WDA points at a phone, with no fallback: a failure is reported rather than answered from the
+Simulator app's own accessibility tree. The macOS accessibility tree (`axp`) reads only the
+simulator's windows and is used as a shortcut only when exactly one simulator is booted and no
+phone is attached.
 
-## indigo_tap
-
-Tap at coordinates via native HID (sub-5ms, bypasses WDA). Falls back to WDA if unavailable.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `x` | **Yes** | — | X coordinate (points) |
-| `y` | **Yes** | — | Y coordinate (points) |
-| `simulator` | No | `"booted"` | Simulator UDID or `"booted"` |
-
-**Performance:** Sub-5ms latency via native HID when available, vs ~50ms via WDA.
-
-Coordinates are in the interface's own points. When WDA is running, its orientation is read first
-so taps land correctly in landscape and upside down (inferred mapping; check on a Mac).
-
----
-
-## indigo_swipe
-
-Swipe via native HID (sub-5ms per step, bypasses WDA). Falls back to WDA if unavailable.
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `start_x` | **Yes** | — | Start X (points) |
-| `start_y` | **Yes** | — | Start Y (points) |
-| `end_x` | **Yes** | — | End X (points) |
-| `end_y` | **Yes** | — | End Y (points) |
-| `duration_ms` | No | 300 | Swipe duration in milliseconds |
-| `simulator` | No | `"booted"` | Simulator UDID or `"booted"` |
+The other formats return the entire tree; use them sparingly.
 
 ---
 
