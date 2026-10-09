@@ -106,7 +106,7 @@ public enum SimTools {
     Tool(
       name: "launch_app",
       description: """
-        Launch an app on a booted simulator and check it is still running 2s later. \
+        Launch an app on a booted simulator and watch it for 8s for a startup crash. \
         An app that crashed at launch fails with its crash report's exception and top frames. \
         Bundle ID is auto-detected from last build if omitted.
         """,
@@ -607,7 +607,7 @@ public enum SimTools {
     }
   }
 
-  /// Launch the app and check it is still running `AppLiveness.settleSeconds` later; an
+  /// Launch the app and watch it for `AppLiveness.settleSeconds`; an
   /// app that died is a failure that carries its crash report. `environment` entries are
   /// `KEY=VALUE`; `url` is opened in the app after it starts.
   public static func executeLaunchApp(

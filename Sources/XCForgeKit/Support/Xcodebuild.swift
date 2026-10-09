@@ -127,8 +127,9 @@ public enum Xcodebuild {
     let arguments =
       options.defaultFlags == false ? original.filter { !xcforgeDefaultFlags.contains($0) } : original
     var insert: [String] = []
+    // -target builds can't take -derivedDataPath; they set SYMROOT/OBJROOT instead.
     if let dd = options.derivedDataPath, !dd.isEmpty, !arguments.contains("-derivedDataPath"),
-      !arguments.contains("-xctestrun")
+      !arguments.contains("-xctestrun"), !arguments.contains("-target")
     {
       insert += ["-derivedDataPath", dd]
     }

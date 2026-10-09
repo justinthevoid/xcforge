@@ -1,5 +1,6 @@
 import Foundation
 import MCP
+import os
 
 /// Per-invocation knobs applied to every `xcodebuild` call xcforge makes.
 ///
@@ -182,7 +183,9 @@ public struct XcodebuildOptions: Sendable, Equatable {
     let ts = Int(Date().timeIntervalSince1970)
     let pid = ProcessInfo.processInfo.processIdentifier
     let rand = UUID().uuidString.prefix(6).lowercased()
-    return "\(artifactDirectory())/xcf-\(prefix)-\(ts)-\(pid)-\(rand).\(ext)"
+    let directory = artifactDirectory()
+    ArtifactPruning.pruneOnce(directory: directory)
+    return "\(directory)/xcf-\(prefix)-\(ts)-\(pid)-\(rand).\(ext)"
   }
 
   /// Result bundle path for one phase. When the caller fixed `resultBundlePath`, the
@@ -315,5 +318,42 @@ public struct XcodebuildOptions: Sendable, Equatable {
       icons: tool.icons,
       _meta: tool._meta
     )
+  }
+}
+
+/// Result bundles and diagnostic snapshots xcforge writes pile up in the artifact directory
+/// (2-3 GB a day on a busy Mac). The first artifact path a process asks for removes xcforge's
+/// own artifacts older than `maxAge`.
+enum ArtifactPruning {
+  /// Two days: long enough for `test failures` and coverage to read yesterday's run.
+  static let maxAge: TimeInterval = 2 * 24 * 3600
+
+  private static let pruned = OSAllocatedUnfairLock(initialState: Set<String>())
+
+  static func pruneOnce(directory: String) {
+    guard pruned.withLock({ $0.insert(directory).inserted }) else { return }
+    prune(directory: directory, now: Date())
+  }
+
+  /// Remove `xcf-*` result bundles, snapshots and logs older than `maxAge`. Returns the names removed.
+  @discardableResult
+  static func prune(directory: String, now: Date, maxAge: TimeInterval = maxAge) -> [String] {
+    let fm = FileManager.default
+    guard let names = try? fm.contentsOfDirectory(atPath: directory) else { return [] }
+    var removed: [String] = []
+    for name in names where isXCForgeArtifact(name) {
+      let path = (directory as NSString).appendingPathComponent(name)
+      guard let modified = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date,
+        now.timeIntervalSince(modified) > maxAge
+      else { continue }
+      if (try? fm.removeItem(atPath: path)) != nil { removed.append(name) }
+    }
+    return removed
+  }
+
+  /// `xcf-<prefix>-<seconds>-<pid>-<random>.<ext>`, as `uniqueArtifactPath` names them.
+  static func isXCForgeArtifact(_ name: String) -> Bool {
+    guard name.hasPrefix("xcf-") else { return false }
+    return [".xcresult", ".txt", ".log"].contains { name.hasSuffix($0) }
   }
 }

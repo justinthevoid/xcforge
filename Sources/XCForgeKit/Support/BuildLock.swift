@@ -146,16 +146,24 @@ public enum BuildLock {
     if let result = try? await env.shell.run(
       "/usr/sbin/lsof", arguments: ["-F", "pc", path], timeout: 5)
     {
-      var pid: String?
-      for line in result.stdout.split(separator: "\n") {
-        if line.hasPrefix("p") {
-          pid = String(line.dropFirst())
-        } else if line.hasPrefix("c"), let p = pid {
-          holders.append("pid \(p) \(line.dropFirst())")
-        }
-      }
+      holders = externalHolders(lsofOutput: result.stdout, queued: Set(first.queue.map { String($0.pid) }))
     }
     return status(path: path, externalHolders: holders)
+  }
+
+  /// Processes `lsof -F pc` shows with the lock file open, minus xcforge processes that are
+  /// only queued for it (they open the file to wait).
+  static func externalHolders(lsofOutput: String, queued: Set<String>) -> [String] {
+    var holders: [String] = []
+    var pid: String?
+    for line in lsofOutput.split(separator: "\n") {
+      if line.hasPrefix("p") {
+        pid = String(line.dropFirst())
+      } else if line.hasPrefix("c"), let p = pid, !queued.contains(p) {
+        holders.append("pid \(p) \(line.dropFirst())")
+      }
+    }
+    return holders
   }
 
   /// Resolve the lock path from explicit value, `XCFORGE_BUILD_LOCK` or `.xcforge.yaml`.

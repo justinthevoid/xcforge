@@ -88,7 +88,7 @@ Build, boot, install and launch in one call (Xcode's Cmd+R). The simulator boots
 | `env` | No | — | Environment for the app, `KEY=VALUE` strings |
 | `url` | No | — | URL or deep link to open once the app is running |
 
-**Returns:** Bundle ID, app path, PID, timings. On failure: structured build errors, or, when the app dies within 2s of launch, `App running: false` with the exception, reason, top frames of the crashed thread and the crash report path.
+**Returns:** Bundle ID, app path, PID, timings. On failure: structured build errors, or, when the app dies within 8s of launch, `App running: false` with the exception, reason, top frames of the crashed thread and the crash report path.
 
 ---
 

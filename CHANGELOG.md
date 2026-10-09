@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Test run options:** `retries`, `iterations`, `untilFailure`, `parallel`, `testTimeoutSeconds`, `skipBuild`, `includeConsole`, `env` and `timeoutSeconds` on `test_sim` and `build_and_test`, with matching flags (`--retries`, `--iterations`, `--until-failure`, `--parallel/--no-parallel`, `--test-timeout`, `--no-build`, `--include-console`, `--env`, `--timeout-seconds`) on `test run`, `build-test` and `test rerun-failed`
 - Tests that fail and then pass on retry are listed as flaky (`flaky` in agent JSON)
 - `test rerun-failed` reuses the recorded project, test plan, configuration and env, and skips build-for-testing when no source file changed since the last one (`--build` forces it)
-- **Launches report a crash at startup.** `launch_app`, `build_run_sim`, `sim launch` and `build run` check the app is still running 2s after launch; when it isn't, they fail with the exception, reason, crashed thread's top frames and the `.ips` report path
+- **Launches report a crash at startup.** `launch_app`, `build_run_sim`, `sim launch` and `build run` watch the app for 8s after launch (`XCFORGE_LAUNCH_WATCH_SECONDS`) and wait up to 15s for its crash report (`XCFORGE_CRASH_REPORT_WAIT_SECONDS`); when it dies, they fail with the exception, reason, crashed thread's top frames and the `.ips` report path
 - Launch arguments, environment and a deep link: `args`, `env` (KEY=VALUE), `url` and `terminate` on `launch_app` and `build_run_sim`; `--arg`, `--env`, `--url` and `--no-terminate` on `sim launch` and `build run`; `--env` on `console launch`
 - `open_url` / `sim openurl` open a URL or deep link on a simulator
 - `clean` / `build clean` take `configuration` and `derivedData: true` / `--derived-data`, which deletes this project's DerivedData folder (and only that one)
@@ -108,6 +108,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Screenshots report the device's point size, not the Simulator window's, and the fallback writes a new file per capture instead of one shared `/tmp` file; CLI `screenshot capture` writes a new file unless `--output` is given
 
 ### Fixed
+- `build typecheck --target` works with a configured DerivedData folder: `-target` builds use SYMROOT/OBJROOT inside it instead of `-derivedDataPath`, which xcodebuild rejects. An xcodebuild usage error is reported as `xcodebuild_usage`, not a compile failure
+- Coordinate taps and swipes use HID input on Xcode 27, which moved SimulatorKit to `Contents/SharedFrameworks`. When they fall back to WDA the result says why HID wasn't used
+- Launches watch the app for 8s (was 2s) and wait up to 15s for a late crash report; an exit without a report says how long after launch it died and where reports land
+- A relative `--project` path resolves against the working directory
+- The first `wda start` gets 15 minutes to build xcforgeWDA and 3 minutes (`XCFORGE_WDA_START_SECONDS`) for the runner to answer, and a failure names the cause, such as an xcforgeWDA copy too old for this Xcode. A second call waits for a deploy in progress instead of failing
+- `lock status` no longer lists queued xcforge processes as holders
+- A timed-out test run doesn't say the build was skipped or count xcodebuild's own timeout entries as failed tests
+- Watchdog snapshots that aren't reported are deleted, and xcforge's own result bundles, snapshots and logs older than two days are pruned from the artifact folder
+- Landscape screenshots report landscape point sizes
+- All `ui` commands take `--simulator`, and `set_orientation` takes `simulator`
+- With `--json` (or piped output), errors are printed as a JSON envelope on stdout
+- `bless` help no longer promises a commit message
 - With Xcode 27, `device list` (and anything resolving a phone by name) no longer lists simulators, which Device Hub's `devicectl` now includes, and the state column shows the tunnel state (connected, disconnected, unavailable) instead of `devicectl`'s display hint
 - A timed-out `build-for-testing` is reported as a build failure instead of continuing to `test-without-building` against stale products
 - `test_plan_inspect` finds plans inside `App.xcodeproj/xcshareddata/xctestplans` and decodes Xcode's string-form `skippedTests` and plans with missing sections

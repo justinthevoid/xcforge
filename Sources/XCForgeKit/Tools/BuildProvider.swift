@@ -80,6 +80,26 @@ public enum BuildTools {
   }
 
   /// Classify the reason a build failed from xcodebuild stderr.
+  /// SYMROOT/OBJROOT that put a `-target` build where a scheme build into `derivedData` puts
+  /// its products and intermediates.
+  static func targetBuildRoots(derivedData: String) -> [String] {
+    let root = (derivedData as NSString).expandingTildeInPath
+    return [
+      "SYMROOT=\((root as NSString).appendingPathComponent("Build/Products"))",
+      "OBJROOT=\((root as NSString).appendingPathComponent("Build/Intermediates.noindex"))",
+    ]
+  }
+
+  /// xcodebuild rejecting its own arguments ("xcodebuild: error: The flag -scheme ... is
+  /// required ..."), which is not a compile error.
+  static func xcodebuildUsageError(_ output: String) -> String? {
+    for line in output.split(separator: "\n") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("xcodebuild: error:") { return trimmed }
+    }
+    return nil
+  }
+
   static func classifyFailureReason(stderr: String) -> String {
     let lower = stderr.lowercased()
     if isInfrastructureMessage(stderr) {
@@ -465,16 +485,16 @@ public enum BuildTools {
 
     var buildArgs = selector + ["-configuration", configuration]
     if selector.contains("-target") {
-      // -target builds take an SDK, not a destination; DerivedData is the scheme's so the
-      // dependencies it already built are reused.
+      // -target builds take an SDK, not a destination. xcodebuild refuses -derivedDataPath
+      // without a scheme, so the build goes into the scheme's DerivedData (the configured one,
+      // else the default scheme's) through SYMROOT/OBJROOT, reusing the dependencies built there.
       buildArgs += ["-sdk", "iphonesimulator", "ONLY_ACTIVE_ARCH=YES"]
       let projectDir = (resolvedProject as NSString).deletingLastPathComponent
-      if XcodebuildOptions.effective(cwd: projectDir).derivedDataPath == nil,
-        let defaultScheme = try? await env.session.resolveScheme(nil, project: sourceProject),
-        let derivedData = await schemeDerivedData(project: resolvedProject, scheme: defaultScheme, env: env)
-      {
-        buildArgs += ["-derivedDataPath", derivedData]
+      var derivedData = XcodebuildOptions.effective(cwd: projectDir).derivedDataPath
+      if derivedData == nil, let defaultScheme = try? await env.session.resolveScheme(nil, project: sourceProject) {
+        derivedData = await schemeDerivedData(project: resolvedProject, scheme: defaultScheme, env: env)
       }
+      if let derivedData { buildArgs += targetBuildRoots(derivedData: derivedData) }
     } else {
       buildArgs += ["-destination", destination]
     }
@@ -509,6 +529,7 @@ public enum BuildTools {
     } else {
       // A sample of a healthy build is noise; only a timeout or `diagnose` reports one.
       diagResult = nil
+      try? FileManager.default.removeItem(atPath: snapshotPath)
     }
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
 
@@ -566,6 +587,8 @@ public enum BuildTools {
       let reason: String
       if let timeout = Xcodebuild.timeoutKind(result) {
         reason = "timeout_\(timeout.rawValue)"
+      } else if xcodebuildUsageError(output) != nil, issues.allSatisfy({ $0.location == nil }) {
+        reason = "xcodebuild_usage"
       } else if !issues.isEmpty {
         reason = classifyFailureFromIssues(issues)
       } else {
@@ -1011,6 +1034,8 @@ public enum BuildTools {
     // A sample of a healthy build is noise; only a timeout or `diagnose` reports one.
     if buildResult.exitCode != -1 && !(input.diagnose ?? false) {
       buildDiagResult = nil
+      _ = await buildWatchdog.latestResult
+      try? FileManager.default.removeItem(atPath: buildSnapshotPath)
     } else if let captured = await buildWatchdog.latestResult {
       buildDiagResult = captured
     } else {

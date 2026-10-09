@@ -6,12 +6,33 @@ import Foundation
 /// startup still "launches". Simulator apps are host processes, so their pid can be
 /// checked with `ps`, and their crash reports land in the host's DiagnosticReports.
 public enum AppLiveness {
-  /// How long a launched app must survive to count as running.
-  static let settleSeconds: TimeInterval = 2
+  /// How long a launched app is watched before it counts as running. Startup crashes after
+  /// `main` (a bad first view, a failed migration) often land a few seconds in, later on a
+  /// loaded Mac. `XCFORGE_LAUNCH_WATCH_SECONDS` overrides it.
+  static var settleSeconds: TimeInterval {
+    seconds("XCFORGE_LAUNCH_WATCH_SECONDS", default: 8)
+  }
+
+  /// How long to wait for the crash report once the app has died. macOS writes `.ips` files
+  /// late under memory pressure. `XCFORGE_CRASH_REPORT_WAIT_SECONDS` overrides it.
+  static var reportWaitSeconds: TimeInterval {
+    seconds("XCFORGE_CRASH_REPORT_WAIT_SECONDS", default: 15)
+  }
+
+  static func seconds(
+    _ key: String, default fallback: TimeInterval,
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> TimeInterval {
+    guard let raw = environment[key], let value = TimeInterval(raw), value >= 0, value.isFinite else {
+      return fallback
+    }
+    return value
+  }
 
   enum Outcome: Equatable, Sendable {
     case running
-    case exited(CrashSummary?)
+    /// The app died; `afterSeconds` is roughly how long after launch it was found gone.
+    case exited(CrashSummary?, afterSeconds: Double? = nil)
   }
 
   /// The pid in `simctl launch` output (`com.example.app: 1234`).
@@ -34,24 +55,39 @@ public enum AppLiveness {
     return result.succeeded && !state.isEmpty && !state.hasPrefix("Z")
   }
 
-  /// Wait `settleSeconds`, then report whether the app is still up. When it isn't, look
-  /// for the crash report it left.
+  /// Watch the app for `settle` seconds, polling, and report whether it stayed up. When it
+  /// died, wait up to `reportWait` seconds for the crash report it left.
   static func check(
-    pid: Int32, bundleId: String, launchedAt: Date, settle: TimeInterval = settleSeconds, env: Environment
+    pid: Int32, bundleId: String, launchedAt: Date, settle: TimeInterval = settleSeconds,
+    reportWait: TimeInterval = reportWaitSeconds, env: Environment
   ) async -> Outcome {
-    try? await Task.sleep(nanoseconds: UInt64(settle * 1_000_000_000))
-    if await isRunning(pid: pid, env: env) { return .running }
-    // The report is written a moment after the process dies.
-    for _ in 0..<10 {
+    let interval: TimeInterval = 0.5
+    var watched: TimeInterval = 0
+    var alive = true
+    while watched < settle {
+      let step = min(interval, settle - watched)
+      try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
+      watched += step
+      if !(await isRunning(pid: pid, env: env)) {
+        alive = false
+        break
+      }
+    }
+    if alive, await isRunning(pid: pid, env: env) { return .running }
+    let diedAfter = Date().timeIntervalSince(launchedAt)
+    var waited: TimeInterval = 0
+    while true {
       if let path = CrashReports.newest(bundleId: bundleId, after: launchedAt),
         let text = try? String(contentsOfFile: path, encoding: .utf8),
         let summary = CrashReports.summarize(text, path: path)
       {
-        return .exited(summary)
+        return .exited(summary, afterSeconds: diedAfter)
       }
-      try? await Task.sleep(nanoseconds: 500_000_000)
+      guard waited < reportWait else { break }
+      try? await Task.sleep(nanoseconds: 1_000_000_000)
+      waited += 1
     }
-    return .exited(nil)
+    return .exited(nil, afterSeconds: diedAfter)
   }
 
   /// One line per fact, for tool output.
@@ -59,10 +95,15 @@ public enum AppLiveness {
     switch outcome {
     case .running:
       return "App running: true"
-    case .exited(nil):
-      return "App running: false (\(bundleId) exited within \(Int(settleSeconds))s of launch; no crash report found)"
-    case .exited(let summary?):
-      var lines = ["App running: false (\(bundleId) crashed at launch)", "Crash: \(summary.headline)"]
+    case .exited(nil, let after):
+      let when = after.map { String(format: "about %.1fs after launch", $0) } ?? "soon after launch"
+      return """
+        App running: false (\(bundleId) exited \(when); no crash report yet. macOS can take a minute to \
+        write it under load: look for the app's newest .ips in \(CrashReports.directory()))
+        """
+    case .exited(let summary?, let after):
+      let when = after.map { String(format: " about %.1fs after launch", $0) } ?? " at launch"
+      var lines = ["App running: false (\(bundleId) crashed\(when))", "Crash: \(summary.headline)"]
       lines += summary.frames.map { "  \($0)" }
       lines.append("Crash report: \(summary.path)")
       return lines.joined(separator: "\n")

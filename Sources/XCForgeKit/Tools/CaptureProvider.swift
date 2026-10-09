@@ -157,9 +157,12 @@ enum ScreenshotTools {
         let udid = try await SimTools.resolveSimulator(sim, env: env)
         let info = try await SimTools.fetchScreenInfo(udid: udid, env: env)
         var image = try await VisualTools.captureCGImage(simulator: udid, env: env)
+        let points = ScreenshotShaping.orientedPointSize(
+          width: info.pointSize.width, height: info.pointSize.height, pixelWidth: image.width,
+          pixelHeight: image.height)
         if wantGrid {
           if let gridded = drawPointGrid(
-            on: image, pointWidth: info.pointSize.width, pointHeight: info.pointSize.height, scale: info.scale)
+            on: image, pointWidth: points.width, pointHeight: points.height, scale: info.scale)
           {
             image = gridded
           } else {
@@ -173,11 +176,11 @@ enum ScreenshotTools {
         }
         let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
         let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
-        var parts = ["\(Int(info.pointSize.width))×\(Int(info.pointSize.height)) pt screen"]
-        var shownPointWidth = info.pointSize.width
+        var parts = ["\(Int(points.width))×\(Int(points.height)) pt screen"]
+        var shownPointWidth = points.width
         if let crop {
           parts.append("crop \(crop.description) pt")
-          shownPointWidth = min(crop.width, info.pointSize.width - crop.x)
+          shownPointWidth = min(crop.width, points.width - crop.x)
         }
         parts.append("\(image.width)x\(image.height) px")
         if input.maxDimension != nil {
@@ -213,7 +216,10 @@ enum ScreenshotTools {
         let mimeType = format.hasPrefix("jp") ? "image/jpeg" : "image/png"
         let ptInfo: String
         if let screenInfo {
-          ptInfo = "\(Int(screenInfo.pointSize.width))×\(Int(screenInfo.pointSize.height)) pt | "
+          let points = ScreenshotShaping.orientedPointSize(
+            width: screenInfo.pointSize.width, height: screenInfo.pointSize.height, pixelWidth: result.width,
+            pixelHeight: result.height)
+          ptInfo = "\(Int(points.width))×\(Int(points.height)) pt | "
         } else {
           ptInfo = result.pointWidth > 0 ? "\(result.pointWidth)×\(result.pointHeight) pt | " : ""
         }

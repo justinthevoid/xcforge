@@ -7,6 +7,29 @@ import XCForgeKit
 
 @main
 struct Main {
+  /// `XCForgeCLI.main()`, except that an error a command throws in JSON mode (`--json`, or
+  /// stdout not a terminal) is printed as a JSON envelope on stdout like other JSON results.
+  static func runCLI() async {
+    let command: ParsableCommand
+    do {
+      command = try XCForgeCLI.parseAsRoot()
+    } catch {
+      XCForgeCLI.exit(withError: error)
+    }
+    do {
+      if var asyncCommand = command as? AsyncParsableCommand {
+        try await asyncCommand.run()
+      } else {
+        var syncCommand = command
+        try syncCommand.run()
+      }
+    } catch {
+      let json = CommandLine.arguments.contains("--json") || shouldOutputJSON(flag: false)
+      if json, printJSONError(error) { XCForgeCLI.exit(withError: ExitCode.failure) }
+      XCForgeCLI.exit(withError: error)
+    }
+  }
+
   static func main() async throws {
     // Ctrl-C, a shell tool's timeout kill or a client hang-up must not leave xcodebuild
     // running with DerivedData locked. Stop our children before exiting.
@@ -14,7 +37,7 @@ struct Main {
     defer { signalSources.forEach { $0.cancel() } }
 
     if CommandLine.arguments.count > 1 {
-      await XCForgeCLI.main()
+      await runCLI()
     } else {
       let logger = Logger(label: "com.xcforge.mcp")
 

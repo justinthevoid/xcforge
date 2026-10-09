@@ -49,7 +49,7 @@ Install a .app bundle on a simulator.
 
 ## launch_app
 
-Launch an installed app, then check it is still running 2s later. When it isn't, the call fails with the exception, reason, crashed thread's top frames and the `.ips` crash report path.
+Launch an installed app, then watch it for 8s (`XCFORGE_LAUNCH_WATCH_SECONDS`). When it dies, the call fails with the exception, reason, crashed thread's top frames and the `.ips` crash report path.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -288,6 +288,7 @@ Set device orientation via WebDriverAgent.
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `orientation` | **Yes** | — | One of: `PORTRAIT`, `LANDSCAPE`, `LANDSCAPE_LEFT`, `LANDSCAPE_RIGHT` |
+| `simulator` | No | last one used | Simulator name or UDID; each simulator has its own WDA |
 
 **Requires:** WDA running on the simulator.
 

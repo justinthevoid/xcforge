@@ -86,6 +86,16 @@ public enum ScreenshotShaping {
     return (directory as NSString).appendingPathComponent(name)
   }
 
+  /// The screen's point size turned to match the captured image: simctl reports the portrait
+  /// size, but a landscape capture is wider than tall.
+  public static func orientedPointSize(
+    width: Double, height: Double, pixelWidth: Int, pixelHeight: Int
+  ) -> (width: Double, height: Double) {
+    let imageLandscape = pixelWidth > pixelHeight
+    let sizeLandscape = width > height
+    return imageLandscape == sizeLandscape ? (width, height) : (height, width)
+  }
+
   /// How many device points one output pixel covers, for mapping a downscaled image back to taps.
   public static func pointsPerPixel(outputWidth: Int, croppedPointWidth: Double) -> Double {
     guard outputWidth > 0 else { return 0 }

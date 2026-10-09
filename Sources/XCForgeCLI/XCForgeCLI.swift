@@ -151,6 +151,18 @@ func rethrowOrJSONError(_ error: Error, json: Bool) throws {
   throw ExitCode.failure
 }
 
+/// Print `error` as the JSON error envelope on stdout. False for errors that aren't failures
+/// to report (an exit code a command already reported, help, `--version`).
+func printJSONError(_ error: Error) -> Bool {
+  if error is ExitCode || error is CleanExit { return false }
+  let envelope = CLIErrorEnvelope(error: "\(error)", code: errorCode(for: error))
+  guard let data = try? JSONEncoder().encode(envelope), let jsonString = String(data: data, encoding: .utf8) else {
+    return false
+  }
+  print(jsonString)
+  return true
+}
+
 struct CLIErrorEnvelope: Encodable {
   let error: String
   let code: String

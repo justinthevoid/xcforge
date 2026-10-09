@@ -60,7 +60,7 @@ xcforge build --json                             # Machine-readable JSON output 
 | `--url <url>` | URL or deep link to open once the app is running |
 | `--json` | Machine-readable JSON output |
 
-**Pipeline behavior:** On build success, boots the simulator (if not already booted) and waits for it, installs the scheme's application target, launches it, and checks it is still running 2s later. A crash at launch fails the command with the crash reason and frames. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
+**Pipeline behavior:** On build success, boots the simulator (if not already booted) and waits for it, installs the scheme's application target, launches it, and watches it for 8s (`XCFORGE_LAUNCH_WATCH_SECONDS`). A crash at launch fails the command with the crash reason and frames. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
 
 **JSON output:** With `--json`, emits a `BuildRunResult` with `build`, `boot`, `install`, `launch` phase statuses plus `appPid` and `appRunning` fields.
 
@@ -108,7 +108,7 @@ xcforge build compile --all-errors --jobs 4        # Every error, in the diagnos
 
 ### build typecheck
 
-Compile one target (its scheme, else `-target`), reusing the workspace's DerivedData.
+Compile one target (its scheme, else `-target`), reusing the workspace's DerivedData. A `-target` build writes into the configured `derivedDataPath` (or the scheme's DerivedData) through SYMROOT/OBJROOT, since xcodebuild rejects `-derivedDataPath` with `-target`.
 
 ```bash
 xcforge build typecheck ShutterCoachShared
@@ -524,6 +524,8 @@ xcforge wait-ready --for a11y:x --json
 ## xcforge ui
 
 UI automation via WebDriverAgent. 17 subcommands — `status` is the default.
+
+Every subcommand takes `--simulator <name|udid>`; each simulator has its own WDA, and the last one named is used when it's omitted. The first WDA start on a Mac builds xcforgeWDA (up to 15 minutes) and then waits up to 180s for the runner to answer (`XCFORGE_WDA_START_SECONDS`).
 
 ```bash
 xcforge ui status                                # Check WDA health
@@ -958,7 +960,7 @@ See the [Pose & Visual Iteration](pose.md) reference for app-side routing patter
 
 ## xcforge bless
 
-Save a visual baseline, run tests, compare visual output, and suggest a commit message — all in one call.
+Save a visual baseline, run tests and compare visual output in one call.
 
 ```bash
 xcforge bless --baseline login-screen --tests "UITests/LoginTests"

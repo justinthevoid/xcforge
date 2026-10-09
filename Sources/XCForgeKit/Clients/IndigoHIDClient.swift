@@ -11,11 +11,30 @@ actor IndigoHIDClient {
   /// Whether the required frameworks can be loaded.
   nonisolated static let isAvailable: Bool = {
     guard simKitHandle != nil else {
-      Log.warn("IndigoHIDClient unavailable — SimulatorKit.framework not found.")
+      Log.warn("IndigoHIDClient unavailable — \(unavailableReason)")
       return false
     }
     return true
   }()
+
+  /// Why HID input can't be used, for results that fall back to WDA.
+  nonisolated static var unavailableReason: String {
+    let folders = simulatorKitCandidates(developerDir: developerDir).map {
+      (($0 as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+    }
+    return "SimulatorKit.framework not found in \(folders.joined(separator: " or "))"
+  }
+
+  /// Where SimulatorKit lives: `Contents/SharedFrameworks` from Xcode 27,
+  /// `Contents/Developer/Library/PrivateFrameworks` before.
+  nonisolated static func simulatorKitCandidates(developerDir: String) -> [String] {
+    let contents = (developerDir as NSString).deletingLastPathComponent
+    return [
+      (contents as NSString).appendingPathComponent("SharedFrameworks/SimulatorKit.framework/SimulatorKit"),
+      (developerDir as NSString).appendingPathComponent(
+        "Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"),
+    ]
+  }
 
   // MARK: - Framework Loading
 
@@ -39,8 +58,10 @@ actor IndigoHIDClient {
   }()
 
   nonisolated(unsafe) private static let simKitHandle: UnsafeMutableRawPointer? = {
-    dlopen(
-      "\(developerDir)/Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit", RTLD_NOW)
+    for path in simulatorKitCandidates(developerDir: developerDir) {
+      if let handle = dlopen(path, RTLD_NOW) { return handle }
+    }
+    return nil
   }()
 
   // MARK: - Cached State

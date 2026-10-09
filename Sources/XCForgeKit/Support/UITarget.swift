@@ -6,7 +6,7 @@ import MCP
 /// one and the taps landed on the other.
 enum UITarget {
   /// Tools whose WDA calls follow the selected simulator.
-  static var toolNames: Set<String> { Set(UITools.tools.map(\.name)) }
+  static var toolNames: Set<String> { Set(UITools.tools.map(\.name)).union(["set_orientation"]) }
 
   static let simulatorProperty: Value = .object([
     "type": .string("string"),

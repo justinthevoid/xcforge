@@ -20,7 +20,7 @@ Precedence: flag/argument, then env var, then `.xcforge.yaml`. Relative yaml pat
 
 They apply to `build compile|run|clean`, `build-test`, `test run|failures|list|rerun-failed` and the MCP tools `build_sim`, `build_run_sim`, `build_compile`, `clean`, `test_sim`, `test_failures`, `test_coverage`, `build_and_diagnose`, `build_and_test`, `list_tests`, `bless`.
 
-On a 16 GB Mac, `jobs: 4` keeps a build from pushing other sessions into swap. `--all-errors` builds go to their own DerivedData so a "show me every error" run doesn't throw away the main incremental cache. `--from-snapshot` builds share one worktree per repo and take turns on its lock.
+On a 16 GB Mac, `jobs: 4` keeps a build from pushing other sessions into swap. `--all-errors` builds go to their own DerivedData so a "show me every error" run doesn't throw away the main incremental cache. `--from-snapshot` builds share one worktree per repo and take turns on its lock. The worktree stays registered in the repo (`git worktree list` shows it under `~/.xcforge/snapshots`) so the next snapshot build is incremental; remove it with `git worktree remove --force <path>` when you no longer need it.
 
 ## Build lock
 

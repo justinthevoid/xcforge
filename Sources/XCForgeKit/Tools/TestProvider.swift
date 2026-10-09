@@ -937,8 +937,12 @@ public enum TestTools {
     udid: String?, snapshotPath: String, processMatch: String? = nil, env: Environment
   ) async -> DiagnosticSnapshot.Result? {
     let watchdogCapture = await watchdog.latestResult
-    // A sample of a healthy build is noise: report one only for a timeout or when asked.
-    guard result.exitCode == -1 || diagnose else { return nil }
+    // A sample of a healthy build is noise: report one only for a timeout or when asked,
+    // and don't leave the file behind.
+    guard result.exitCode == -1 || diagnose else {
+      try? FileManager.default.removeItem(atPath: snapshotPath)
+      return nil
+    }
     if let captured = watchdogCapture { return captured }
     return await DiagnosticSnapshot.capture(
       udid: udid, snapshotPath: snapshotPath, processMatch: processMatch, env: env)
@@ -2724,7 +2728,7 @@ public enum TestTools {
           )
         }
       }
-      if skippedBuild && parsedSummary == nil {
+      if skippedBuild && parsedSummary == nil && Xcodebuild.timeoutKind(shellResult) == nil {
         failures.insert(
           TestFailureObservation(
             testName: "xcodebuild", testIdentifier: "xcodebuild",
@@ -2736,15 +2740,18 @@ public enum TestTools {
       }
     }
 
+    // A timeout's stderr lines aren't failed tests: count only real test failures for it.
+    let timedOut = Xcodebuild.timeoutKind(shellResult) != nil
+    let countedFailures = timedOut ? failures.filter { $0.testIdentifier != "xcodebuild" }.count : failures.count
     let totalTestCount =
-      parsedSummary?.totalTestCount ?? max(failures.count, shellResult.succeeded ? 0 : 1)
-    let failedTestCount = parsedSummary?.failedTestCount ?? failures.count
+      parsedSummary?.totalTestCount ?? (timedOut ? countedFailures : max(failures.count, shellResult.succeeded ? 0 : 1))
+    let failedTestCount = parsedSummary?.failedTestCount ?? countedFailures
     let passedTestCount = parsedSummary?.passedTestCount ?? 0
     let skippedTestCount = parsedSummary?.skippedTestCount ?? 0
     let expectedFailureCount = parsedSummary?.expectedFailureCount ?? 0
     // Zero tests ran (filter or test plan selected nothing) → failure, so a run that tested
     // nothing never reads as a pass. Without a parsed summary the count is unknown, not zero.
-    let zeroMatchWithFilter = totalTestCount == 0 && (filterRequested || parsedSummary != nil)
+    let zeroMatchWithFilter = totalTestCount == 0 && !timedOut && (filterRequested || parsedSummary != nil)
 
     let gating = applyGating(
       gate: gate, failures: failures, failedTestCount: failedTestCount, repoRoot: repoRoot)

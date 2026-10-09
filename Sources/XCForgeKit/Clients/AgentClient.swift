@@ -345,15 +345,13 @@ public actor WDAClient {
     // Actor isolation guarantees isDeploying is checked atomically (no await before the set).
     if isDeploying {
       Log.warn("deployXCForgeWDA: concurrent call detected, waiting for existing deploy")
-      for i in 1...15 {
+      // The other deploy may be building, so wait as long as a build plus a runner start.
+      let deadline = Date().addingTimeInterval(900 + Self.runnerStartSeconds)
+      while Date() < deadline, isDeploying {
         try? await Task.sleep(nanoseconds: 2_000_000_000)
-        if await isHealthy() {
-          Log.warn("deployXCForgeWDA: existing deploy succeeded after \(i * 2)s wait")
-          return true
-        }
+        if await isHealthy() { return true }
       }
-      Log.warn("deployXCForgeWDA: existing deploy did not succeed within 30s")
-      return false
+      return await isHealthy()
     }
 
     isDeploying = true
@@ -364,7 +362,11 @@ public actor WDAClient {
     deployTask = nil
     await cleanupWDAProcesses(simulator: simulator)
 
-    guard let projectDir = Self.locateXCForgeWDAProject() else { return false }
+    lastDeployFailure = nil
+    guard let projectDir = Self.locateXCForgeWDAProject() else {
+      lastDeployFailure = "xcforgeWDA.xcodeproj not found. Set XCFORGE_WDA_DIR to an xcforgeWDA checkout."
+      return false
+    }
 
     // Resolve UDID for xcodebuild destination
     let udid = await resolveSimulatorUDID(simulator)
@@ -385,13 +387,16 @@ public actor WDAClient {
     ]
     let buildResult: ShellResult
     do {
-      buildResult = try await Shell.run("/usr/bin/xcrun", arguments: buildArgs, timeout: 120)
+      // A cold build on a busy Mac takes minutes.
+      buildResult = try await Shell.run("/usr/bin/xcrun", arguments: buildArgs, timeout: 900)
     } catch {
       Log.warn("deployXCForgeWDA build error: \(error)")
+      lastDeployFailure = "building xcforgeWDA from \(projectDir) failed: \(error)"
       return false
     }
     guard buildResult.succeeded else {
       Log.warn("deployXCForgeWDA build failed: \(buildResult.stderr.prefix(500))")
+      lastDeployFailure = Self.explainWDABuildFailure(Xcodebuild.combinedOutput(buildResult), projectDir: projectDir)
       return false
     }
 
@@ -399,19 +404,44 @@ public actor WDAClient {
     let xctestrun = await findXctestrun(derivedData: derivedData)
     guard let xctestrun else {
       Log.warn("deployXCForgeWDA: no xctestrun file found in \(derivedData)")
+      lastDeployFailure = "xcforgeWDA built but no .xctestrun was found in \(derivedData)/Build/Products"
       return false
     }
 
     startRunner(xctestrun: xctestrun, udid: udid)
 
-    // Step 3: Poll for server readiness (up to 30s)
-    for _ in 1...15 {
+    // Step 3: Poll for server readiness. The first start installs the runner on the
+    // simulator, which takes well over 30s on a loaded Mac.
+    let deadline = Date().addingTimeInterval(Self.runnerStartSeconds)
+    while Date() < deadline {
       try? await Task.sleep(nanoseconds: 2_000_000_000)  // 2s
       if await isHealthy() {
         return true
       }
     }
+    lastDeployFailure =
+      "the xcforgeWDA runner didn't answer on port \(port) within \(Int(Self.runnerStartSeconds))s. "
+      + "It may still be starting: retry, or raise XCFORGE_WDA_START_SECONDS."
     return false
+  }
+
+  /// Why the last xcforgeWDA deploy failed, for the error the caller sees.
+  private var lastDeployFailure: String?
+
+  /// How long to wait for a freshly started runner. `XCFORGE_WDA_START_SECONDS` overrides it.
+  static var runnerStartSeconds: TimeInterval {
+    AppLiveness.seconds("XCFORGE_WDA_START_SECONDS", default: 180)
+  }
+
+  /// A build failure of xcforgeWDA in one sentence. An older copy (such as Homebrew's share
+  /// folder) can fail on a newer Xcode with "Supported platforms ... is empty".
+  static func explainWDABuildFailure(_ output: String, projectDir: String) -> String {
+    if output.contains("Supported platforms for the buildables in the current scheme is empty") {
+      return "the xcforgeWDA copy at \(projectDir) doesn't build with this Xcode (it is probably older than "
+        + "your xcforge). Upgrade xcforge, or set XCFORGE_WDA_DIR to the xcforgeWDA folder of a current checkout."
+    }
+    let firstError = output.split(separator: "\n").first { $0.contains("error:") }.map(String.init)
+    return "building xcforgeWDA from \(projectDir) failed: \(firstError ?? "see the xcodebuild output")"
   }
 
   static let wdaDerivedData = NSHomeDirectory() + "/Library/Developer/Xcode/DerivedData/xcforgeWDA-deploy"
@@ -545,7 +575,7 @@ public actor WDAClient {
     }
 
     // 5. Nothing works
-    throw WDAError.noBackendAvailable
+    throw WDAError.noBackendAvailable(lastDeployFailure)
   }
 
   // MARK: - Session Management
@@ -1335,7 +1365,7 @@ enum WDAError: Error, CustomStringConvertible {
   case elementNotFound(String, String)
   case wdaRestart(String)
   case wdaNotResponding
-  case noBackendAvailable
+  case noBackendAvailable(String?)
   case remoteNotResponding(String)
 
   var description: String {
@@ -1348,7 +1378,9 @@ enum WDAError: Error, CustomStringConvertible {
     case .wdaRestart(let msg): return "WDA restart failed: \(msg)"
     case .wdaNotResponding:
       return "WDA not responding (timeout >10s). Try: wda_create_session or restart the simulator."
-    case .noBackendAvailable:
+    case .noBackendAvailable(let reason?):
+      return "WebDriverAgent didn't start: \(reason)"
+    case .noBackendAvailable(nil):
       return
         "No WDA backend available. Neither xcforgeWDA nor Original WDA could be started. Install xcforgeWDA or start WebDriverAgent."
     case .remoteNotResponding(let url):

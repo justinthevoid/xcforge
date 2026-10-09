@@ -1234,6 +1234,7 @@ enum UITools {
     case .failure(let err): return err
     case .success(let input):
       let simulator = input.simulator ?? "booted"
+      var hidFallbackReason = IndigoHIDClient.unavailableReason
 
       if IndigoHIDClient.isAvailable {
         do {
@@ -1246,6 +1247,7 @@ enum UITools {
         } catch {
           Log.warn("IndigoHID tap failed, falling back to WDA: \(error)")
           await IndigoHIDClient.shared.invalidateCache()
+          hidFallbackReason = "\(error)"
         }
       }
 
@@ -1254,7 +1256,9 @@ enum UITools {
         let start = CFAbsoluteTimeGetCurrent()
         try await wdaClient.tap(x: input.x, y: input.y)
         let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-        return .ok("Tapped at (\(Int(input.x)), \(Int(input.y))) via WDA fallback (\(elapsed)ms)")
+        return .ok(
+          "Tapped at (\(Int(input.x)), \(Int(input.y))) via WDA (\(elapsed)ms); HID not used: \(hidFallbackReason)"
+        )
       } catch {
         return .fail("Tap failed: \(error)")
       }
@@ -1267,6 +1271,7 @@ enum UITools {
     case .success(let input):
       let durationMs = input.duration_ms ?? 300
       let simulator = input.simulator ?? "booted"
+      var hidFallbackReason = IndigoHIDClient.unavailableReason
 
       if IndigoHIDClient.isAvailable {
         do {
@@ -1283,6 +1288,7 @@ enum UITools {
         } catch {
           Log.warn("IndigoHID swipe failed, falling back to WDA: \(error)")
           await IndigoHIDClient.shared.invalidateCache()
+          hidFallbackReason = "\(error)"
         }
       }
 
@@ -1292,7 +1298,7 @@ enum UITools {
           startX: input.start_x, startY: input.start_y, endX: input.end_x, endY: input.end_y,
           durationMs: durationMs)
         return .ok(
-          "Swiped from (\(Int(input.start_x)),\(Int(input.start_y))) to (\(Int(input.end_x)),\(Int(input.end_y))) via WDA fallback"
+          "Swiped from (\(Int(input.start_x)),\(Int(input.start_y))) to (\(Int(input.end_x)),\(Int(input.end_y))) via WDA; HID not used: \(hidFallbackReason)"
         )
       } catch {
         return .fail("Swipe failed: \(error)")

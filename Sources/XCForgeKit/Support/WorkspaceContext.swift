@@ -105,7 +105,9 @@ public actor SessionState {
   }
 
   private func resolveProjectUncached(_ explicit: String?) async throws -> String {
-    if let explicit {
+    // A relative path is taken against the working directory now, so tools that run in another
+    // directory (xcode-build-server, a snapshot worktree) still find it.
+    if let explicit = explicit.map(Self.absolutePath) {
       refreshRepoDefaults(forProject: explicit)
       trackUsage(value: explicit, streak: &projectStreak, stored: &project, source: &projectSource)
       loadRecordIfNeeded(forProject: explicit)
@@ -128,6 +130,15 @@ public actor SessionState {
     loadRecordIfNeeded(forProject: detected)
     Log.warn("Auto-detected project: \((detected as NSString).lastPathComponent)")
     return detected
+  }
+
+  static func absolutePath(_ path: String) -> String {
+    let expanded = (path as NSString).expandingTildeInPath
+    let absolute =
+      expanded.hasPrefix("/")
+      ? expanded
+      : (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(expanded)
+    return (absolute as NSString).standardizingPath
   }
 
   /// Use the `.xcforge.yaml` that governs `project`, not the one next to the server's
