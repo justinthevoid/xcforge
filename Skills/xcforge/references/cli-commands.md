@@ -83,7 +83,7 @@ Fast compile-only build without simulator boot/install/launch. Reuses the standa
 xcforge build compile                              # Compile-only, auto-detect everything
 xcforge build compile --project MyApp.xcodeproj --scheme MyApp
 xcforge build compile --configuration Release
-xcforge build compile --long                       # 1800s timeout instead of 180s
+xcforge build compile --long                       # 7200s total limit instead of 1800s
 xcforge build compile --json
 ```
 
@@ -93,7 +93,7 @@ xcforge build compile --json
 | `--scheme <name>` | Xcode scheme name. Auto-detected if omitted |
 | `--simulator <name\|udid>` | Simulator name or UDID (for SDK selection). Auto-detected if omitted |
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
-| `--long` | Use 1800s timeout instead of default 180s |
+| `--long` | Raise the total time limit from 1800s to 7200s |
 | `--json` | Machine-readable JSON output |
 
 **Use case:** Rapid code iteration without deployment latency. Does not boot simulator or install app.
@@ -186,7 +186,7 @@ xcforge test rerun-failed --json
 | `--simulator <name\|udid>` | Auto-detected if omitted |
 | `--configuration <config>` | Build configuration. Default: Debug |
 | `--testplan <name>` | Test plan name |
-| `--long` | Use 1800s timeout instead of 180s |
+| `--long` | Raise the total time limit from 1800s to 7200s |
 | `--for <audience>` | `human` (default) or `agent` |
 | `--gate` | Apply known-failures gate to the rerun result |
 | `--json` | Machine-readable JSON output |
@@ -931,7 +931,7 @@ xcforge bless --baseline home-dark --tests "SnapshotTests/HomeTests" --project M
 | `--scheme <name>` | Auto-detected if omitted |
 | `--simulator <name\|udid>` | Auto-detected if omitted |
 
-**Steps performed:** save baseline → run tests → compare visual → suggest `[bless] <slug>` commit message.
+**Steps performed:** save baseline → run tests → compare visual.
 
 **Exit code:** 0 when all tests pass and diff is within threshold, 1 otherwise.
 

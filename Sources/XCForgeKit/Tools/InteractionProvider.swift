@@ -6,7 +6,7 @@ enum UITools {
     Tool(
       name: "wda_status",
       description:
-        "Check if WebDriverAgent (WDA) is running and reachable. Call this first to verify the UI automation backend is available before using find_element, click_element, or other WDA-dependent tools.",
+        "Check whether WebDriverAgent (WDA) is running and reachable, and which URL UI tools use. UI tools start WDA on a simulator by themselves; for a physical device use wda_start.",
       inputSchema: .object(["type": .string("object"), "properties": .object([:])])
     ),
     Tool(
@@ -653,6 +653,7 @@ enum UITools {
         let sessionInfo = "Sessions tracked: \(await wdaClient.sessionCount)"
         var msg =
           "WDA Status: \(status.ready ? "READY" : "NOT READY")\nBackend: \(backendName)\nBundle: \(status.bundleId)\n\(sessionInfo)"
+        msg += "\nURL: \(await wdaClient.getBaseURL())"
         if let info = fallback {
           msg += "\nInfo: \(info)"
         }
@@ -660,6 +661,8 @@ enum UITools {
       } catch {
         return .ok("WDA reachable but status parse failed: \(error)")
       }
+    } else if await wdaClient.isRemote {
+      return .fail(WDAError.remoteNotResponding(await wdaClient.getBaseURL()).description)
     } else {
       return .fail(
         "WDA not responding (health check timeout 2s). Backend: \(backendName). Try restarting WDA or the simulator."

@@ -7,7 +7,10 @@ import Foundation
 final class HangWatchdog: Sendable {
   private let task: Task<DiagnosticSnapshot.Result?, Never>
 
-  init(udid: String?, snapshotPath: String, sampleAt: [TimeInterval], env: Environment) {
+  init(
+    udid: String?, snapshotPath: String, sampleAt: [TimeInterval], processMatch: String? = nil,
+    env: Environment
+  ) {
     task = Task {
       var last: DiagnosticSnapshot.Result?
       let start = Date()
@@ -21,7 +24,8 @@ final class HangWatchdog: Sendable {
           }
         }
         guard !Task.isCancelled else { return last }
-        last = await DiagnosticSnapshot.capture(udid: udid, snapshotPath: snapshotPath, env: env)
+        last = await DiagnosticSnapshot.capture(
+          udid: udid, snapshotPath: snapshotPath, processMatch: processMatch, env: env)
       }
       return last
     }

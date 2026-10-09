@@ -43,7 +43,22 @@ public enum WDASessionRepair {
       )
     }
 
-    // 2. No booted simulator → nothing WDA can attach to. Only assert this
+    // 2. WDA on a physical device: simulator probes and rebuilds don't apply.
+    if await env.wdaClient.isRemote {
+      let url = await env.wdaClient.getBaseURL()
+      if await env.wdaClient.isHealthy() {
+        return WDASessionCreateError(
+          cause: .sessionBindRejected,
+          detail: "WDA on the device (\(url)) rejected the session"
+            + (bundleId.map { " for bundleId=\($0)" } ?? "") + ". Raw: \(raw)")
+      }
+      return WDASessionCreateError(
+        cause: .deviceRunnerNotReachable,
+        detail: "WDA on the device (\(url)) is not responding. The device may be locked, UI Automation "
+          + "may be off, or the runner stopped. Raw: \(raw)")
+    }
+
+    // 3. No booted simulator → nothing WDA can attach to. Only assert this
     //    non-recoverable cause when the probe DEFINITIVELY saw no booted
     //    device. On JSON shape drift / parse failure the state is `.unknown`
     //    and we must NOT flip a possibly-booted machine to no_booted_simulator
@@ -104,7 +119,8 @@ public enum WDASessionRepair {
     switch cause {
     case .wdaRunnerNotRunning, .wdaRunnerBuildFailed:
       return true
-    case .noBootedSimulator, .bundleNotInstalled, .sessionBindRejected, .unknown:
+    case .noBootedSimulator, .bundleNotInstalled, .sessionBindRejected, .deviceRunnerNotReachable,
+      .unknown:
       return false
     }
   }

@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+- **Shared-Mac options for every xcodebuild call:** `--derived-data-path`, `--result-bundle-path`, repeatable `--xcodebuild-arg`, `--lock`, `--lock-wait` and `--min-free-gb` on `build compile|run|clean`, `build-test` and `test run|failures|list|rerun-failed`, with matching MCP arguments, env vars and `.xcforge.yaml` keys (`derivedDataPath`, `buildLock`, `artifactDir`, `minFreeGB`). See `Skills/xcforge/references/shared-mac.md`
+- **Build lock with a first-come, first-served queue.** Takes the same `flock` as macOS `lockf(1)`, so it queues next to existing `lockf` wrappers. `xcforge lock status` / `build_lock_status` show the holder, the queue and wait times
+- `--isolated-sim` / `isolatedSimulator` on `build-test`/`build_and_test` and `test run`/`test_sim`: run on a fresh simulator created for the run and deleted afterwards
+- Preflight warnings for low disk and heavy swap before a build
+- **Idle timeout for builds and test runs.** xcodebuild is killed after 600s with no output (`--idle-timeout`, `idleTimeoutSeconds`, `XCFORGE_IDLE_TIMEOUT`, `.xcforge.yaml idleTimeout`; 0 disables), so a hung runner is caught without cutting off a slow cold build. Failures say whether the idle or total limit fired (`failureReason: timeout_idle|timeout_total`)
+- `test-without-building` is retried once when the test runner never started ("Test runner hung before establishing connection", "Early unexpected exit…", "Failed to launch…" with no test begun)
+- `test list --testplan` / `list_tests testplan`: lists via `-test-enumeration-format json`, which includes Swift Testing tests and reports how many the scheme or plan disables
+- `test_plan_inspect` shows skipped tests, selected-only targets and every tag filter in the plan, and warns when a multi-tag filter may require all tags
+- **UI automation on physical devices.** `xcforge wda start|status|stop` and MCP `wda_start`/`wda_stop` build xcforgeWDA for the device, sign it with your team (`--team`, `XCFORGE_WDA_TEAM`), launch it with `test-without-building`, find it over the CoreDevice tunnel, and record its URL in `~/.xcforge/wda/`. `XCFORGE_DEVICE=<udid>` points `xcforge ui` commands at it. Locked device, UI Automation off, Developer Mode off, pairing and signing failures each get a one-line explanation
+- `device screenshot` / `device_screenshot` (devicectl capture, falling back to the device's WDA)
+- `device launch --url <deep-link> --env KEY=VALUE --arg A` and matching `url`/`env` on `device_launch`
+- **Xcode 27 Device Hub support.** xcforge opens Device Hub when the selected Xcode has no Simulator.app, and screen capture, the accessibility bridge and window scripting accept either app
+
+### Changed
+- **Auto-promotion is opt-in.** Repeated explicit values no longer silently become session defaults unless `.xcforge.yaml` sets `autoPromote: true`
+- `--no-default-flags` / `defaultFlags: false` / `XCFORGE_DEFAULT_FLAGS=0` / `.xcforge.yaml defaultFlags: false` drop the flags xcforge adds to builds (`-skipMacroValidation`, `-parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES`)
+- `lldb_continue` / `debug continue` wait 30s by default and take `timeoutSeconds` / `--timeout` (was a fixed 10s); simulator app launch waits up to 60s (was 15s)
+- `bless` no longer prints a suggested commit message
+- Tool descriptions and the skill drop "preferred", "call this first" and marketing copy; pitfalls are stated as facts rather than rules
+- UI tools no longer run simulator recovery (terminate, rebuild, redeploy) when WDA is on a physical device; they report `device_runner_not_reachable` and point at `wda start`
+- xcforgeWDA's iOS deployment target is 15.0 (Xcode 27 no longer builds for 13)
+- devicectl output is read from Xcode 27's `properties` dictionary as well as the older split keys; `device info` adds tunnel, pairing and Developer Mode state
+- **Default total time limit for builds and tests is 1800s** (was 180s); `--long` / `long: true` raises it to 7200s. Hangs are caught by the idle timeout instead
+- **Builds continue after the first error** (`-IDEBuildingContinueBuildingAfterErrors=YES`), so one run reports every error. Opt out with `--no-continue-after-errors` / `continueAfterErrors: false`
+- Build errors are read from stdout as well as stderr (xcodebuild prints compiler diagnostics on stdout), duplicates are dropped, and up to 50 are shown
+- A run where zero tests executed is a failure even without a filter, when xcforge could read the result summary
+- `build-test` and `test rerun-failed` honour `.xcforge.yaml` `testPlan` and `configuration` like `test run` does
+- Coverage lookups use `xccov --only-targets` when only a yes/no is needed, and fall back to per-target coverage instead of truncated JSON for very large reports
+- **`simRecovery` defaults to `off` everywhere** (was `auto` for `build_and_test`, `build-test` and `bless`). `auto` now only reboots; erasing a simulator needs the new `erase` mode. Invalid values are an error instead of silently becoming `auto`. `build-test` gains `--sim-recovery`
+- Result bundles and diagnostic snapshots get collision-free names (`xcf-<prefix>-<ts>-<pid>-<rand>`), so two sessions starting in the same second no longer delete each other's bundles. `XCFORGE_ARTIFACT_DIR` / `artifactDir` moves them out of `/tmp`
+- `build diagnose`, `test failures` and `test coverage` read this project's last recorded result bundle instead of the newest bundle any session left in `/tmp`. `test failures` without `--xcresult-path` reuses that bundle instead of re-running the whole suite
+
+### Fixed
+- A timed-out `build-for-testing` is reported as a build failure instead of continuing to `test-without-building` against stale products
+- `test_plan_inspect` finds plans inside `App.xcodeproj/xcshareddata/xctestplans` and decodes Xcode's string-form `skippedTests` and plans with missing sections
+- A hung build's fallback no longer runs `pkill -x xcodebuild`, which killed every session's build on the Mac. Hang snapshots sample the xcodebuild matched by this run's result bundle path instead of the newest xcodebuild on the system
+- WDA port cleanup only kills WebDriverAgent runner processes, uses the port from `WDA_BASE_URL`, skips remote WDA hosts, and calls `lsof` at its real path (`/usr/sbin/lsof`)
+
 ## [1.6.1] - 2026-05-19
 
 ### Fixed

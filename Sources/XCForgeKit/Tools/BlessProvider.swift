@@ -115,12 +115,6 @@ public enum BlessTools: ToolProvider {
       lines.append("Visual diff: skipped (baseline path not captured from save output)")
     }
 
-    // Step 4: Suggest commit message
-    let slug = commitSlug(from: input.tests)
-    lines.append("")
-    lines.append("Suggested commit:")
-    lines.append("  git commit -m \"[bless] \(slug)\"")
-
     return testPassed ? .ok(lines.joined(separator: "\n")) : .fail(lines.joined(separator: "\n"))
   }
 
@@ -141,15 +135,5 @@ public enum BlessTools: ToolProvider {
       }
     }
     return nil
-  }
-
-  static func commitSlug(from filter: String) -> String {
-    let slug =
-      filter
-      .lowercased()
-      .replacingOccurrences(of: "/", with: "-")
-      .replacingOccurrences(of: " ", with: "-")
-    let trimmed = String(slug.prefix(40))
-    return trimmed.trimmingCharacters(in: .init(charactersIn: "-"))
   }
 }

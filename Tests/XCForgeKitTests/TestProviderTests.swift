@@ -294,51 +294,67 @@ struct TestProviderTests {
     #expect(!eraseCalled)
   }
 
-  // MARK: 7. simRecovery .auto — unhealthy sim: tiered recovery; erase reached when tier 1 fails
+  // MARK: 7. simRecovery .auto — unhealthy sim: reboot only, never erase
 
-  @Test("simRecovery .auto unhealthy sim: probeAndRecover returns fired=true, erase called")
-  func simRecoveryAutoUnhealthy() async {
-    // State is Shutdown — health probe returns notBooted, triggering tiered recovery.
-    // After tier-1 shutdown+boot the list probe returns Shutdown again (mock is stateless),
-    // so tier 2 (erase) fires.
+  @Test("simRecovery .auto unhealthy sim: reboots but never erases")
+  func simRecoveryAutoUnhealthyNeverErases() async {
+    // State stays Shutdown after the reboot (mock is stateless). Auto mode must stop there.
     let shell = TestRecordingShell(simState: "Shutdown")
     let env = Environment(shell: shell)
 
     let outcome = await SimulatorRecovery.probeAndRecover(
       udid: "AAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+      mode: .auto,
       env: env
     )
 
     #expect(outcome.fired)
     #expect(outcome.reason == "sim_unhealthy")
+    #expect(outcome.failureReason?.contains("erase skipped") == true)
+    let eraseCalled = await shell.eraseCalled
+    #expect(!eraseCalled)
+  }
+
+  @Test("simRecovery .erase unhealthy sim: erase runs when a reboot doesn't help")
+  func simRecoveryEraseUnhealthy() async {
+    let shell = TestRecordingShell(simState: "Shutdown")
+    let env = Environment(shell: shell)
+
+    let outcome = await SimulatorRecovery.probeAndRecover(
+      udid: "AAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+      mode: .erase,
+      env: env
+    )
+
+    #expect(outcome.fired)
     let eraseCalled = await shell.eraseCalled
     #expect(eraseCalled)
   }
 
-  // MARK: 8. simRecovery .off gate — no erase called for unhealthy sim
+  // MARK: 8. simRecovery .off — nothing touched
 
-  @Test("simRecovery .off skips probe: unhealthy sim, no erase invoked")
-  func simRecoveryOffSkipsProbeOnUnhealthySim() async {
-    // The gate in executeBuildAndTest is: `if simRecovery == .auto { probeAndRecover(...) }`
-    // With .off, probeAndRecover is never called.
+  @Test("simRecovery .off: unhealthy sim is left alone")
+  func simRecoveryOffLeavesSimAlone() async {
     let shell = TestRecordingShell(simState: "Shutdown")
     let env = Environment(shell: shell)
 
-    let recoveryMode: SimRecoveryMode = .off
-    var eraseWouldHaveFired = false
+    let outcome = await SimulatorRecovery.probeAndRecover(
+      udid: "AAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+      mode: .off,
+      env: env
+    )
 
-    if recoveryMode == .auto {
-      let outcome = await SimulatorRecovery.probeAndRecover(
-        udid: "AAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
-        env: env
-      )
-      eraseWouldHaveFired = outcome.fired
-    }
-
-    // Gate blocked the probe — neither fired nor erase called
-    #expect(!eraseWouldHaveFired)
+    #expect(!outcome.fired)
     let shellEraseCalled = await shell.eraseCalled
     #expect(!shellEraseCalled)
+  }
+
+  @Test("SimRecoveryMode.parse defaults to off and rejects unknown values")
+  func simRecoveryModeParse() throws {
+    #expect(try SimRecoveryMode.parse(nil) == .off)
+    #expect(try SimRecoveryMode.parse("AUTO") == .auto)
+    #expect(try SimRecoveryMode.parse("erase") == .erase)
+    #expect(throws: SimRecoveryModeError.self) { try SimRecoveryMode.parse("yes") }
   }
 
   // MARK: 9. Child sections appear below legacy headers

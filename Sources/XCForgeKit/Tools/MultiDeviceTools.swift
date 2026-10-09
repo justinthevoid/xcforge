@@ -282,7 +282,7 @@ enum MultiDeviceTools {
           if !r.success { devices[idx].error = "Boot: \(r.message)" }
         }
       }
-      _ = try? await env.shell.run("/usr/bin/open", arguments: ["-a", "Simulator"], timeout: 5)
+      await SimulatorApp.open(shell: env.shell)
       await waitForAllBooted(udids: needsBoot.map(\.udid), timeout: 30, env: env)
     }
     for i in devices.indices where devices[i].wasAlreadyBooted {
@@ -610,7 +610,7 @@ enum MultiDeviceTools {
     let script = """
       set output to ""
       tell application "System Events"
-          tell process "Simulator"
+          tell (first process whose bundle identifier is "com.apple.iphonesimulator" or bundle identifier is "com.apple.dt.Devices")
               repeat with w in windows
                   set output to output & (id of w) & "|||" & (name of w) & linefeed
               end repeat
@@ -653,10 +653,10 @@ enum MultiDeviceTools {
   {
     let menuItem = toPortrait ? "Rotate Right" : "Rotate Left"
     let script = """
-      tell application "Simulator" to activate
-      delay 0.2
       tell application "System Events"
-          tell process "Simulator"
+          tell (first process whose bundle identifier is "com.apple.iphonesimulator" or bundle identifier is "com.apple.dt.Devices")
+              set frontmost to true
+              delay 0.2
               perform action "AXRaise" of (first window whose id is \(windowID))
               delay 0.3
               click menu item "\(menuItem)" of menu "Device" of menu bar 1

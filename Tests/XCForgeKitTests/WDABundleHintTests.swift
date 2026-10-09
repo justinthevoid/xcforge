@@ -108,6 +108,8 @@ private final class StubWDABundleHint: URLProtocol, @unchecked Sendable {
 }
 
 private func withStubbedBundleHintWDA<T>(_ body: () async throws -> T) async rethrows -> T {
+  await WDAStubGate.shared.acquire()
+  defer { WDAStubGate.shared.releaseSoon() }
   StubWDABundleHint.reset()
   URLProtocol.registerClass(StubWDABundleHint.self)
   defer {

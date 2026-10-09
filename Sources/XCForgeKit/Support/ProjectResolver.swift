@@ -512,7 +512,7 @@ enum AutoDetect {
     _ device: SimulatorDevice,
     requested: String
   ) async throws -> SimulatorDevice {
-    _ = try? await Shell.run("/usr/bin/open", arguments: ["-a", "Simulator"], timeout: 5)
+    await SimulatorApp.open(shell: LiveShell())
 
     do {
       _ = try await Shell.xcrun(timeout: 30, "simctl", "bootstatus", device.udid, "-b")

@@ -33,12 +33,12 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Enable code coverage collection.")
   var coverage = false
 
-  @Flag(help: "Use 1800s timeout instead of the default 180s (for long integration suites).")
+  @Flag(help: "Raise the total time limit from 1800s to 7200s. Hangs are caught by --idle-timeout either way.")
   var long = false
 
   @Option(
     help:
-      "Override timeout in seconds. Takes precedence over --long. Default: 180s (or 1800s with --long)."
+      "Override timeout in seconds. Takes precedence over --long. Default: 1800s (or 7200s with --long)."
   )
   var timeoutSeconds: Int?
 
@@ -53,6 +53,15 @@ struct BuildTest: AsyncParsableCommand {
     )
   )
   var env: [String] = []
+
+  @Option(
+    help:
+      "Simulator recovery: off (default), auto (reboot if not Booted), erase (also erase if a reboot didn't help)."
+  )
+  var simRecovery: String = "off"
+
+  @Flag(help: "Run on a fresh simulator of the same model and OS, deleted afterwards.")
+  var isolatedSim = false
 
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
@@ -69,9 +78,18 @@ struct BuildTest: AsyncParsableCommand {
   )
   var gate = false
 
+  @OptionGroup var xcodebuild: XcodebuildOptionGroup
+
   mutating func run() async throws {
+    let command = self
+    try await xcodebuild.scoped { try await command.execute() }
+  }
+
+  func execute() async throws {
     let useJSON = shouldOutputJSON(flag: json) || forMode == .agent
-    let configuration = self.configuration ?? "Debug"
+    let session = Environment.live.session
+    let configuration = await session.resolveConfiguration(self.configuration)
+    let resolvedTestplan = await session.resolveTestPlan(testplan)
     let resolvedTimeout = timeoutSeconds.map { TimeInterval($0) }
 
     let result = try await TestTools.executeBuildAndTest(
@@ -79,15 +97,17 @@ struct BuildTest: AsyncParsableCommand {
       scheme: scheme,
       simulator: simulator,
       configuration: configuration,
-      testplan: testplan,
+      testplan: resolvedTestplan,
       filter: filter,
       coverage: coverage,
       long: long,
       diagnose: diagnose,
+      simRecovery: try SimRecoveryMode.parse(simRecovery),
       timeoutSeconds: resolvedTimeout,
       envEntries: env,
       gate: gate,
-      forMode: forMode
+      forMode: forMode,
+      isolatedSimulator: isolatedSim
     )
 
     if useJSON {

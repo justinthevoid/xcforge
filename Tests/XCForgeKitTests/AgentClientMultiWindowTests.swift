@@ -15,6 +15,8 @@ struct AgentClientMultiWindowTests {
 
   @Test("getSource returns a payload that contains both the keyWindow and a secondary window subtree")
   func sourceReturnsBothWindows() async throws {
+    await WDAStubGate.shared.acquire()
+    defer { WDAStubGate.shared.releaseSoon() }
     StubWDAProtocol.reset()
     URLProtocol.registerClass(StubWDAProtocol.self)
     defer {
@@ -53,6 +55,8 @@ struct AgentClientMultiWindowTests {
 
   @Test("findElement returns a sheet-window element id when WDA's per-window retry resolved it")
   func findElementResolvesSheetMember() async throws {
+    await WDAStubGate.shared.acquire()
+    defer { WDAStubGate.shared.releaseSoon() }
     StubWDAProtocol.reset()
     URLProtocol.registerClass(StubWDAProtocol.self)
     defer {

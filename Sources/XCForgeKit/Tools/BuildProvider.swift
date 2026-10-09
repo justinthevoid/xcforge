@@ -119,7 +119,7 @@ public enum BuildTools {
     let errorIssues = issues.filter { $0.severity == .error }
     if !errorIssues.isEmpty {
       return Array(
-        errorIssues.prefix(20).map { issue in
+        errorIssues.prefix(50).map { issue in
           if let loc = issue.location {
             var s = loc.filePath
             if let line = loc.line { s += ":\(line)" }
@@ -168,7 +168,7 @@ public enum BuildTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for large projects."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -184,7 +184,7 @@ public enum BuildTools {
       name: "build_run_sim",
       description: """
         Build, install, and launch an iOS app on a simulator in one call. \
-        Runs build, settings extraction, simulator boot, and Simulator.app \
+        Runs build, settings extraction, simulator boot, and Simulator/Device Hub \
         in parallel for maximum speed. Equivalent to Xcode's Cmd+R. \
         Project, scheme, and simulator are auto-detected if omitted.
         """,
@@ -214,7 +214,7 @@ public enum BuildTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for large projects that take longer to build."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -260,7 +260,7 @@ public enum BuildTools {
           "long": .object([
             "type": .string("boolean"),
             "description": .string(
-              "Use 1800s timeout instead of the default 180s for large projects."
+              "Raise the total time limit from 1800s to 7200s. Hangs are caught by idleTimeoutSeconds either way."
             ),
           ]),
           "diagnose": .object([
@@ -289,6 +289,21 @@ public enum BuildTools {
             "type": .string("string"),
             "description": .string("Xcode scheme name. Auto-detected if omitted."),
           ]),
+        ]),
+      ])
+    ),
+    Tool(
+      name: "build_lock_status",
+      description: """
+        Show who holds the shared build lock and who is queued behind it, with wait times.         The lock path comes from the 'lock' argument, XCFORGE_BUILD_LOCK, or .xcforge.yaml buildLock.
+        """,
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "lock": .object([
+            "type": .string("string"),
+            "description": .string("Lock file path. Defaults to the configured build lock."),
+          ])
         ]),
       ])
     ),
@@ -386,9 +401,9 @@ public enum BuildTools {
     let buildTimeout = await TestTools.resolveTestTimeout(long: long, env: env)
     let snapshotPath = TestTools.diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
-      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120], env: env)
-    let result = try await env.shell.run(
-      "/usr/bin/xcodebuild", arguments: buildArgs, timeout: buildTimeout)
+      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120],
+      processMatch: resultPath, env: env)
+    let result = try await Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
     watchdog.cancel()
     let watchdogCapture = await watchdog.latestResult
     let diagResult: DiagnosticSnapshot.Result?
@@ -397,14 +412,14 @@ public enum BuildTools {
         diagResult = captured
       } else {
         diagResult = await DiagnosticSnapshot.capture(
-          udid: resolvedSimulator, snapshotPath: snapshotPath, env: env)
+          udid: resolvedSimulator, snapshotPath: snapshotPath, processMatch: resultPath, env: env)
       }
     } else if diagnose {
       if let captured = watchdogCapture {
         diagResult = captured
       } else {
         diagResult = await DiagnosticSnapshot.capture(
-          udid: resolvedSimulator, snapshotPath: snapshotPath, env: env)
+          udid: resolvedSimulator, snapshotPath: snapshotPath, processMatch: resultPath, env: env)
       }
     } else {
       diagResult = watchdogCapture
@@ -451,21 +466,27 @@ public enum BuildTools {
       var warningCount = xcresultIssues.warningCount
 
       if issues.isEmpty {
-        issues = TestTools.fallbackBuildIssues(stderr: result.stderr)
+        issues = TestTools.fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(result))
         errorCount = issues.filter { $0.severity == .error }.count
         warningCount = issues.filter { $0.severity == .warning }.count
       }
 
       // Classify failure from xcresult issues first, then stderr
+      let output = Xcodebuild.combinedOutput(result)
       let reason: String
-      if !issues.isEmpty {
+      if let timeout = Xcodebuild.timeoutKind(result) {
+        reason = "timeout_\(timeout.rawValue)"
+      } else if !issues.isEmpty {
         reason = classifyFailureFromIssues(issues)
       } else {
-        reason = classifyFailureReason(stderr: result.stderr)
+        reason = classifyFailureReason(stderr: output)
       }
 
-      let structured = extractStructuredErrors(stderr: result.stderr, failureReason: reason)
-      let errors = extractLegacyErrors(from: result.stderr)
+      var structured = extractStructuredErrors(stderr: output, failureReason: reason)
+      if let explanation = Xcodebuild.timeoutExplanation(result) {
+        structured.insert(explanation, at: 0)
+      }
+      let errors = extractLegacyErrors(from: output)
 
       return BuildExecution(
         succeeded: false,
@@ -650,7 +671,8 @@ public enum BuildTools {
   private static func extractLegacyErrors(from stderr: String) -> [String] {
     let errorLines = stderr.split(separator: "\n")
       .filter { $0.contains(": error:") }
-      .prefix(20)
+      .reduce(into: [Substring]()) { if !$0.contains($1) { $0.append($1) } }
+      .prefix(50)
       .map(String.init)
     let stderrTail = String(stderr.suffix(2000))
     return errorLines.isEmpty
@@ -664,6 +686,11 @@ public enum BuildTools {
 
     if let reason = execution.failureReason {
       lines.append("Failure reason: \(reason)")
+      // The timeout explanation is always the first structured line; show it even when
+      // xcresult issues take over the error list below.
+      if reason.hasPrefix("timeout"), let note = execution.structuredErrors?.first {
+        lines.append(note)
+      }
     }
 
     lines.append("Scheme: \(execution.scheme)")
@@ -677,9 +704,10 @@ public enum BuildTools {
       if !errors.isEmpty {
         lines.append("")
         lines.append("Errors (\(errors.count)):")
-        for issue in errors.prefix(20) {
+        for issue in errors.prefix(50) {
           lines.append("  \(formatIssue(issue))")
         }
+        if errors.count > 50 { lines.append("  ... \(errors.count - 50) more in the xcresult") }
       }
       if !warnings.isEmpty {
         lines.append("")
@@ -724,16 +752,22 @@ public enum BuildTools {
     return issue.message
   }
 
-  /// Find the most recent xcresult bundle from a build in /tmp.
-  public static func findRecentBuildXcresult(env: Environment = .live) async -> String? {
+  /// Find this project's most recent build result bundle. Falls back to the newest
+  /// xcforge build bundle in the artifact directory when no project can be resolved.
+  public static func findRecentBuildXcresult(project: String? = nil, env: Environment = .live)
+    async -> String?
+  {
+    if let resolved = try? await env.session.resolveProject(project) {
+      return LastResultStore.latest(project: resolved, kind: .build)
+    }
+    let dir = XcodebuildOptions.artifactDirectory()
     do {
-      let result = try await env.shell.run(
-        "/bin/ls", arguments: ["-1t", "/tmp/"], timeout: 5)
+      let result = try await env.shell.run("/bin/ls", arguments: ["-1t", dir], timeout: 5)
       guard result.succeeded else { return nil }
       let candidates = result.stdout.split(separator: "\n")
         .map(String.init)
         .filter { $0.hasPrefix("xcf-build-") && $0.hasSuffix(".xcresult") }
-      return candidates.first.map { "/tmp/\($0)" }
+      return candidates.first.map { (dir as NSString).appendingPathComponent($0) }
     } catch {
       return nil
     }
@@ -777,11 +811,8 @@ public enum BuildTools {
       let projectFlag = isWorkspace ? "-workspace" : "-project"
 
       do {
-        let result = try await env.shell.run(
-          "/usr/bin/xcodebuild",
-          arguments: [
-            projectFlag, project, "-scheme", scheme, "clean",
-          ], timeout: 60)
+        let result = try await Xcodebuild.run(
+          [projectFlag, project, "-scheme", scheme, "clean"], timeout: 60, env: env)
         return result.succeeded ? .ok("Clean succeeded") : .fail("Clean failed: \(result.stderr)")
       } catch {
         return .fail("Clean error: \(error)")
@@ -877,14 +908,13 @@ public enum BuildTools {
     let buildTimeout = await TestTools.resolveTestTimeout(long: input.long ?? false, env: env)
     let buildSnapshotPath = TestTools.diagnosticSnapshotPath()
     let buildWatchdog = HangWatchdog(
-      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], env: env)
-    async let buildTask = env.shell.run("/usr/bin/xcodebuild", arguments: buildArgs, timeout: buildTimeout)
-    async let settingsTask = env.shell.run(
-      "/usr/bin/xcodebuild", arguments: settingsArgs, timeout: 30)
+      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], processMatch: resultPath,
+      env: env)
+    async let buildTask = Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
+    async let settingsTask = Xcodebuild.run(settingsArgs, timeout: 30, env: env)
     async let bootTask = env.shell.run(
       "/usr/bin/xcrun", arguments: ["simctl", "boot", udid], timeout: 60)
-    async let openTask = env.shell.run(
-      "/usr/bin/open", arguments: ["-a", "Simulator"], timeout: 10)
+    async let openTask: Void = SimulatorApp.open(shell: env.shell)
 
     // Await build first (critical — abort if it fails)
     let buildResult: ShellResult
@@ -900,7 +930,7 @@ public enum BuildTools {
       buildDiagResult = captured
     } else if input.diagnose ?? false {
       buildDiagResult = await DiagnosticSnapshot.capture(
-        udid: udid, snapshotPath: buildSnapshotPath, env: env)
+        udid: udid, snapshotPath: buildSnapshotPath, processMatch: resultPath, env: env)
     } else {
       buildDiagResult = nil
     }
@@ -914,16 +944,21 @@ public enum BuildTools {
       var warningCount = xcresultIssues.warningCount
 
       if issues.isEmpty {
-        issues = TestTools.fallbackBuildIssues(stderr: buildResult.stderr)
+        issues = TestTools.fallbackBuildIssues(stderr: Xcodebuild.combinedOutput(buildResult))
         errorCount = issues.filter { $0.severity == .error }.count
         warningCount = issues.filter { $0.severity == .warning }.count
       }
 
+      let output = Xcodebuild.combinedOutput(buildResult)
       let reason =
-        !issues.isEmpty
-        ? classifyFailureFromIssues(issues) : classifyFailureReason(stderr: buildResult.stderr)
-      let structured = extractStructuredErrors(stderr: buildResult.stderr, failureReason: reason)
-      let legacyErrors = extractLegacyErrors(from: buildResult.stderr)
+        Xcodebuild.timeoutKind(buildResult).map { "timeout_\($0.rawValue)" }
+        ?? (!issues.isEmpty
+          ? classifyFailureFromIssues(issues) : classifyFailureReason(stderr: output))
+      var structured = extractStructuredErrors(stderr: output, failureReason: reason)
+      if let explanation = Xcodebuild.timeoutExplanation(buildResult) {
+        structured.insert(explanation, at: 0)
+      }
+      let legacyErrors = extractLegacyErrors(from: output)
 
       let execution = BuildExecution(
         succeeded: false,
@@ -996,7 +1031,9 @@ public enum BuildTools {
 
     // Tier 3: Search DerivedData
     if appPath == nil {
-      let ddPath = NSHomeDirectory() + "/Library/Developer/Xcode/DerivedData"
+      let ddPath =
+        XcodebuildOptions.effective(cwd: env.currentDirectoryPath()).derivedDataPath
+        ?? NSHomeDirectory() + "/Library/Developer/Xcode/DerivedData"
       let findResult = try? await env.shell.run(
         "/usr/bin/find",
         arguments: [
@@ -1041,7 +1078,7 @@ public enum BuildTools {
     }
 
     // Await Simulator.app (fire and forget)
-    _ = try? await openTask
+    await openTask
 
     // ── Phase 2: Sequential (needs build artifacts + booted simulator) ──
 
@@ -1069,14 +1106,14 @@ public enum BuildTools {
       launchResult = try await env.shell.run(
         "/usr/bin/xcrun",
         arguments: ["simctl", "launch", "--terminate-running-process", udid, bundleId],
-        timeout: 15)
+        timeout: SimTools.launchTimeout)
     } catch {
       return .fail("Build + Install succeeded\nLaunch error: \(error)")
     }
 
     guard launchResult.succeeded else {
       if launchResult.exitCode == -1 {
-        return .fail("Build + Install succeeded\nLaunch timed out after 15s")
+        return .fail("Build + Install succeeded\nLaunch timed out after \(Int(SimTools.launchTimeout))s")
       }
       return .fail("Build + Install succeeded\nLaunch FAILED: \(launchResult.stderr)")
     }
@@ -1132,15 +1169,14 @@ public enum BuildTools {
     let projectFlag = isWorkspace ? "-workspace" : "-project"
     let destination = await AutoDetect.buildDestination(simulator)
 
-    let result = try await env.shell.run(
-      "/usr/bin/xcodebuild",
-      arguments: [
+    let result = try await Xcodebuild.run(
+      [
         projectFlag, project,
         "-scheme", scheme,
         "-configuration", configuration,
         "-destination", destination,
         "-showBuildSettings",
-      ], timeout: 30)
+      ], timeout: 30, env: env)
 
     guard result.succeeded else {
       let details = result.stderr.isEmpty ? result.stdout : result.stderr
@@ -1259,11 +1295,8 @@ public enum BuildTools {
     let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
 
-    let result = try await Shell.run(
-      "/usr/bin/xcodebuild",
-      arguments: [
-        projectFlag, resolvedProject, "-scheme", resolvedScheme, "clean",
-      ], timeout: 60)
+    let result = try await Xcodebuild.run(
+      [projectFlag, resolvedProject, "-scheme", resolvedScheme, "clean"], timeout: 60, env: env)
 
     return CleanExecution(
       succeeded: result.succeeded,
@@ -1349,6 +1382,16 @@ public enum BuildTools {
 }
 
 extension BuildTools: ToolProvider {
+  static func buildLockStatus(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
+    let explicit = args?["lock"]?.stringValue
+    guard let path = BuildLock.configuredPath(explicit: explicit, cwd: env.currentDirectoryPath())
+    else {
+      return .fail("No build lock configured. Pass 'lock', set XCFORGE_BUILD_LOCK, or add buildLock to .xcforge.yaml.")
+    }
+    let status = await BuildLock.status(path: path, env: env)
+    return .ok(BuildLock.format(status))
+  }
+
   public static func dispatch(_ name: String, _ args: [String: Value]?, env: Environment) async
     -> CallTool.Result?
   {
@@ -1359,6 +1402,7 @@ extension BuildTools: ToolProvider {
     case "clean": return await clean(args, env: env)
     case "discover_projects": return await discoverProjects(args, env: env)
     case "list_schemes": return await listSchemes(args, env: env)
+    case "build_lock_status": return await buildLockStatus(args, env: env)
     default: return nil
     }
   }

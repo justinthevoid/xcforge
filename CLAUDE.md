@@ -14,10 +14,11 @@ swift run xcforge build --help # CLI mode
 ```
 
 **Test timeout defaults** (`build-test`, `test run`, `test_sim`, `build_and_test`):
-- Default timeout: **180s**. Pass `--long` (CLI) or `long: true` (MCP) to use 1800s.
+- Default total limit: **1800s** (`--long` / `long: true`: 7200s). Builds and test runs are also killed
+  after **600s with no output** (`--idle-timeout` / `idleTimeoutSeconds`, 0 disables).
 - Pass `--diagnose` / `diagnose: true` to capture a diagnostic snapshot even on success.
 - On timeout, the result includes a `/tmp/xcf-diag-<pid>-<ts>.txt` path and a summary line.
-- `build_sim` and `build_run_sim` share the same watchdog design; `build` (build-only) remains at 1800s.
+- `build_sim` and `build_run_sim` share the same watchdog design.
 
 **Formatting** (CI enforces strict lint):
 ```bash
@@ -37,7 +38,7 @@ bun run lint && bun run format            # Biome lint/format
 **Dual-mode single binary**: no args → MCP server (stdio JSON-RPC); with args → CLI (ArgumentParser). Mode detection in `Sources/XCForgeCLI/Main.swift`.
 
 **Two targets** (see `Package.swift`):
-- `XCForgeKit` — shared library containing all 102+ MCP tools
+- `XCForgeKit` — shared library containing all 110+ MCP tools
 - `XCForgeCLI` — CLI layer wrapping the library with ArgumentParser commands
 
 ### Tool Provider System
@@ -73,7 +74,7 @@ MCP tools use snake_case (`build_sim`, `ui_tap`). CLI commands mirror them as su
 2. Register it in `ProviderRegistry`
 3. Add a matching CLI command in `Sources/XCForgeCLI/Commands/`
 4. Add tests in `Tests/XCForgeKitTests/`
-5. Update skill reference in `.claude/skills/xcforge/references/`
+5. Update skill reference in `Skills/xcforge/references/`
 
 ## Dependencies
 

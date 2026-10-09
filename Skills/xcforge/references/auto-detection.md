@@ -5,7 +5,7 @@
 All tools that accept `project`, `scheme`, or `simulator` resolve values in this order:
 
 1. **Explicit parameter** — value passed directly in the tool call (highest priority)
-2. **In-session value** — set this session via `set_defaults`/`profile_switch`, auto-promoted (3× rule, unless `autoPromote: false`), or already resolved earlier this session
+2. **In-session value** — set this session via `set_defaults`/`profile_switch`, auto-promoted (3× rule, only with `autoPromote: true`), or already resolved earlier this session
 3. **Repo config** — `.xcforge.yaml` at the repo root (committed team config; see below)
 4. **Persisted defaults (per active project)** — the active project's record in `~/.xcforge/defaults.json`
 5. **Auto-detect** — runtime detection (see below)
@@ -49,8 +49,8 @@ file is warned and skipped (never crashes).
 | `simulator` | Default simulator name or UDID. | shared with defaults model |
 | `configuration` | Build configuration for `build_sim`/`test_sim`/`build_and_test`/`build_and_diagnose` when no `--configuration`/`configuration` arg is given. Default `Debug`. | **repo-only — never written to `defaults.json` or profiles** |
 | `testPlan` | Default `.xctestplan` for `test_sim`/`build_and_test` when no `--testplan`/`testplan` arg is given. | **repo-only — never written to `defaults.json` or profiles** |
-| `testTimeout` | Per-project default test timeout, positive integer seconds. Precedence: explicit `timeoutSeconds` > `testTimeout` > `--long`/180s default. Non-positive values rejected with warning. | **repo-only** |
-| `autoPromote` | `true` (default) keeps the 3-rep auto-promotion. `false` disables it (streak counter held at zero) so explicit values stay explicit across repeated iterative runs. | **repo-only** |
+| `testTimeout` | Per-project default test timeout, positive integer seconds. Precedence: explicit `timeoutSeconds` > `testTimeout` > `--long` (7200s) > 1800s default. Non-positive values rejected with warning. | **repo-only** |
+| `autoPromote` | `true` turns on 3-rep auto-promotion of explicit values to session defaults. Off (`false`) by default. | **repo-only** |
 
 `configuration`, `testPlan`, `testTimeout`, and `autoPromote` are repo-only by
 design and never flow into the machine-global persisted JSON or named profiles.
@@ -100,11 +100,9 @@ xcforge init --force    # overwrite an existing file
 
 ## Auto-Promotion
 
-When the same explicit value is passed **3 consecutive times** for a parameter, xcforge auto-promotes it to a session default. This avoids the need to call `set_defaults` explicitly for repeated workflows.
+Off by default. With `autoPromote: true` in `.xcforge.yaml`, passing the same explicit value **3 consecutive times** for a parameter saves it as a session default, so later calls can omit it.
 
-Example: calling `build_sim(scheme: "MyApp")` 3 times in a row auto-saves "MyApp" as the default scheme.
-
-**Opt out:** set `autoPromote: false` in `.xcforge.yaml`. The streak counter then stays at zero, so explicit values never get promoted — useful for iterative test loops where you want each call to stand on its own. Auto-promotion is also no longer sticky after the fact: `set_defaults` resets the matching field's streak so an old explicit value can't ambush a later run after you've overridden it.
+Example: with `autoPromote: true`, calling `build_sim(scheme: "MyApp")` 3 times in a row saves "MyApp" as the default scheme. `defaults show` notes when a value was auto-promoted. Auto-promotion is also no longer sticky after the fact: `set_defaults` resets the matching field's streak so an old explicit value can't ambush a later run after you've overridden it.
 
 ## set_defaults (MCP tool)
 

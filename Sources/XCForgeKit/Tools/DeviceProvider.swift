@@ -129,6 +129,15 @@ public enum DeviceTools {
             "items": .object(["type": .string("string")]),
             "description": .string("Arguments to pass to the launched app"),
           ]),
+          "url": .object([
+            "type": .string("string"),
+            "description": .string("Open this URL (deep link or universal link) in the app at launch."),
+          ]),
+          "env": .object([
+            "type": .string("object"),
+            "additionalProperties": .object(["type": .string("string")]),
+            "description": .string("Environment variables for the launched app."),
+          ]),
         ]),
         "required": .array([.string("device"), .string("bundle_id")]),
       ])
@@ -171,6 +180,63 @@ public enum DeviceTools {
         "required": .array([.string("device")]),
       ])
     ),
+    Tool(
+      name: "device_screenshot",
+      description:
+        "Save a screenshot of a connected physical device as PNG. Uses devicectl, or the device's WebDriverAgent when devicectl can't capture.",
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "device": .object([
+            "type": .string("string"), "description": .string("Device name or UDID"),
+          ]),
+          "path": .object([
+            "type": .string("string"),
+            "description": .string("Where to write the PNG. Default: a new file in the artifact directory."),
+          ]),
+        ]),
+        "required": .array([.string("device")]),
+      ])
+    ),
+    Tool(
+      name: "wda_start",
+      description:
+        "Build, sign and start WebDriverAgent on a connected physical device, then point this server's UI tools (find_element, click_element, ...) at it. Reuses a runner that is already answering.",
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "device": .object([
+            "type": .string("string"), "description": .string("Device name or UDID"),
+          ]),
+          "team": .object([
+            "type": .string("string"),
+            "description": .string("Apple development team ID for signing. Default: XCFORGE_WDA_TEAM."),
+          ]),
+          "bundle_id": .object([
+            "type": .string("string"),
+            "description": .string(
+              "Runner bundle id. Default: com.xcforge.wda.<team>.runner (or com.xcforge.wda.runner without a team)."),
+          ]),
+          "port": .object([
+            "type": .string("integer"), "description": .string("Port WDA listens on. Default: 8100."),
+          ]),
+        ]),
+        "required": .array([.string("device")]),
+      ])
+    ),
+    Tool(
+      name: "wda_stop",
+      description: "Stop WebDriverAgent started on a physical device with wda_start.",
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "device": .object([
+            "type": .string("string"), "description": .string("Device name or UDID"),
+          ])
+        ]),
+        "required": .array([.string("device")]),
+      ])
+    ),
   ]
 
   // MARK: - Input Structs
@@ -200,6 +266,20 @@ public enum DeviceTools {
     let terminate_existing: Bool?
     let timeout: Int?
     let arguments: [String]?
+    let url: String?
+    let env: [String: String]?
+  }
+
+  private struct WDAStartInput: Decodable {
+    let device: String
+    let team: String?
+    let bundle_id: String?
+    let port: Int?
+  }
+
+  private struct ScreenshotInput: Decodable {
+    let device: String
+    let path: String?
   }
 
   private struct TerminateInput: Decodable {
@@ -260,17 +340,14 @@ public enum DeviceTools {
 
       var devices: [DeviceEntry] = []
       for device in deviceList {
-        let properties = device["deviceProperties"] as? [String: Any] ?? [:]
-        let connectionProperties = device["connectionProperties"] as? [String: Any] ?? [:]
-        let name = properties["name"] as? String ?? "Unknown"
-        let osVersion =
-          (device["deviceProperties"] as? [String: Any])?["osVersionNumber"] as? String ?? "Unknown"
+        let name = property(device, "name") as? String ?? "Unknown"
+        let osVersion = property(device, "osVersionNumber") as? String ?? "Unknown"
         let udid =
-          (device["hardwareProperties"] as? [String: Any])?["udid"] as? String
+          property(device, "udid") as? String
           ?? (device["identifier"] as? String)
           ?? "Unknown"
         let state = (device["visibilityClass"] as? String) ?? "available"
-        let connectionType = connectionProperties["transportType"] as? String ?? "unknown"
+        let connectionType = property(device, "transportType") as? String ?? "unknown"
 
         devices.append(
           DeviceEntry(
@@ -322,23 +399,34 @@ public enum DeviceTools {
         )
       }
 
-      let deviceInfo = resultObj["deviceProperties"] as? [String: Any] ?? resultObj
       var lines: [String] = []
-      if let name = deviceInfo["name"] as? String { lines.append("Name: \(name)") }
-      if let osVersion = deviceInfo["osVersionNumber"] as? String {
+      if let name = property(resultObj, "name") as? String { lines.append("Name: \(name)") }
+      if let osVersion = property(resultObj, "osVersionNumber") as? String {
         lines.append("OS: \(osVersion)")
       }
-
-      let hw = resultObj["hardwareProperties"] as? [String: Any] ?? [:]
-      if let udid = hw["udid"] as? String { lines.append("UDID: \(udid)") }
-      if let model = hw["marketingName"] as? String ?? hw["productType"] as? String {
+      if let udid = property(resultObj, "udid") as? String { lines.append("UDID: \(udid)") }
+      if let model = property(resultObj, "marketingName") as? String
+        ?? property(resultObj, "productType") as? String
+      {
         lines.append("Model: \(model)")
       }
-      if let platform = hw["platform"] as? String { lines.append("Platform: \(platform)") }
-
-      let conn = resultObj["connectionProperties"] as? [String: Any] ?? [:]
-      if let transport = conn["transportType"] as? String {
+      if let platform = property(resultObj, "platform") as? String {
+        lines.append("Platform: \(platform)")
+      }
+      if let transport = property(resultObj, "transportType") as? String {
         lines.append("Connection: \(transport)")
+      }
+      if let tunnel = property(resultObj, "tunnelState") as? String {
+        lines.append("Tunnel: \(tunnel)")
+      }
+      if let address = property(resultObj, "tunnelIPAddress") as? String {
+        lines.append("Tunnel IP: \(address)")
+      }
+      if let pairing = property(resultObj, "pairingState") as? String {
+        lines.append("Pairing: \(pairing)")
+      }
+      if let devMode = property(resultObj, "developerModeStatus") as? String {
+        lines.append("Developer Mode: \(devMode)")
       }
 
       return DeviceResult(
@@ -411,6 +499,8 @@ public enum DeviceTools {
     terminateExisting: Bool,
     timeout: Int,
     arguments: [String]?,
+    url: String? = nil,
+    environment: [String: String]? = nil,
     env: Environment
   ) async -> DeviceResult {
     do {
@@ -421,6 +511,15 @@ public enum DeviceTools {
       }
       if terminateExisting {
         args.append("--terminate-existing")
+      }
+      if let url, !url.isEmpty {
+        args += ["--payload-url", url]
+      }
+      if let environment, !environment.isEmpty,
+        let data = try? JSONSerialization.data(withJSONObject: environment, options: [.sortedKeys]),
+        let json = String(data: data, encoding: .utf8)
+      {
+        args += ["--environment-variables", json]
       }
 
       args.append(bundleId)
@@ -538,9 +637,57 @@ public enum DeviceTools {
 
   // MARK: - Physical Device UDID Detection
 
+  /// Capture the device screen to `path` (PNG). devicectl first (Xcode 26.6 and later), then
+  /// the device's WebDriverAgent when `xcforge wda start` has one running.
+  public static func executeDeviceScreenshot(device: String, path: String?, env: Environment) async
+    -> DeviceResult
+  {
+    let output = path ?? XcodebuildOptions.uniqueArtifactPath(prefix: "device-shot", extension: "png")
+    var devicectlError = ""
+    do {
+      let (result, json) = try await runDevicectl(
+        arguments: ["device", "capture", "screenshot", "--device", device, "--destination", output],
+        timeout: 60, env: env)
+      if result.succeeded, FileManager.default.fileExists(atPath: output) {
+        return DeviceResult(succeeded: true, message: "Screenshot: \(output)")
+      }
+      devicectlError = json.flatMap { extractError(from: $0) } ?? result.stderr
+    } catch {
+      devicectlError = "\(error)"
+    }
+
+    if let state = DeviceWDA.load(device: device),
+      let data = await DeviceWDA.screenshot(baseURL: state.url)
+    {
+      do {
+        try data.write(to: URL(fileURLWithPath: output))
+        return DeviceResult(succeeded: true, message: "Screenshot (via WebDriverAgent): \(output)")
+      } catch {
+        return DeviceResult(succeeded: false, message: "Could not write \(output): \(error)")
+      }
+    }
+    let reason = DeviceWDA.explainFailure(devicectlError) ?? devicectlError
+    return DeviceResult(
+      succeeded: false,
+      message:
+        "Screenshot failed: \(reason.isEmpty ? "devicectl returned no image" : reason)\n"
+        + "devicectl screen capture needs Xcode 26.6 or later. Alternatively start WebDriverAgent "
+        + "on the device with `xcforge wda start --device \(device)` and retry.")
+  }
+
   public static func isConnectedPhysicalDevice(_ identifier: String, env: Environment) async -> Bool {
     let list = await executeListDevices(filter: nil, env: env)
     return list.devices.contains { $0.udid == identifier || $0.name == identifier }
+  }
+
+  /// Read a device field from devicectl JSON. Xcode 27 groups fields under `properties`;
+  /// earlier versions split them across `deviceProperties`, `hardwareProperties` and
+  /// `connectionProperties`. Both layouts are read.
+  static func property(_ device: [String: Any], _ key: String) -> Any? {
+    for container in ["properties", "deviceProperties", "hardwareProperties", "connectionProperties"] {
+      if let dict = device[container] as? [String: Any], let value = dict[key] { return value }
+    }
+    return device[key]
   }
 
   // MARK: - Formatting Helpers
@@ -625,8 +772,46 @@ extension DeviceTools: ToolProvider {
             terminateExisting: input.terminate_existing ?? true,
             timeout: input.timeout ?? 30,
             arguments: input.arguments,
+            url: input.url,
+            environment: input.env,
             env: env
           ))
+      }
+    case "wda_start":
+      switch ToolInput.decode(WDAStartInput.self, from: args) {
+      case .failure(let err): return err
+      case .success(let input):
+        do {
+          let state = try await DeviceWDA.start(
+            device: input.device, team: input.team, bundleID: input.bundle_id,
+            port: input.port ?? DeviceWDA.defaultPort, env: env)
+          await env.wdaClient.setBaseURL(state.url)
+          return .ok(
+            "WebDriverAgent running on \(state.name ?? state.udid) at \(state.url)\n"
+              + "UI tools in this session now target the device. Runner log: \(state.logPath)")
+        } catch {
+          return .fail("\(error)")
+        }
+      }
+    case "wda_stop":
+      switch ToolInput.decode(DeviceInput.self, from: args) {
+      case .failure(let err): return err
+      case .success(let input):
+        let state = DeviceWDA.load(device: input.device)
+        await DeviceWDA.stop(device: input.device, env: env)
+        if let state, await env.wdaClient.getBaseURL() == state.url {
+          await env.wdaClient.setBaseURL("http://localhost:8100")
+        }
+        return .ok(
+          state == nil
+            ? "No WebDriverAgent recorded for \(input.device)" : "Stopped WebDriverAgent on \(input.device)")
+      }
+    case "device_screenshot":
+      switch ToolInput.decode(ScreenshotInput.self, from: args) {
+      case .failure(let err): return err
+      case .success(let input):
+        return dispatchResult(
+          await executeDeviceScreenshot(device: input.device, path: input.path, env: env))
       }
     case "device_terminate":
       switch ToolInput.decode(TerminateInput.self, from: args) {

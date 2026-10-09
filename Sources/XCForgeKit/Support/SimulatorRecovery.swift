@@ -3,9 +3,31 @@ import Foundation
 // MARK: - Public types
 
 /// Controls whether SimulatorRecovery probes sim state before a build.
+///
+/// - `off` (default): never touch the simulator.
+/// - `auto`: if the simulator isn't Booted, shut it down and boot it again. Never erases.
+/// - `erase`: like `auto`, then erase and reboot if a reboot didn't help. Destroys the
+///   simulator's apps and data, so it only runs when asked for by name.
 public enum SimRecoveryMode: String, Sendable, CaseIterable {
   case auto
+  case erase
   case off
+
+  /// Parse a user-supplied mode. Unknown values are an error, not a silent default.
+  public static func parse(_ raw: String?) throws -> SimRecoveryMode {
+    guard let raw, !raw.isEmpty else { return .off }
+    guard let mode = SimRecoveryMode(rawValue: raw.lowercased()) else {
+      throw SimRecoveryModeError(value: raw)
+    }
+    return mode
+  }
+}
+
+public struct SimRecoveryModeError: Error, CustomStringConvertible {
+  public let value: String
+  public var description: String {
+    "Invalid simRecovery '\(value)'. Expected one of: off, auto, erase."
+  }
 }
 
 /// Result of a probeAndRecover call.
@@ -27,7 +49,7 @@ public struct RecoveryOutcome: Sendable {
 /// Probes a simulator's state via `simctl list` and applies tiered recovery if unhealthy.
 ///
 /// Tier 1: shutdown + boot (non-destructive).
-/// Tier 2: erase + boot (destructive) — only if Tier 1 re-probe fails.
+/// Tier 2: erase + boot (destructive) — only in `.erase` mode, and only if Tier 1 re-probe fails.
 ///
 /// All operations are best-effort: failures surface in `RecoveryOutcome.failureReason`
 /// rather than being thrown.
@@ -39,7 +61,10 @@ enum SimulatorRecovery {
   ///   - udid: The simulator UDID to probe.
   ///   - env: Execution environment.
   /// - Returns: A `RecoveryOutcome` describing what happened. Never throws.
-  static func probeAndRecover(udid: String, env: Environment) async -> RecoveryOutcome {
+  static func probeAndRecover(
+    udid: String, mode: SimRecoveryMode = .auto, env: Environment
+  ) async -> RecoveryOutcome {
+    if mode == .off { return .healthy }
     let probeResult = await probeSimState(udid: udid, env: env)
 
     switch probeResult {
@@ -54,7 +79,8 @@ enum SimulatorRecovery {
 
     case .notBooted(let stateDetail):
       // Simulator is unhealthy — attempt tiered recovery.
-      let failureReason = await performTieredRecovery(udid: udid, env: env)
+      let failureReason = await performTieredRecovery(
+        udid: udid, allowErase: mode == .erase, env: env)
       return RecoveryOutcome(
         fired: true,
         reason: "sim_unhealthy",
@@ -107,7 +133,9 @@ enum SimulatorRecovery {
   }
 
   /// Returns a failure description string on error, or nil on success.
-  private static func performTieredRecovery(udid: String, env: Environment) async -> String? {
+  private static func performTieredRecovery(
+    udid: String, allowErase: Bool, env: Environment
+  ) async -> String? {
     // Tier 1: non-destructive shutdown + boot
     _ = try? await env.shell.run(
       "/usr/bin/xcrun", arguments: ["simctl", "shutdown", udid], timeout: 15)
@@ -117,6 +145,10 @@ enum SimulatorRecovery {
     let tier1Probe = await probeSimState(udid: udid, env: env)
     if case .booted = tier1Probe {
       return nil
+    }
+    guard allowErase else {
+      return "simulator did not reach Booted state after shutdown+boot"
+        + " (erase skipped; pass simRecovery: erase to allow it)"
     }
 
     // Tier 2: destructive erase + boot

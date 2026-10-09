@@ -327,6 +327,9 @@ struct DebugContinue: AsyncParsableCommand {
   @Option(help: "Execution mode: continue, step-over, step-into, step-out (default: continue).")
   var mode: String = "continue"
 
+  @Option(help: "Seconds to wait for the process to stop again (breakpoint, step done).")
+  var timeout: Int = 30
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
@@ -341,11 +344,11 @@ struct DebugContinue: AsyncParsableCommand {
     case "step_out": command = "finish"
     default: command = "continue"
     }
+    let wait = TimeInterval(max(1, timeout))
     do {
       let pid = try await target.resolvePID()
       let result = try await DebuggerOneShot.withSession(pid: pid) { session in
-        // 10-second timeout per spec I/O matrix
-        let output = try await session.sendCommand(command, timeout: 10)
+        let output = try await session.sendCommand(command, timeout: wait)
         return DebuggerProvider.parseContinueOutput(output)
       }
       if useJSON {

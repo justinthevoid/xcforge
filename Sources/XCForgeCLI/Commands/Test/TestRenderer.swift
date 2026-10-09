@@ -120,6 +120,9 @@ enum TestRenderer {
     lines.append(
       "\(result.testCount) tests in \(result.targetCount) target(s), \(result.classCount) class(es)"
     )
+    if let disabled = result.disabledTestCount, disabled > 0 {
+      lines.append("\(disabled) more disabled by the scheme or test plan")
+    }
     lines.append("")
 
     // Group by target/class

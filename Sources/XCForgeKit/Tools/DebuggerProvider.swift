@@ -235,6 +235,11 @@ extension DebuggerProvider {
             "type": .string("string"),
             "description": .string("Execution mode: continue, step_over, step_into, step_out (default: continue)."),
           ]),
+          "timeoutSeconds": .object([
+            "type": .string("integer"),
+            "description": .string(
+              "How long to wait for the process to stop again (breakpoint, step done). Default: 30."),
+          ]),
         ]),
         "required": .array([.string("sessionId")]),
       ])
@@ -295,6 +300,7 @@ extension DebuggerProvider {
   struct ContinueInput: Decodable {
     let sessionId: String
     let mode: String?
+    let timeoutSeconds: Int?
   }
 
   struct RunCommandInput: Decodable {
@@ -551,8 +557,8 @@ extension DebuggerProvider {
       }
 
       do {
-        // 10-second timeout per spec I/O matrix
-        let output = try await session.sendCommand(command, timeout: 10)
+        let timeout = TimeInterval(max(1, input.timeoutSeconds ?? 30))
+        let output = try await session.sendCommand(command, timeout: timeout)
         let result = parseContinueOutput(output)
         let data = try JSONEncoder().encode(result)
         return .ok(String(data: data, encoding: .utf8) ?? "{}")

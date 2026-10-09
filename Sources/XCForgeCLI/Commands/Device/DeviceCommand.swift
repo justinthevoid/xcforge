@@ -9,7 +9,7 @@ struct Device: AsyncParsableCommand {
     subcommands: [
       DeviceList.self, DeviceInfo.self, DeviceInstall.self,
       DeviceUninstall.self, DeviceLaunch.self, DeviceTerminate.self,
-      DeviceApps.self,
+      DeviceApps.self, DeviceScreenshot.self,
     ],
     defaultSubcommand: DeviceList.self
   )
@@ -160,19 +160,41 @@ struct DeviceLaunch: AsyncParsableCommand {
   @Option(help: "Console timeout in seconds (default: 30). Only used with --console.")
   var timeout: Int = 30
 
+  @Option(help: "Open this URL (deep link or universal link) in the app at launch.")
+  var url: String?
+
+  @Option(
+    name: .customLong("env"), parsing: .unconditionalSingleValue,
+    help: ArgumentHelp("Environment variable for the app as KEY=VALUE (repeatable).", valueName: "KEY=VALUE"))
+  var environment: [String] = []
+
+  @Option(
+    name: .customLong("arg"), parsing: .unconditionalSingleValue,
+    help: ArgumentHelp("Launch argument for the app (repeatable).", valueName: "ARG"))
+  var arguments: [String] = []
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
+    var variables: [String: String] = [:]
+    for entry in environment {
+      guard let eq = entry.firstIndex(of: "=") else {
+        throw ValidationError("--env expects KEY=VALUE, got '\(entry)'")
+      }
+      variables[String(entry[..<eq])] = String(entry[entry.index(after: eq)...])
+    }
     let result = await DeviceTools.executeDeviceLaunch(
       device: device,
       bundleId: bundleId,
       console: console,
       terminateExisting: terminateExisting,
       timeout: timeout,
-      arguments: nil,
+      arguments: arguments.isEmpty ? nil : arguments,
+      url: url,
+      environment: variables.isEmpty ? nil : variables,
       env: env
     )
 
@@ -254,5 +276,32 @@ struct DeviceApps: AsyncParsableCommand {
     if !result.succeeded {
       throw ExitCode.failure
     }
+  }
+}
+
+struct DeviceScreenshot: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "screenshot",
+    abstract: "Save a PNG screenshot of a connected physical device."
+  )
+
+  @Option(help: "Device name or UDID.")
+  var device: String
+
+  @Option(help: "Where to write the PNG. Default: a new file in the artifact directory.")
+  var output: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let result = await DeviceTools.executeDeviceScreenshot(
+      device: device, path: output.map { ($0 as NSString).expandingTildeInPath }, env: Environment.live)
+    if shouldOutputJSON(flag: json) {
+      print(try WorkflowJSONRenderer.renderJSON(result))
+    } else {
+      print(result.message)
+    }
+    if !result.succeeded { throw ExitCode.failure }
   }
 }
