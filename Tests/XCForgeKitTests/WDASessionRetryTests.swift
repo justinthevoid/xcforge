@@ -39,9 +39,10 @@ final class StubWDAProtocol: URLProtocol, @unchecked Sendable {
   }
 
   override class func canInit(with request: URLRequest) -> Bool {
-    // Limit interception to WDA's default loopback so an accidentally-leaked registration
-    // (e.g. a parallel suite running concurrently) cannot intercept unrelated network calls.
-    guard let host = request.url?.host else { return false }
+    // Only WDA's default loopback port. Other suites run ungated calls against
+    // `127.0.0.1:1` (POST /session included), which would otherwise consume this suite's
+    // queued responses while it is registered.
+    guard let host = request.url?.host, request.url?.port == WDAPorts.basePort else { return false }
     return host == "localhost" || host == "127.0.0.1"
   }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
