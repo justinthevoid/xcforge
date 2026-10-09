@@ -218,6 +218,20 @@ struct MacVerifyFixesTests {
     #expect(IndigoHIDClient.screenDimensions(for: prefix + "iPhone-15-Pro").width == 393)
   }
 
+  @Test("UI commands refuse to boot a shut-down simulator and name the booted one")
+  func notBootedProblem() {
+    let devices: [[String: Any]] = [
+      ["udid": "A", "name": "iPhone 17", "state": "Shutdown"],
+      ["udid": "B", "name": "iPhone 18 Pro Max", "state": "Booted"],
+    ]
+    let list: [String: Any] = ["devices": ["iOS-27-0": devices]]
+    let problem = WDAClient.notBootedProblem(udid: "A", listJSON: list)
+    #expect(problem?.contains("iPhone 17 (A) is shutdown; boot it first") == true)
+    #expect(problem?.contains("Already booted: iPhone 18 Pro Max") == true)
+    #expect(WDAClient.notBootedProblem(udid: "B", listJSON: list) == nil)
+    #expect(WDAClient.notBootedProblem(udid: "Z", listJSON: list) == nil)
+  }
+
   @Test("set_orientation takes a simulator")
   func orientationTakesSimulator() {
     #expect(UITarget.toolNames.contains("set_orientation"))

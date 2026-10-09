@@ -552,6 +552,37 @@ public actor WDAClient {
     return simulator
   }
 
+  /// Why WDA can't be started on `simulator` without booting it, or nil when it is booted
+  /// (or its state can't be read).
+  private func simulatorNotBootedProblem(_ simulator: String) async -> String? {
+    let udid = await resolveSimulatorUDID(simulator)
+    guard let result = try? await Shell.xcrun(timeout: 15, "simctl", "list", "devices", "-j"),
+      result.succeeded, let data = result.stdout.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    return Self.notBootedProblem(udid: udid, listJSON: json)
+  }
+
+  /// The error for a simulator that isn't booted, naming any simulator that is. Nil when
+  /// `udid` is booted or isn't in the list.
+  static func notBootedProblem(udid: String, listJSON: [String: Any]) -> String? {
+    guard let runtimes = listJSON["devices"] as? [String: [[String: Any]]] else { return nil }
+    let devices = runtimes.values.flatMap { $0 }
+    guard let target = devices.first(where: { $0["udid"] as? String == udid }) else { return nil }
+    let state = target["state"] as? String ?? "unknown"
+    if state == "Booted" { return nil }
+    let name = target["name"] as? String ?? udid
+    let others = devices.filter { $0["state"] as? String == "Booted" }.compactMap { $0["name"] as? String }
+    var message =
+      "Simulator \(name) (\(udid)) is \(state.lowercased()); boot it first (`xcrun simctl boot \(udid)`). "
+      + "xcforge doesn't boot simulators for UI commands."
+    if !others.isEmpty {
+      message += " Already booted: \(others.joined(separator: ", ")). Use it with --simulator, "
+        + "or shut it down first: two booted simulators can exhaust memory on a small Mac."
+    }
+    return message
+  }
+
   /// Health-check with auto-restart and fallback chain.
   /// Always tries in fixed order: healthy? → restart current → deploy xcforgeWDA → fallback Original WDA.
   /// H1 fix: Backend state is only updated AFTER confirming which backend is actually running.
@@ -562,6 +593,12 @@ public actor WDAClient {
 
     // A device runner can't be restarted from here; say what to do instead.
     if isRemote { throw WDAError.remoteNotResponding(baseURL) }
+
+    // Starting the runner with xcodebuild boots a shut-down simulator, and a second booted
+    // simulator can exhaust a small Mac's memory. Refuse instead of booting.
+    if let problem = await simulatorNotBootedProblem(simulator) {
+      throw WDAError.simulatorNotBooted(problem)
+    }
 
     // 2. Try restarting current backend
     do {
@@ -1396,6 +1433,7 @@ enum WDAError: Error, CustomStringConvertible {
   case wdaNotResponding
   case noBackendAvailable(String?)
   case remoteNotResponding(String)
+  case simulatorNotBooted(String)
 
   var description: String {
     switch self {
@@ -1412,6 +1450,7 @@ enum WDAError: Error, CustomStringConvertible {
     case .noBackendAvailable(nil):
       return
         "No WDA backend available. Neither xcforgeWDA nor Original WDA could be started. Install xcforgeWDA or start WebDriverAgent."
+    case .simulatorNotBooted(let msg): return msg
     case .remoteNotResponding(let url):
       return "WebDriverAgent at \(url) is not responding. Start it with `xcforge wda start --device <udid>` "
         + "(MCP: wda_start). If it was running: unlock the device, check Settings > Developer > "

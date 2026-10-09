@@ -14,6 +14,8 @@ used when a call names none; until then calls go to the booted simulator. From t
 accessibility id or label to appear), `untilGone` (one to disappear) and `timeout` (seconds,
 default 10). The result says whether the wait held; a wait that times out marks the call as an error.
 
+**Shut-down simulators are never booted.** If the target simulator is shut down, UI commands fail with "Simulator <name> is shutdown; boot it first" (and name any simulator that is already booted) instead of booting it to start WebDriverAgent. Boot it yourself, or target the booted one with `--simulator`.
+
 **Merged tools.** `tap` replaces eight tap tools, `swipe` takes `hid`, `get_source` takes
 `format: list` (was `list_elements`), and `find_element` takes `all` (was `find_elements`). The old
 names still work for one release and say what replaces them.
