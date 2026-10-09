@@ -128,7 +128,7 @@ public enum SwiftPackageTools {
 
   // MARK: - Result Type
 
-  public struct SPMResult: Codable, Sendable {
+  public struct SPMResult: Codable, Sendable, Error {
     public let succeeded: Bool
     public let message: String
     /// The package the command ran in.
