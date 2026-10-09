@@ -5,6 +5,11 @@ import Foundation
 /// Spawn one watchdog per xcodebuild invocation; call `cancel()` when the process finishes.
 /// Cancelling before the first deadline fires leaves zero side effects — no snapshot files written.
 final class HangWatchdog: Sendable {
+  /// When to sample: late enough that a healthy build is usually done, and before the
+  /// default 600s idle limit kills a hung one. Samples are only reported for a timeout
+  /// or when a diagnosis was asked for.
+  static let defaultSampleAt: [TimeInterval] = [300, 540]
+
   private let task: Task<DiagnosticSnapshot.Result?, Never>
 
   init(

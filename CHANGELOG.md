@@ -18,9 +18,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **UI automation on physical devices.** `xcforge wda start|status|stop` and MCP `wda_start`/`wda_stop` build xcforgeWDA for the device, sign it with your team (`--team`, `XCFORGE_WDA_TEAM`), launch it with `test-without-building`, find it over the CoreDevice tunnel, and record its URL in `~/.xcforge/wda/`. `XCFORGE_DEVICE=<udid>` points `xcforge ui` commands at it. Locked device, UI Automation off, Developer Mode off, pairing and signing failures each get a one-line explanation
 - `device screenshot` / `device_screenshot` (devicectl capture, falling back to the device's WDA)
 - `device launch --url <deep-link> --env KEY=VALUE --arg A` and matching `url`/`env` on `device_launch`
+- **MCP progress notifications.** When a `tools/call` carries a `progressToken`, xcforge sends `notifications/progress` every 10s with the elapsed time and the latest output line, so clients that time out silent requests keep waiting for long builds and tests
+- Each build and test tool result ends with `project: <absolute path>`, so a build of the wrong checkout or worktree is visible
+- `.xcforge.yaml` problems (unknown keys with a "did you mean", unparseable values) are listed by `set_defaults show` / `defaults show` and once at the end of the first tool result that uses the file
 - **Xcode 27 Device Hub support.** xcforge opens Device Hub when the selected Xcode has no Simulator.app, and screen capture, the accessibility bridge and window scripting accept either app
+- **Test run options:** `retries`, `iterations`, `untilFailure`, `parallel`, `testTimeoutSeconds`, `skipBuild`, `includeConsole`, `env` and `timeoutSeconds` on `test_sim` and `build_and_test`, with matching flags (`--retries`, `--iterations`, `--until-failure`, `--parallel/--no-parallel`, `--test-timeout`, `--no-build`, `--include-console`, `--env`, `--timeout-seconds`) on `test run`, `build-test` and `test rerun-failed`
+- Tests that fail and then pass on retry are listed as flaky (`flaky` in agent JSON)
+- `test rerun-failed` reuses the recorded project, test plan, configuration and env, and skips build-for-testing when no source file changed since the last one (`--build` forces it)
+- **Launches report a crash at startup.** `launch_app`, `build_run_sim`, `sim launch` and `build run` watch the app for 8s after launch (`XCFORGE_LAUNCH_WATCH_SECONDS`) and wait up to 15s for its crash report (`XCFORGE_CRASH_REPORT_WAIT_SECONDS`); when it dies, they fail with the exception, reason, crashed thread's top frames and the `.ips` report path
+- Launch arguments, environment and a deep link: `args`, `env` (KEY=VALUE), `url` and `terminate` on `launch_app` and `build_run_sim`; `--arg`, `--env`, `--url` and `--no-terminate` on `sim launch` and `build run`; `--env` on `console launch`
+- `open_url` / `sim openurl` open a URL or deep link on a simulator
+- `clean` / `build clean` take `configuration` and `derivedData: true` / `--derived-data`, which deletes this project's DerivedData folder (and only that one)
+- **Every UI tool takes `simulator`, and each simulator has its own WebDriverAgent** on its own port (8100 up, saved in `~/.xcforge/wda/simulator-ports.json`), so with two simulators booted the screenshot and the taps hit the same one. `XCFORGE_SIMULATOR` does the same for CLI `ui` commands
+- **Actions can wait for the result:** `wait_for`, `until_gone` and `timeout` on taps, swipes, typing and `find_element`, instead of sleeps
+- `find_element` reports how many elements matched, with each one's label and frame, and takes `index`
+- `type_text` types into the focused field; `key` sends return, delete, tab and other named keys, `dismiss_keyboard` hides the keyboard, and `secure` keeps the text out of the result (`ui type --key`, `--dismiss-keyboard`, `--secure`)
+- `alert_action` (accept/dismiss) on `wda_create_session` and `XCFORGE_ALERT_ACTION` let permission alerts be handled automatically; "not found" errors mention a visible alert
+- `screenshot` takes `crop` (x,y,width,height in device points) and `max_dimension` (longest side in pixels, with how many points one pixel covers); `screenshot capture --crop`, `--max-dimension`
+- Simulator setup tools: `sim_content_size`, `sim_locale`, `app_container`, `sim_push` and `sim_privacy` (grant/revoke/reset), and `sim content-size|locale|container|push|privacy`. Setters report the value they replaced
+
+- **`build typecheck <target>` / `build_typecheck`** compiles one target for the simulator (its own scheme when it has one, else `-target` in the project that defines it), reusing the workspace's DerivedData
+- **`--from-snapshot` / `fromSnapshot`** on `build compile` and `build typecheck` builds a snapshot of the working tree (a git worktree per repo under `~/.xcforge/snapshots`, `XCFORGE_SNAPSHOT_DIR`), so edits other agents make mid-build don't break it. Errors name the real files
+- **`lsp setup` / `lsp_setup`** writes `buildServer.json` with xcode-build-server and points its `build_root` at the DerivedData xcforge builds into, so SourceKit-LSP stops reporting "No such module"
+- `--jobs` / `jobs` (also `XCFORGE_JOBS`, `.xcforge.yaml jobs`) passes `-jobs N` to compiling xcodebuild calls and `-j N` to SwiftPM
+- `--all-errors` / `allErrors` builds in a separate diagnostic DerivedData slot (`diagnosticDerivedDataPath`, `XCFORGE_DIAGNOSTIC_DERIVED_DATA_PATH`; default a per-project folder beside Xcode's) and keeps going after errors, leaving the main cache alone
+- **SwiftPM tools find the package:** `path`, then `.xcforge.yaml packagePath`, then the current folder, then the only `Package.swift` in the repo. `swift_package_build`/`swift_package_test` results list compiler errors with file:line, failing tests (XCTest and Swift Testing) and test counts, keeping only the end of the raw output when nothing parses. They take the build lock and the idle timeout
+
+- `test_sim` takes `rerunFailed`: the MCP form of `test rerun-failed`, reusing the last run's settings and skipping the build when nothing changed
+- **`XCFORGE_TOOL_GROUPS` and `.xcforge.yaml toolGroups`** pick the tool groups the server lists at start (`+diagnose`, `-git`, `build,test,ui`, `all`), and `tool_groups` changes now send `notifications/tools/list_changed`
+- Read-only tools carry `readOnlyHint`, so clients can run them without asking
+- `xcforge --version`
+- `plan decide` works from the CLI: `plan run` saves a suspended plan to `~/.xcforge/plan-sessions/` for an hour, and the time spent waiting for the decision doesn't count against the plan's timeout
 
 ### Changed
+- **Merged tools.** `tap` replaces `click_element`, `tap_by_id`, `tap_by`, `tap_coordinates`, `double_tap`, `long_press`, `ui_tap_pixel` and `indigo_tap`; `swipe` takes `hid` (was `indigo_swipe`), `get_source` takes `format: list` (was `list_elements`), `find_element` takes `all` (was `find_elements`), and `screenshot` takes `device` (was `device_screenshot`). The old names are no longer listed but still work for one release, with a note naming the replacement
+- **The diagnose workflow tools are off by default** (`XCFORGE_TOOL_GROUPS=+diagnose` or `tool_groups` turns them on); calling one while off says how. The server lists 104 tools instead of 118
+- **Every argument is listed in camelCase** (`includeConsole`, `waitFor`, `elementId`); snake_case spellings are still accepted
+- **Build and test tools return compact JSON by default over MCP** (`build_compile`, `build_sim`, `build_typecheck`, `test_sim`, `build_and_test`): `ok`, `summary`, errors with full paths, the result bundle. `for: "human"` gives the text report. Diagnose and plan JSON are no longer indented
+- `defaults set` finds the project before saving and exits non-zero when nothing was saved; it used to print success without writing in a fresh process
+- A saved default simulator that no longer exists is ignored with a warning instead of failing the build
+- Last build and test records are keyed on the absolute, symlink-resolved project path (a relative `App.xcodeproj` in two worktrees no longer shares one record) and written under a lock
+- CLI JSON errors go to stdout like JSON results
+- **One test ID format.** Results, `list_tests`, last-failures and known-failures all use `Target/Suite/test()` (Swift Testing) or `Target/Class/testMethod` (XCTest), and filters accept it as printed. The target is added to short IDs from the scheme's or test plan's test targets instead of guessed, and the `test()()` spelling xcodebuild needs is written for you
+- Failures carry every message with file and line, the argument or repetition it came from, and their attachments; identical messages are grouped, and text output is capped at 20 failures with a count of the rest
+- A test failure is no longer reported as "test target build failed". When the build or runner fails before any test reports, agent JSON says why (`reason`) and `rerun-failed` refuses instead of running nothing
+- Agent JSON `failed` counts every failure, not only the ones listed
+- Agent JSON includes the result bundle (`xcresult`) and, for a timed-out run, which limit fired and how to raise it (`reason`), even when some failures were read
+- CLI `test run` shows a failed test build as compile errors with file and line, not as failing tests
+- `test failures` / `test_failures` never run tests: without `xcresultPath` they read the project's last test run, say so when there is none, and return the compile errors when that run's build-for-testing failed (instead of the previous run's failures)
+- build-for-testing uses the test plan and, for a filter whose IDs all name a test target, builds only those targets
+- `build compile`, build-for-testing, `test` and `test list` pass the same build flags, so switching between them doesn't rebuild everything
+- The hang watchdog samples at 300s and 540s instead of 60s and 120s, and a snapshot is only reported for a timeout or `diagnose`
+- `build compile` / `build_compile` skip the `-showBuildSettings` call and no longer need a booted simulator (they compile for a booted one if any, else the newest iPhone simulator)
+- Simulator names resolve the same way everywhere: exact name, the booted match first, else the newest OS; two matches on the same OS ask for a UDID. Prefix matches (`iPhone 16` → `iPhone 16 Pro`) are gone
+- A filter that matches no test lists suggestions from the last build instead of building again
+- `build run` exits non-zero when the app wasn't launched
+- `build_run_sim` boots the simulator once the build succeeds (not alongside it), waits for the boot to finish before installing, and installs the scheme's application target from `-showBuildSettings -json` instead of whichever product was listed last or a `<scheme>.app` found anywhere in DerivedData
+- **CLI log and console capture run in the background.** `log start` and `console launch` keep streaming to `~/.xcforge/capture/` after the command exits (`XCFORGE_CAPTURE_DIR` moves it), so `log read`, `log wait`, `console read` and the `stop` commands in later invocations see it. Before, the capture died with the `start` command
+- `read_logs`, `read_app_console`, `log read` and `console read` return the newest 200 lines by default (`last: 0` for all) and say how many earlier lines were left out; over-long output keeps the end instead of the start
+- `wait_for_log` no longer clears the buffer `read_logs` reads
+- The `crashes` log topic matches error and fault lines; it used to match default-level (`Df`) lines, which is most of the log
+- Auto-detect ignores the `project.xcworkspace` inside every `.xcodeproj`, picks the scheme named after the project (or the only non-test scheme) when there are several, and gives `xcodebuild -list` 60s instead of 15s
+- `clean` cleans the configuration and simulator build folder xcforge builds into, and is limited by the idle timeout instead of a fixed 60s
+- A new CLI process picks up the last build's bundle ID and app path, so `sim launch` and `sim install` work right after `build run` without passing them
+- **Cancelling stops the build.** An MCP cancel, a client disconnect, Ctrl-C, SIGTERM or SIGHUP now stops the xcodebuild (or other command) xcforge started, together with every process it spawned. Timeouts kill the whole process tree too, so compiler and test-runner children no longer outlive the call and hold DerivedData ("database is locked" on the next run)
+- Two MCP calls that would run xcodebuild on the same DerivedData folder (or the same project's default one) at once now run one after the other, first come first served
+- An explicit `project` in another repo or worktree uses the `.xcforge.yaml` next to it, for both session defaults (scheme, simulator, test plan) and xcodebuild options (DerivedData, lock, idle timeout)
+- `.xcforge.yaml` values may be quoted and may carry a trailing `# comment`
+- **Unknown MCP arguments are an error** naming the closest real argument (`derived_data_path` → `derivedDataPath`) instead of being ignored
 - **Auto-promotion is opt-in.** Repeated explicit values no longer silently become session defaults unless `.xcforge.yaml` sets `autoPromote: true`
 - `--no-default-flags` / `defaultFlags: false` / `XCFORGE_DEFAULT_FLAGS=0` / `.xcforge.yaml defaultFlags: false` drop the flags xcforge adds to builds (`-skipMacroValidation`, `-parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES`)
 - `lldb_continue` / `debug continue` wait 30s by default and take `timeoutSeconds` / `--timeout` (was a fixed 10s); simulator app launch waits up to 60s (was 15s)
@@ -38,12 +103,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **`simRecovery` defaults to `off` everywhere** (was `auto` for `build_and_test`, `build-test` and `bless`). `auto` now only reboots; erasing a simulator needs the new `erase` mode. Invalid values are an error instead of silently becoming `auto`. `build-test` gains `--sim-recovery`
 - Result bundles and diagnostic snapshots get collision-free names (`xcf-<prefix>-<ts>-<pid>-<rand>`), so two sessions starting in the same second no longer delete each other's bundles. `XCFORGE_ARTIFACT_DIR` / `artifactDir` moves them out of `/tmp`
 - `build diagnose`, `test failures` and `test coverage` read this project's last recorded result bundle instead of the newest bundle any session left in `/tmp`. `test failures` without `--xcresult-path` reuses that bundle instead of re-running the whole suite
+- `list_elements` and `get_source` drop wrapper containers, hidden and off-screen elements, and add `value`, `disabled` and `selected`
+- `get_source` and `list_elements` start WebDriverAgent when it isn't running, and fail clearly instead of reading the Simulator app's own accessibility tree
+- Screenshots report the device's point size, not the Simulator window's, and the fallback writes a new file per capture instead of one shared `/tmp` file; CLI `screenshot capture` writes a new file unless `--output` is given
 
 ### Fixed
+- UI commands no longer boot a shut-down simulator to start WebDriverAgent (xcodebuild did this, leaving two simulators running and exhausting memory on small Macs). They fail with "Simulator <name> is shutdown; boot it first" and name any simulator already booted
+- `hid: true` taps and swipes no longer report "via IndigoHID" on Xcode 27, where the events are sent but never reach the app. HID is off there for now and WDA is used, with "HID is not yet supported on Xcode 27, used WDA" in the result (`XCFORGE_FORCE_HID=1` tries HID anyway). The HID screen-size table now knows the iPhone 16 Pro, iPhone 17 family and iPhone Air
+- `wda start` reports a busy port on the device ("Unable to start web server") at once with a `--port` hint instead of timing out, prints its errors as JSON under `--json`, and builds into the configured DerivedData folder (`--derived-data-path`, `XCFORGE_DERIVED_DATA_PATH`, `.xcforge.yaml`)
+- Starting or restarting the simulator WebDriverAgent stops any xcforgeWDA runner already on that simulator first, so two XCTest sessions can't run at once and kill the app under test. A restart now waits up to 60s before rebuilding
+- `ui source --format list` prints the flat element listing (as `get_source format: list` does); unknown formats are rejected up front with the valid ones
+- `ui tap` and other HID input no longer crash (SIGSEGV) on Xcode 27: SimulatorKit's `lookup:error:` returns a mach port, not an object, and is now called by its real signature. An unexpected signature is an error, not a crash
+- Screenshots of a landscape app report landscape point sizes even though the simulator framebuffer stays portrait (orientation read from WDA when it is running)
+- `build typecheck --target` works with a configured DerivedData folder: `-target` builds use SYMROOT/OBJROOT inside it instead of `-derivedDataPath`, which xcodebuild rejects. An xcodebuild usage error is reported as `xcodebuild_usage`, not a compile failure
+- Coordinate taps and swipes use HID input on Xcode 27, which moved SimulatorKit to `Contents/SharedFrameworks`. When they fall back to WDA the result says why HID wasn't used
+- Launches watch the app for 8s (was 2s) and wait up to 15s for a late crash report; an exit without a report says how long after launch it died and where reports land
+- A relative `--project` path resolves against the working directory
+- The first `wda start` gets 15 minutes to build xcforgeWDA and 3 minutes (`XCFORGE_WDA_START_SECONDS`) for the runner to answer, and a failure names the cause, such as an xcforgeWDA copy too old for this Xcode. A second call waits for a deploy in progress instead of failing
+- `lock status` no longer lists queued xcforge processes as holders
+- A timed-out test run doesn't say the build was skipped or count xcodebuild's own timeout entries as failed tests
+- Watchdog snapshots that aren't reported are deleted, and xcforge's own result bundles, snapshots and logs older than two days are pruned from the artifact folder
+- Landscape screenshots report landscape point sizes
+- All `ui` commands take `--simulator`, and `set_orientation` takes `simulator`
+- With `--json` (or piped output), errors are printed as a JSON envelope on stdout
+- `bless` help no longer promises a commit message
+- With Xcode 27, `device list` (and anything resolving a phone by name) no longer lists simulators, which Device Hub's `devicectl` now includes, and the state column shows the tunnel state (connected, disconnected, unavailable) instead of `devicectl`'s display hint
 - A timed-out `build-for-testing` is reported as a build failure instead of continuing to `test-without-building` against stale products
 - `test_plan_inspect` finds plans inside `App.xcodeproj/xcshareddata/xctestplans` and decodes Xcode's string-form `skippedTests` and plans with missing sections
 - A hung build's fallback no longer runs `pkill -x xcodebuild`, which killed every session's build on the Mac. Hang snapshots sample the xcodebuild matched by this run's result bundle path instead of the newest xcodebuild on the system
 - WDA port cleanup only kills WebDriverAgent runner processes, uses the port from `WDA_BASE_URL`, skips remote WDA hosts, and calls `lsof` at its real path (`/usr/sbin/lsof`)
+- A WebDriverAgent session recreated after a hiccup no longer relaunches the app (`forceAppLaunch: false`)
+- Restarting xcforgeWDA reruns its last build with `test-without-building` instead of opening the runner app (which never starts the server), so recovery no longer falls through to a full rebuild; the runner is no longer stopped after an hour
+- The accessibility-tree fast path is used only with exactly one simulator booted and no device attached, and reads that simulator's windows, not Simulator's menus
+- Coordinate taps and swipes (`indigo_tap`, `indigo_swipe`, plan steps) account for landscape and upside-down orientation
+- `accessibility_check`, `localization_check` and `multi_device_check` put back the text size, language and appearance they found instead of resetting to large, the first locale and light
 
 ## [1.6.1] - 2026-05-19
 

@@ -80,6 +80,26 @@ public enum BuildTools {
   }
 
   /// Classify the reason a build failed from xcodebuild stderr.
+  /// SYMROOT/OBJROOT that put a `-target` build where a scheme build into `derivedData` puts
+  /// its products and intermediates.
+  static func targetBuildRoots(derivedData: String) -> [String] {
+    let root = (derivedData as NSString).expandingTildeInPath
+    return [
+      "SYMROOT=\((root as NSString).appendingPathComponent("Build/Products"))",
+      "OBJROOT=\((root as NSString).appendingPathComponent("Build/Intermediates.noindex"))",
+    ]
+  }
+
+  /// xcodebuild rejecting its own arguments ("xcodebuild: error: The flag -scheme ... is
+  /// required ..."), which is not a compile error.
+  static func xcodebuildUsageError(_ output: String) -> String? {
+    for line in output.split(separator: "\n") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("xcodebuild: error:") { return trimmed }
+    }
+    return nil
+  }
+
   static func classifyFailureReason(stderr: String) -> String {
     let lower = stderr.lowercased()
     if isInfrastructureMessage(stderr) {
@@ -135,7 +155,9 @@ public enum BuildTools {
     return tail.isEmpty ? [] : [tail]
   }
 
-  public static let tools: [Tool] = [
+  public static let tools: [Tool] = coreTools + typecheckTools
+
+  static let coreTools: [Tool] = [
     Tool(
       name: "build_sim",
       description: """
@@ -183,9 +205,9 @@ public enum BuildTools {
     Tool(
       name: "build_run_sim",
       description: """
-        Build, install, and launch an iOS app on a simulator in one call. \
-        Runs build, settings extraction, simulator boot, and Simulator/Device Hub \
-        in parallel for maximum speed. Equivalent to Xcode's Cmd+R. \
+        Build, install, and launch an iOS app on a simulator in one call (Xcode's Cmd+R). \
+        Boots the simulator once the build succeeds, then reports whether the app is still \
+        running 2s after launch, with the crash reason and top frames when it isn't. \
         Project, scheme, and simulator are auto-detected if omitted.
         """,
       inputSchema: .object([
@@ -222,6 +244,18 @@ public enum BuildTools {
             "description": .string(
               "Capture a diagnostic snapshot on completion even without a hang, for baseline inspection."
             ),
+          ]),
+          "args": .object([
+            "type": .string("array"), "items": .object(["type": .string("string")]),
+            "description": .string("Launch arguments passed to the app."),
+          ]),
+          "env": .object([
+            "type": .string("array"), "items": .object(["type": .string("string")]),
+            "description": .string("Environment for the app, as KEY=VALUE strings."),
+          ]),
+          "url": .object([
+            "type": .string("string"),
+            "description": .string("URL or deep link to open once the app is running."),
           ]),
         ]),
       ])
@@ -269,14 +303,21 @@ public enum BuildTools {
               "Capture a diagnostic snapshot on completion even without a hang."
             ),
           ]),
+          "fromSnapshot": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Build a snapshot of the working tree (a git worktree under ~/.xcforge/snapshots), so edits made during the build don't affect it. Errors name the real files."
+            ),
+          ]),
         ]),
       ])
     ),
     Tool(
       name: "clean",
       description: """
-        Clean Xcode build artifacts for a project/scheme. \
-        Project and scheme are auto-detected if omitted.
+        Clean the scheme's simulator build products. derivedData: true also deletes this \
+        project's DerivedData folder (only this project's), the fix for "database is locked" \
+        or a stale index. Project and scheme are auto-detected if omitted.
         """,
       inputSchema: .object([
         "type": .string("object"),
@@ -288,6 +329,14 @@ public enum BuildTools {
           "scheme": .object([
             "type": .string("string"),
             "description": .string("Xcode scheme name. Auto-detected if omitted."),
+          ]),
+          "configuration": .object([
+            "type": .string("string"),
+            "description": .string("Build configuration (Debug/Release). Default: Debug"),
+          ]),
+          "derivedData": .object([
+            "type": .string("boolean"),
+            "description": .string("Also delete this project's DerivedData folder. Default: false"),
           ]),
         ]),
       ])
@@ -347,11 +396,17 @@ public enum BuildTools {
     let configuration: String?
     let long: Bool?
     let diagnose: Bool?
+    var args: [String]? = nil
+    var env: [String]? = nil
+    var url: String? = nil
+    var fromSnapshot: Bool? = nil
   }
 
   struct CleanInput: Decodable {
     let project: String?
     let scheme: String?
+    var configuration: String? = nil
+    var derivedData: Bool? = nil
   }
 
   struct DiscoverInput: Decodable {
@@ -371,37 +426,87 @@ public enum BuildTools {
     configuration: String = "Debug",
     long: Bool = false,
     diagnose: Bool = false,
+    compileOnly: Bool = false,
+    target: String? = nil,
+    fromSnapshot: Bool = false,
     env: Environment = .live
   ) async throws -> BuildExecution {
-    let resolvedProject = try await env.session.resolveProject(project)
-    let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
-    let resolvedSimulator = try await env.session.resolveSimulator(simulator)
+    guard fromSnapshot else {
+      return try await runBuild(
+        project: project, scheme: scheme, simulator: simulator, configuration: configuration, long: long,
+        diagnose: diagnose, compileOnly: compileOnly, target: target, buildProject: nil, env: env)
+    }
+    // Build a frozen copy of the tree so other agents' edits mid-build don't land in it, and
+    // report file paths in the real tree, where the agent edits.
+    let source = try await env.session.resolveProject(project)
+    let handle = try await SourceSnapshot.prepare(project: source, env: env)
+    defer { handle.release() }
+    let execution = try await runBuild(
+      project: source, scheme: scheme, simulator: simulator, configuration: configuration, long: long,
+      diagnose: diagnose, compileOnly: compileOnly, target: target, buildProject: handle.project, env: env)
+    return SourceSnapshot.remap(execution, from: handle.worktree, to: handle.repoRoot)
+  }
 
+  /// `buildProject` is the project actually built (a snapshot's copy) when it isn't `project`.
+  private static func runBuild(
+    project: String?, scheme: String?, simulator: String?, configuration: String, long: Bool, diagnose: Bool,
+    compileOnly: Bool, target: String?, buildProject: String?, env: Environment
+  ) async throws -> BuildExecution {
+    let sourceProject = try await env.session.resolveProject(project)
+    let resolvedProject = buildProject ?? sourceProject
     let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
+    // One target compiles through its own scheme, or `-target` when it has none.
+    let resolvedScheme: String
+    let selector: [String]
+    if let target {
+      selector = try await resolveTargetSelector(target, project: resolvedProject, env: env)
+      resolvedScheme = target
+    } else {
+      resolvedScheme = try await env.session.resolveScheme(scheme, project: sourceProject)
+      selector = [projectFlag, resolvedProject, "-scheme", resolvedScheme]
+    }
+    let resolvedSimulator: String
+    do {
+      resolvedSimulator = try await env.session.resolveSimulator(simulator)
+    } catch {
+      // Compiling needs a simulator platform, not a particular booted device.
+      guard compileOnly, simulator == nil, let fallback = await AutoDetect.simulatorForCompile() else {
+        throw error
+      }
+      resolvedSimulator = fallback
+    }
+
     let destination = await AutoDetect.buildDestination(resolvedSimulator)
 
     // Always generate an xcresult bundle for structured diagnostics
     let resultPath = TestTools.xcresultPath(prefix: "build")
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
 
-    var buildArgs = [
-      projectFlag, resolvedProject,
-      "-scheme", resolvedScheme,
-      "-configuration", configuration,
-      "-destination", destination,
-      "-skipMacroValidation",
-      "-parallelizeTargets",
-      "-resultBundlePath", resultPath,
-      "build",
-    ]
-    buildArgs += ["COMPILATION_CACHE_ENABLE_CACHING=YES"]
+    var buildArgs = selector + ["-configuration", configuration]
+    if selector.contains("-target") {
+      // -target builds take an SDK, not a destination. xcodebuild refuses -derivedDataPath
+      // without a scheme, so the build goes into the scheme's DerivedData (the configured one,
+      // else the default scheme's) through SYMROOT/OBJROOT, reusing the dependencies built there.
+      buildArgs += ["-sdk", "iphonesimulator", "ONLY_ACTIVE_ARCH=YES"]
+      let projectDir = (resolvedProject as NSString).deletingLastPathComponent
+      var derivedData = XcodebuildOptions.effective(cwd: projectDir).derivedDataPath
+      if derivedData == nil, let defaultScheme = try? await env.session.resolveScheme(nil, project: sourceProject) {
+        derivedData = await schemeDerivedData(project: resolvedProject, scheme: defaultScheme, env: env)
+      }
+      if let derivedData { buildArgs += targetBuildRoots(derivedData: derivedData) }
+    } else {
+      buildArgs += ["-destination", destination]
+    }
+    buildArgs.append("-skipMacroValidation")
+    buildArgs += TestTools.compileFlags
+    buildArgs += ["-resultBundlePath", resultPath, "build"] + TestTools.compileSettings
 
     let start = CFAbsoluteTimeGetCurrent()
     let buildTimeout = await TestTools.resolveTestTimeout(long: long, env: env)
     let snapshotPath = TestTools.diagnosticSnapshotPath()
     let watchdog = HangWatchdog(
-      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: [60, 120],
+      udid: resolvedSimulator, snapshotPath: snapshotPath, sampleAt: HangWatchdog.defaultSampleAt,
       processMatch: resultPath, env: env)
     let result = try await Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
     watchdog.cancel()
@@ -422,7 +527,9 @@ public enum BuildTools {
           udid: resolvedSimulator, snapshotPath: snapshotPath, processMatch: resultPath, env: env)
       }
     } else {
-      diagResult = watchdogCapture
+      // A sample of a healthy build is noise; only a timeout or `diagnose` reports one.
+      diagResult = nil
+      try? FileManager.default.removeItem(atPath: snapshotPath)
     }
     let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
 
@@ -430,11 +537,15 @@ public enum BuildTools {
     let xcresultIssues = await extractIssuesFromXcresult(resultPath, env: env)
 
     if result.succeeded {
-      let buildInfo = await extractBuildInfo(
-        project: resolvedProject, scheme: resolvedScheme,
-        simulator: resolvedSimulator, configuration: configuration,
-        env: env
-      )
+      // Finding the app costs another xcodebuild call; a compile check doesn't need it.
+      var buildInfo: (bundleId: String?, appPath: String?) = (nil, nil)
+      if !compileOnly {
+        buildInfo = await extractBuildInfo(
+          project: resolvedProject, scheme: resolvedScheme,
+          simulator: resolvedSimulator, configuration: configuration,
+          env: env
+        )
+      }
 
       if let bid = buildInfo.bundleId {
         await env.session.setBuildInfo(
@@ -476,6 +587,8 @@ public enum BuildTools {
       let reason: String
       if let timeout = Xcodebuild.timeoutKind(result) {
         reason = "timeout_\(timeout.rawValue)"
+      } else if xcodebuildUsageError(output) != nil, issues.allSatisfy({ $0.location == nil }) {
+        reason = "xcodebuild_usage"
       } else if !issues.isEmpty {
         reason = classifyFailureFromIssues(issues)
       } else {
@@ -562,8 +675,11 @@ public enum BuildTools {
           configuration: await env.session.resolveConfiguration(input.configuration),
           long: input.long ?? false,
           diagnose: input.diagnose ?? false,
+          compileOnly: true,
+          fromSnapshot: input.fromSnapshot ?? false,
           env: env
         )
+        if wantsAgentJSON(args) { return agentJSON(execution, action: "Compile") }
 
         if execution.succeeded {
           var output = "Compile succeeded in \(execution.elapsed)s"
@@ -623,6 +739,7 @@ public enum BuildTools {
           diagnose: input.diagnose ?? false,
           env: env
         )
+        if wantsAgentJSON(args) { return agentJSON(execution, action: "Build") }
 
         if execution.succeeded {
           var output =
@@ -798,24 +915,16 @@ public enum BuildTools {
     switch ToolInput.decode(CleanInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
-      let project: String
-      let scheme: String
       do {
-        project = try await env.session.resolveProject(input.project)
-        scheme = try await env.session.resolveScheme(input.scheme, project: project)
+        let execution = try await executeClean(
+          project: input.project, scheme: input.scheme, configuration: input.configuration,
+          deleteDerivedData: input.derivedData ?? false, env: env)
+        guard execution.succeeded else { return .fail("Clean failed: \(execution.error ?? "unknown error")") }
+        var message = "Clean succeeded (\(execution.scheme))"
+        if let removed = execution.removedDerivedData { message += "\nDeleted DerivedData: \(removed)" }
+        return .ok(message)
       } catch {
         return .fail("\(error)")
-      }
-
-      let isWorkspace = project.hasSuffix(".xcworkspace")
-      let projectFlag = isWorkspace ? "-workspace" : "-project"
-
-      do {
-        let result = try await Xcodebuild.run(
-          [projectFlag, project, "-scheme", scheme, "clean"], timeout: 60, env: env)
-        return result.succeeded ? .ok("Clean succeeded") : .fail("Clean failed: \(result.stderr)")
-      } catch {
-        return .fail("Clean error: \(error)")
       }
     }
   }
@@ -832,6 +941,7 @@ public enum BuildTools {
             "(", "-name", "*.xcodeproj", "-o", "-name", "*.xcworkspace", ")",
             "-not", "-path", "*/Pods/*",
             "-not", "-path", "*/.build/*",
+            "-not", "-path", "*.xcodeproj/*",
           ], timeout: 15)
         return .ok(result.stdout.isEmpty ? "No projects found" : result.stdout)
       } catch {
@@ -881,40 +991,35 @@ public enum BuildTools {
     let resultPath = TestTools.xcresultPath(prefix: "build")
     _ = try? await env.shell.run("/bin/rm", arguments: ["-rf", resultPath], timeout: 5)
 
-    let buildArgs = [
+    var args = [
       projectFlag, project,
       "-scheme", scheme,
       "-configuration", configuration,
       "-destination", destination,
       "-skipMacroValidation",
-      "-parallelizeTargets",
-      "-resultBundlePath", resultPath,
-      "build",
-      "COMPILATION_CACHE_ENABLE_CACHING=YES",
     ]
+    args += TestTools.compileFlags
+    args += ["-resultBundlePath", resultPath, "build"] + TestTools.compileSettings
+    let buildArgs = args
 
     let settingsArgs = [
       projectFlag, project,
       "-scheme", scheme,
       "-configuration", configuration,
       "-destination", destination,
-      "-showBuildSettings",
+      "-showBuildSettings", "-json",
     ]
 
-    // ── Phase 1: Parallel ──
-    // Build is the critical path (~10-60s). Settings extraction, simulator boot,
-    // and Simulator.app launch run concurrently — they complete while the build
-    // is still compiling, adding zero wall-clock overhead.
+    // ── Phase 1: build, with settings extraction alongside ──
+    // The simulator boots only once the build succeeds: a failed build shouldn't cost a
+    // booted simulator's memory on a shared Mac.
     let buildTimeout = await TestTools.resolveTestTimeout(long: input.long ?? false, env: env)
     let buildSnapshotPath = TestTools.diagnosticSnapshotPath()
     let buildWatchdog = HangWatchdog(
-      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: [60, 120], processMatch: resultPath,
+      udid: udid, snapshotPath: buildSnapshotPath, sampleAt: HangWatchdog.defaultSampleAt, processMatch: resultPath,
       env: env)
     async let buildTask = Xcodebuild.run(buildArgs, timeout: buildTimeout, env: env)
-    async let settingsTask = Xcodebuild.run(settingsArgs, timeout: 30, env: env)
-    async let bootTask = env.shell.run(
-      "/usr/bin/xcrun", arguments: ["simctl", "boot", udid], timeout: 60)
-    async let openTask: Void = SimulatorApp.open(shell: env.shell)
+    async let settingsTask = Xcodebuild.run(settingsArgs, timeout: 60, env: env)
 
     // Await build first (critical — abort if it fails)
     let buildResult: ShellResult
@@ -926,13 +1031,16 @@ public enum BuildTools {
     }
     buildWatchdog.cancel()
     let buildDiagResult: DiagnosticSnapshot.Result?
-    if let captured = await buildWatchdog.latestResult {
+    // A sample of a healthy build is noise; only a timeout or `diagnose` reports one.
+    if buildResult.exitCode != -1 && !(input.diagnose ?? false) {
+      buildDiagResult = nil
+      _ = await buildWatchdog.latestResult
+      try? FileManager.default.removeItem(atPath: buildSnapshotPath)
+    } else if let captured = await buildWatchdog.latestResult {
       buildDiagResult = captured
-    } else if input.diagnose ?? false {
+    } else {
       buildDiagResult = await DiagnosticSnapshot.capture(
         udid: udid, snapshotPath: buildSnapshotPath, processMatch: resultPath, env: env)
-    } else {
-      buildDiagResult = nil
     }
 
     let buildElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - totalStart)
@@ -983,102 +1091,48 @@ public enum BuildTools {
       return .fail(failMsg)
     }
 
-    // Await settings — 3-tier fallback for app path + bundle ID:
-    // 1. -showBuildSettings (parallel, fastest when it works)
-    // 2. Parse build stdout for .app paths
-    // 3. Search DerivedData with find
-    // Bundle ID always via PlistBuddy once we have the .app path.
-    var appPath: String?
-    var infoSource = "showBuildSettings"
-
-    // Tier 1: -showBuildSettings
-    if let settingsResult = try? await settingsTask, settingsResult.succeeded {
-      var builtProductsDir: String?
-      var fullProductName: String?
-
-      for line in settingsResult.stdout.split(separator: "\n") {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("BUILT_PRODUCTS_DIR = ") {
-          builtProductsDir = String(trimmed.dropFirst("BUILT_PRODUCTS_DIR = ".count))
-        } else if trimmed.hasPrefix("FULL_PRODUCT_NAME = ") {
-          fullProductName = String(trimmed.dropFirst("FULL_PRODUCT_NAME = ".count))
-        }
-      }
-
-      if let dir = builtProductsDir, let name = fullProductName {
-        appPath = "\(dir)/\(name)"
-      }
+    // The scheme's application target, from the JSON settings. Schemes also build
+    // extensions and frameworks, so the last product listed isn't necessarily the app.
+    var product: BuildProductInfo?
+    if let settings = try? await settingsTask, settings.succeeded {
+      product = appProduct(fromSettings: settings.stdout)
     }
-
-    // Tier 2: Parse build stdout for .app path
-    if appPath == nil {
-      let suffix = "/\(configuration)-iphonesimulator/"
-      for line in buildResult.stdout.split(separator: "\n").reversed() {
-        let s = String(line)
-        if let range = s.range(of: suffix) {
-          let afterConfig = s[range.upperBound...]
-          if let appEnd = afterConfig.range(of: ".app") {
-            let fullLine = String(s[s.startIndex..<appEnd.upperBound])
-            if let absStart = fullLine.firstIndex(of: "/") {
-              appPath = String(fullLine[absStart...])
-              infoSource = "build output"
-              break
-            }
-          }
-        }
-      }
+    if product == nil {
+      product = try? await resolveBuildProductInfo(
+        project: project, scheme: scheme, simulator: simulator, configuration: configuration, env: env)
     }
-
-    // Tier 3: Search DerivedData
-    if appPath == nil {
-      let ddPath =
-        XcodebuildOptions.effective(cwd: env.currentDirectoryPath()).derivedDataPath
-        ?? NSHomeDirectory() + "/Library/Developer/Xcode/DerivedData"
-      let findResult = try? await env.shell.run(
-        "/usr/bin/find",
-        arguments: [
-          ddPath, "-maxdepth", "6",
-          "-name", "\(scheme).app",
-          "-path", "*/\(configuration)-iphonesimulator/*",
-        ], timeout: 10)
-      if let r = findResult, r.succeeded, !r.stdout.isEmpty {
-        appPath = r.stdout.split(separator: "\n").first.map(String.init)
-        infoSource = "DerivedData search"
-      }
+    guard let product else {
+      return .fail("Build succeeded in \(buildElapsed)s but scheme \(scheme) names no application target to install")
     }
+    let finalAppPath = product.appPath
 
-    guard let finalAppPath = appPath else {
-      return .fail("Build succeeded in \(buildElapsed)s but could not locate .app bundle")
-    }
-
-    // Bundle ID: always via PlistBuddy (instant, works regardless of how we found the .app)
-    let bundleId: String
-    let plistPath = "\(finalAppPath)/Info.plist"
+    // Info.plist is the truth for the bundle ID; build settings can hold unexpanded values.
+    var bundleId = product.bundleId
     let plistResult = try? await env.shell.run(
       "/usr/libexec/PlistBuddy",
-      arguments: ["-c", "Print :CFBundleIdentifier", plistPath], timeout: 5)
+      arguments: ["-c", "Print :CFBundleIdentifier", "\(finalAppPath)/Info.plist"], timeout: 5)
     if let r = plistResult, r.succeeded, !r.stdout.isEmpty {
-      bundleId = r.stdout
-    } else {
-      return .fail(
-        "Build succeeded in \(buildElapsed)s but could not read bundle ID from \(plistPath)")
+      bundleId = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     await env.session.setBuildInfo(bundleId: bundleId, appPath: finalAppPath, scheme: scheme)
 
-    // Await boot (non-critical — already booted is fine)
-    let bootResult = try? await bootTask
+    // Boot, and wait until the simulator can take an install.
+    let bootStart = CFAbsoluteTimeGetCurrent()
+    let bootResult = try? await env.shell.run(
+      "/usr/bin/xcrun", arguments: ["simctl", "boot", udid], timeout: 60)
     let bootStatus: String
     if bootResult?.succeeded == true {
       bootStatus = "booted"
     } else if bootResult?.stderr.contains("current state: Booted") == true {
       bootStatus = "already running"
     } else {
-      bootStatus = "boot failed: \(bootResult?.stderr ?? "unknown")"
+      return .fail("Build succeeded in \(buildElapsed)s\nBoot FAILED: \(bootResult?.stderr ?? "unknown")")
     }
-
-    // Await Simulator.app (fire and forget)
-    await openTask
+    _ = try? await env.shell.run(
+      "/usr/bin/xcrun", arguments: ["simctl", "bootstatus", udid, "-b"], timeout: 120)
+    await SimulatorApp.open(shell: env.shell)
+    let bootElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - bootStart)
 
     // ── Phase 2: Sequential (needs build artifacts + booted simulator) ──
 
@@ -1100,28 +1154,14 @@ public enum BuildTools {
     _ = await env.wdaClient.deleteSession()
     let installElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - installStart)
 
-    // Launch (--terminate-running-process replaces separate terminate + 0.5s sleep)
-    let launchResult: ShellResult
-    do {
-      launchResult = try await env.shell.run(
-        "/usr/bin/xcrun",
-        arguments: ["simctl", "launch", "--terminate-running-process", udid, bundleId],
-        timeout: SimTools.launchTimeout)
-    } catch {
-      return .fail("Build + Install succeeded\nLaunch error: \(error)")
+    // Launch, then check the app is still up: a crash at startup still "launches".
+    let launch = await SimTools.executeLaunchApp(
+      simulator: udid, bundleId: bundleId, args: input.args, environment: input.env ?? [], url: input.url, env: env)
+    guard launch.succeeded else {
+      return .fail("Build + Install succeeded in \(buildElapsed)s\n\(launch.message)")
     }
-
-    guard launchResult.succeeded else {
-      if launchResult.exitCode == -1 {
-        return .fail("Build + Install succeeded\nLaunch timed out after \(Int(SimTools.launchTimeout))s")
-      }
-      return .fail("Build + Install succeeded\nLaunch FAILED: \(launchResult.stderr)")
-    }
-
-    // simctl launch prints "<bundleId>: <pid>" on stdout
-    let appPid = launchResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-      .split(separator: ":").last
-      .map { String($0).trimmingCharacters(in: .whitespaces) }
+    let appPid = launch.message.split(separator: "\n").lazy
+      .compactMap { AppLiveness.pid(fromLaunchOutput: String($0)) }.first
 
     let totalElapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - totalStart)
 
@@ -1129,17 +1169,14 @@ public enum BuildTools {
     output += "\nScheme: \(scheme) | Simulator: \(simulator)"
     output += "\nBundle ID: \(bundleId)"
     output += "\nApp path: \(finalAppPath)"
-    if let pid = appPid, !pid.isEmpty {
-      output += "\nApp PID: \(pid)"
-    }
+    if let appPid { output += "\nApp PID: \(appPid)" }
     output += "\nApp running: true"
+    if let url = input.url { output += "\nOpened: \(url)" }
     output += "\n"
     output += "\n  Build:     \(buildElapsed)s"
-    output += "\n  App info:  \(infoSource) (parallel)"
-    output += "\n  Boot:      \(bootStatus) (parallel)"
+    output += "\n  Boot:      \(bootStatus) (\(bootElapsed)s)"
     output += "\n  Install:   \(installElapsed)s"
     output += "\n  Launch:    OK"
-    output += "\n  Simulator: opened"
 
     // Surface build warnings from xcresult if any
     let xcresultIssues = await extractIssuesFromXcresult(resultPath, env: env)
@@ -1175,8 +1212,8 @@ public enum BuildTools {
         "-scheme", scheme,
         "-configuration", configuration,
         "-destination", destination,
-        "-showBuildSettings",
-      ], timeout: 30, env: env)
+        "-showBuildSettings", "-json",
+      ], timeout: 60, env: env)
 
     guard result.succeeded else {
       let details = result.stderr.isEmpty ? result.stdout : result.stderr
@@ -1184,31 +1221,29 @@ public enum BuildTools {
         "Unable to resolve app context for \(scheme): \(details.trimmingCharacters(in: .whitespacesAndNewlines))"
       )
     }
-
-    var bundleId: String?
-    var builtProductsDir: String?
-    var fullProductName: String?
-
-    for line in result.stdout.split(separator: "\n") {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if trimmed.hasPrefix("PRODUCT_BUNDLE_IDENTIFIER = ") {
-        bundleId = String(trimmed.dropFirst("PRODUCT_BUNDLE_IDENTIFIER = ".count))
-      } else if trimmed.hasPrefix("BUILT_PRODUCTS_DIR = ") {
-        builtProductsDir = String(trimmed.dropFirst("BUILT_PRODUCTS_DIR = ".count))
-      } else if trimmed.hasPrefix("FULL_PRODUCT_NAME = ") {
-        fullProductName = String(trimmed.dropFirst("FULL_PRODUCT_NAME = ".count))
-      }
+    guard let product = appProduct(fromSettings: result.stdout) else {
+      throw BuildSettingsError("Scheme \(scheme) builds no application target, so there is no app to install")
     }
+    return product
+  }
 
-    guard let bundleId else {
-      throw BuildSettingsError(
-        "Build settings did not contain PRODUCT_BUNDLE_IDENTIFIER for \(scheme)")
+  /// The application target's product in `-showBuildSettings -json` output. Schemes also
+  /// build extensions, frameworks and test bundles; only the app can be installed and
+  /// launched, whichever target the output lists last.
+  static func appProduct(fromSettings output: String) -> BuildProductInfo? {
+    guard let data = output.data(using: .utf8),
+      let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+    else { return nil }
+    for entry in entries {
+      guard let settings = entry["buildSettings"] as? [String: String],
+        settings["PRODUCT_TYPE"] == "com.apple.product-type.application" || settings["WRAPPER_EXTENSION"] == "app",
+        let bundleId = settings["PRODUCT_BUNDLE_IDENTIFIER"],
+        let directory = settings["BUILT_PRODUCTS_DIR"],
+        let name = settings["FULL_PRODUCT_NAME"]
+      else { continue }
+      return BuildProductInfo(bundleId: bundleId, appPath: "\(directory)/\(name)")
     }
-    guard let builtProductsDir, let fullProductName else {
-      throw BuildSettingsError("Build settings did not contain an app product path for \(scheme)")
-    }
-
-    return BuildProductInfo(bundleId: bundleId, appPath: "\(builtProductsDir)/\(fullProductName)")
+    return nil
   }
 
   private static func extractBuildInfo(
@@ -1282,28 +1317,84 @@ public enum BuildTools {
     public let project: String
     public let scheme: String
     public let error: String?
+    /// The project's DerivedData folder, when `deleteDerivedData` removed it.
+    public var removedDerivedData: String? = nil
   }
 
+  /// Clean the scheme's products for the simulator build xcforge runs (same configuration,
+  /// same build folder), and optionally delete this project's DerivedData folder, the fix
+  /// for a corrupted build database or index.
   public static func executeClean(
     project: String? = nil,
     scheme: String? = nil,
+    configuration: String? = nil,
+    deleteDerivedData: Bool = false,
     env: Environment = .live
   ) async throws -> CleanExecution {
     let resolvedProject = try await env.session.resolveProject(project)
     let resolvedScheme = try await env.session.resolveScheme(scheme, project: resolvedProject)
+    let resolvedConfiguration = await env.session.resolveConfiguration(configuration)
 
     let isWorkspace = resolvedProject.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
+    let base = [
+      projectFlag, resolvedProject, "-scheme", resolvedScheme, "-configuration", resolvedConfiguration,
+      "-destination", "generic/platform=iOS Simulator",
+    ]
 
-    let result = try await Xcodebuild.run(
-      [projectFlag, resolvedProject, "-scheme", resolvedScheme, "clean"], timeout: 60, env: env)
+    // Look the folder up before cleaning: the settings call needs a working project.
+    var derivedData: String?
+    if deleteDerivedData {
+      let settings = try await Xcodebuild.run(base + ["-showBuildSettings", "-json"], timeout: 120, env: env)
+      derivedData = settings.succeeded ? derivedDataFolder(fromSettings: settings.stdout) : nil
+    }
 
-    return CleanExecution(
+    // A clean is killed after the usual stretch of silence, not a fixed 60s.
+    let result = try await Xcodebuild.run(base + ["clean"], timeout: 1800, env: env)
+    var execution = CleanExecution(
       succeeded: result.succeeded,
       project: resolvedProject,
       scheme: resolvedScheme,
-      error: result.succeeded ? nil : result.stderr
+      error: result.succeeded ? nil : Xcodebuild.combinedOutput(result)
     )
+    guard deleteDerivedData else { return execution }
+    guard let derivedData else {
+      return CleanExecution(
+        succeeded: false, project: resolvedProject, scheme: resolvedScheme,
+        error: "Couldn't find this project's DerivedData folder from its build settings; nothing deleted.")
+    }
+    do {
+      if FileManager.default.fileExists(atPath: derivedData) {
+        try FileManager.default.removeItem(atPath: derivedData)
+      }
+      execution.removedDerivedData = derivedData
+    } catch {
+      return CleanExecution(
+        succeeded: false, project: resolvedProject, scheme: resolvedScheme,
+        error: "Deleting \(derivedData) failed: \(error)")
+    }
+    return execution
+  }
+
+  /// This project's DerivedData folder: BUILD_ROOT is `<folder>/Build/Products`. Anything
+  /// that doesn't look like that, or is too short a path to be one project's folder, is
+  /// refused rather than deleted.
+  static func derivedDataFolder(fromSettings output: String) -> String? {
+    guard let data = output.data(using: .utf8),
+      let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+      let settings = entries.first?["buildSettings"] as? [String: String],
+      let root = settings["BUILD_ROOT"]
+    else { return nil }
+    return derivedDataFolder(fromBuildRoot: root)
+  }
+
+  static func derivedDataFolder(fromBuildRoot root: String) -> String? {
+    let suffix = "/Build/Products"
+    guard root.hasPrefix("/"), root.hasSuffix(suffix) else { return nil }
+    let folder = String(root.dropLast(suffix.count))
+    let depth = folder.split(separator: "/").count
+    guard depth >= 3, folder != NSHomeDirectory() else { return nil }
+    return folder
   }
 
   public struct DiscoverExecution: Codable, Sendable {
@@ -1319,6 +1410,7 @@ public enum BuildTools {
         "(", "-name", "*.xcodeproj", "-o", "-name", "*.xcworkspace", ")",
         "-not", "-path", "*/Pods/*",
         "-not", "-path", "*/.build/*",
+        "-not", "-path", "*.xcodeproj/*",
       ], timeout: 15)
 
     let projects = result.stdout
@@ -1398,6 +1490,8 @@ extension BuildTools: ToolProvider {
     switch name {
     case "build_sim": return await buildSim(args, env: env)
     case "build_compile": return await buildCompile(args, env: env)
+    case "build_typecheck": return await buildTypecheck(args, env: env)
+    case "lsp_setup": return await lspSetup(args, env: env)
     case "build_run_sim": return await buildRunSim(args, env: env)
     case "clean": return await clean(args, env: env)
     case "discover_projects": return await discoverProjects(args, env: env)

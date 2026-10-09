@@ -43,6 +43,15 @@ struct XcodebuildOptionGroup: ParsableArguments {
     help: "Add -skipMacroValidation, -parallelizeTargets and compilation caching to builds. Default: on.")
   var defaultFlags: Bool?
 
+  @Option(help: "Pass -jobs to xcodebuild for compiling actions. Also XCFORGE_JOBS and the yaml key jobs.")
+  var jobs: Int?
+
+  @Flag(
+    help:
+      "Build in a separate diagnostic DerivedData slot (diagnosticDerivedDataPath) and report every error, leaving the main cache alone."
+  )
+  var allErrors = false
+
   var options: XcodebuildOptions {
     XcodebuildOptions(
       derivedDataPath: derivedDataPath.map { ($0 as NSString).expandingTildeInPath },
@@ -53,7 +62,9 @@ struct XcodebuildOptionGroup: ParsableArguments {
       minFreeGB: minFreeGb,
       idleTimeoutSeconds: idleTimeout.map { TimeInterval($0) },
       continueAfterErrors: continueAfterErrors,
-      defaultFlags: defaultFlags
+      defaultFlags: defaultFlags,
+      jobs: jobs,
+      allErrors: allErrors ? true : nil
     )
   }
 

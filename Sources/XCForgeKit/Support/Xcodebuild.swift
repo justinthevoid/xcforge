@@ -22,8 +22,26 @@ public enum Xcodebuild {
     idleTimeout: TimeInterval? = nil,
     env: Environment
   ) async throws -> ShellResult {
-    let options = XcodebuildOptions.effective(cwd: env.currentDirectoryPath())
+    // Settings come from the .xcforge.yaml next to the project being built, so a build of
+    // another worktree doesn't pick up this checkout's DerivedData or lock.
+    let configDir = projectDirectory(arguments, workingDirectory: workingDirectory)
+    let project = projectPath(arguments, workingDirectory: workingDirectory)
+    let options = XcodebuildOptions.effective(cwd: configDir ?? env.currentDirectoryPath())
+      .withDiagnosticSlot(project: project).forSnapshot(project: project)
     let args = apply(options, to: arguments)
+
+    // Two tool calls in one server (parallel MCP calls) never run xcodebuild against the same
+    // DerivedData at once; the second waits its turn instead of hitting "database is locked".
+    var slot: XcodebuildQueue.Ticket?
+    if needsLock(args) {
+      let key = queueKey(args, workingDirectory: workingDirectory)
+      slot = await XcodebuildQueue.shared.enter(key: key)
+    }
+    defer {
+      if let slot {
+        Task { await XcodebuildQueue.shared.leave(slot) }
+      }
+    }
 
     if needsLock(args) {
       try Preflight.check(options: options)
@@ -47,9 +65,43 @@ public enum Xcodebuild {
       environment: environment, timeout: timeout,
       idleTimeout: (idle ?? 0) > 0 ? idle : nil, outputLimit: Shell.defaultOutputLimit)
     if result.exitCode != -2 {
-      LastResultStore.recordFromArguments(args)
+      LastResultStore.recordFromArguments(args, succeeded: result.succeeded)
     }
     return result
+  }
+
+  /// Folder of the `-project` or `-workspace` argument, made absolute, or nil when neither is given.
+  static func projectDirectory(_ args: [String], workingDirectory: String?) -> String? {
+    guard let path = projectPath(args, workingDirectory: workingDirectory) else { return nil }
+    return (path as NSString).deletingLastPathComponent
+  }
+
+  /// Absolute `-project`/`-workspace` path, or nil.
+  static func projectPath(_ args: [String], workingDirectory: String?) -> String? {
+    for flag in ["-workspace", "-project"] {
+      if let i = args.firstIndex(of: flag), i + 1 < args.count {
+        let raw = (args[i + 1] as NSString).expandingTildeInPath
+        let base = workingDirectory ?? FileManager.default.currentDirectoryPath
+        let absolute = raw.hasPrefix("/") ? raw : (base as NSString).appendingPathComponent(raw)
+        return (absolute as NSString).standardizingPath
+      }
+    }
+    return nil
+  }
+
+  /// What two xcodebuild calls must not share at the same time: the DerivedData folder when
+  /// one is given, else the project (whose default DerivedData folder is derived from it).
+  static func queueKey(_ args: [String], workingDirectory: String?) -> String {
+    if let i = args.firstIndex(of: "-derivedDataPath"), i + 1 < args.count {
+      return "dd:" + ((args[i + 1] as NSString).standardizingPath)
+    }
+    if let project = projectPath(args, workingDirectory: workingDirectory) {
+      return "project:" + project
+    }
+    if let i = args.firstIndex(of: "-xctestrun"), i + 1 < args.count {
+      return "xctestrun:" + args[i + 1]
+    }
+    return "cwd:" + (workingDirectory ?? FileManager.default.currentDirectoryPath)
   }
 
   /// True for invocations that build or run tests (as opposed to `-list` or `-version`).
@@ -75,8 +127,9 @@ public enum Xcodebuild {
     let arguments =
       options.defaultFlags == false ? original.filter { !xcforgeDefaultFlags.contains($0) } : original
     var insert: [String] = []
+    // -target builds can't take -derivedDataPath; they set SYMROOT/OBJROOT instead.
     if let dd = options.derivedDataPath, !dd.isEmpty, !arguments.contains("-derivedDataPath"),
-      !arguments.contains("-xctestrun")
+      !arguments.contains("-xctestrun"), !arguments.contains("-target")
     {
       insert += ["-derivedDataPath", dd]
     }
@@ -85,6 +138,11 @@ public enum Xcodebuild {
       !arguments.contains(where: { $0.hasPrefix(continueAfterErrorsDefault) })
     {
       insert.append(continueAfterErrorsDefault + "=YES")
+    }
+    if let jobs = options.jobs, jobs > 0, arguments.contains(where: { compileActions.contains($0) }),
+      !arguments.contains("-jobs"), !options.extraArgs.contains("-jobs")
+    {
+      insert += ["-jobs", String(jobs)]
     }
     insert += options.extraArgs
     guard !insert.isEmpty else { return arguments }
@@ -149,6 +207,55 @@ public enum Xcodebuild {
     parts += args.filter { actionTokens.contains($0) }
     return parts.joined(separator: " ")
   }
+}
+
+// MARK: - In-process queue
+
+/// First-come, first-served turns per DerivedData folder within one xcforge process.
+///
+/// The cross-process build lock is opt-in; this one is always on, because an MCP client can
+/// send two build or test calls at once and both would otherwise run on the same DerivedData.
+actor XcodebuildQueue {
+  static let shared = XcodebuildQueue()
+
+  struct Ticket: Sendable, Hashable {
+    let key: String
+    let id: UInt64
+  }
+
+  private var nextID: UInt64 = 0
+  private var holders: [String: UInt64] = [:]
+  private var waiters: [String: [(id: UInt64, resume: CheckedContinuation<Void, Never>)]] = [:]
+
+  /// Wait for this key's turn. Returns at once when nobody holds it.
+  func enter(key: String) async -> Ticket {
+    nextID += 1
+    let id = nextID
+    if holders[key] == nil {
+      holders[key] = id
+      return Ticket(key: key, id: id)
+    }
+    await withCheckedContinuation { continuation in
+      waiters[key, default: []].append((id, continuation))
+    }
+    return Ticket(key: key, id: id)
+  }
+
+  /// Hand the key to the next waiter, or free it.
+  func leave(_ ticket: Ticket) {
+    guard holders[ticket.key] == ticket.id else { return }
+    if var queue = waiters[ticket.key], !queue.isEmpty {
+      let next = queue.removeFirst()
+      waiters[ticket.key] = queue.isEmpty ? nil : queue
+      holders[ticket.key] = next.id
+      next.resume.resume()
+    } else {
+      holders[ticket.key] = nil
+    }
+  }
+
+  /// Number of calls waiting for a key (for tests and status).
+  func waiting(for key: String) -> Int { waiters[key]?.count ?? 0 }
 }
 
 // MARK: - Preflight

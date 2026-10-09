@@ -224,14 +224,18 @@ public enum Shell {
 
     try process.run()
 
-    // Timeout watchdog
+    // Track the child so a cancelled call, a client disconnect or Ctrl-C can stop it
+    // (and everything it spawned) instead of leaving it holding DerivedData.
     let pid = process.processIdentifier
+    let tracked = !ChildProcesses.untracked
+    if tracked { ChildProcesses.register(pid) }
+    defer { if tracked { ChildProcesses.unregister(pid) } }
+
+    // Timeout watchdog
     let timeoutNanos = UInt64(timeout * 1_000_000_000)
     let timeoutTask = Task.detached {
       try? await Task.sleep(nanoseconds: timeoutNanos)
-      kill(pid, SIGTERM)
-      try? await Task.sleep(nanoseconds: 2_000_000_000)
-      kill(pid, SIGKILL)
+      ProcessTree.terminate(pid)
     }
 
     // Idle watchdog: kill the process after `idleTimeout` seconds with no output on either
@@ -248,23 +252,31 @@ public enum Shell {
           let silent = Date().timeIntervalSince(lastOutput.withLock { $0 })
           if silent >= idle {
             killedForIdle.withLock { $0 = true }
-            kill(pid, SIGTERM)
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            kill(pid, SIGKILL)
+            ProcessTree.terminate(pid)
             return
           }
         }
       }
     }
-    let markOutput: @Sendable () -> Void = { lastOutput.withLock { $0 = Date() } }
+    // Feed the latest output line to the tool's progress reporter, when there is one.
+    let activity = ToolActivity.current
+    let markOutput: @Sendable (Data) -> Void = { chunk in
+      lastOutput.withLock { $0 = Date() }
+      activity?.note(chunk)
+    }
 
-    // Read output concurrently, capping retained data to avoid OOM on large builds
-    async let stdoutData = stdoutPipe.fileHandleForReading.readTailAsync(
-      limit: outputLimit, onData: markOutput)
-    async let stderrData = stderrPipe.fileHandleForReading.readTailAsync(
-      limit: outputLimit, onData: markOutput)
-
-    let (out, err) = await (stdoutData, stderrData)
+    // Read output concurrently, capping retained data to avoid OOM on large builds.
+    // Cancelling the calling task (MCP cancel, client gone) kills the process tree, which
+    // closes the pipes and ends the reads.
+    let (out, err) = await withTaskCancellationHandler {
+      async let stdoutData = stdoutPipe.fileHandleForReading.readTailAsync(
+        limit: outputLimit, onData: markOutput)
+      async let stderrData = stderrPipe.fileHandleForReading.readTailAsync(
+        limit: outputLimit, onData: markOutput)
+      return await (stdoutData, stderrData)
+    } onCancel: {
+      ProcessTree.terminate(pid)
+    }
 
     // Await process exit without blocking the cooperative thread pool.
     // Note: for-await on AsyncStream breaks early if the Task is cancelled
@@ -275,8 +287,8 @@ public enum Shell {
     idleTask?.cancel()
 
     // If task was cancelled, the process may still be running
-    if process.isRunning {
-      kill(process.processIdentifier, SIGTERM)
+    if process.isRunning || Task.isCancelled {
+      ProcessTree.terminate(pid)
       return ShellResult(stdout: "", stderr: "Task cancelled", exitCode: -2)
     }
 
@@ -326,7 +338,7 @@ extension FileHandle {
   /// Read pipe data incrementally, retaining only the last `limit` bytes.
   /// Prevents unbounded memory growth when subprocesses emit large output
   /// (e.g. xcodebuild builds that produce hundreds of MB).
-  func readTailAsync(limit: Int, onData: (@Sendable () -> Void)? = nil) async -> Data {
+  func readTailAsync(limit: Int, onData: (@Sendable (Data) -> Void)? = nil) async -> Data {
     precondition(limit > 0, "outputLimit must be positive")
     return await withCheckedContinuation { continuation in
       DispatchQueue.global().async {
@@ -334,7 +346,7 @@ extension FileHandle {
         while true {
           let chunk = self.availableData
           if chunk.isEmpty { break }
-          onData?()
+          onData?(chunk)
           tail.append(chunk)
           if tail.count > limit {
             tail = Data(tail.suffix(limit))
@@ -356,5 +368,104 @@ extension FileHandle {
         continuation.resume(returning: tail)
       }
     }
+  }
+}
+
+// MARK: - Child process tracking
+
+/// Process IDs of children xcforge started and is still waiting on.
+///
+/// Used to stop them when the CLI gets Ctrl-C or SIGTERM, or when the MCP client goes away,
+/// so no orphaned xcodebuild keeps running and holding DerivedData.
+public enum ChildProcesses {
+  private static let pids = OSAllocatedUnfairLock(initialState: Set<pid_t>())
+
+  /// Set for long-lived helpers (the simulator WebDriverAgent runner) that should keep
+  /// running when xcforge exits. Cancellation and timeouts still stop them.
+  @TaskLocal public static var untracked = false
+
+  static func register(_ pid: pid_t) { _ = pids.withLock { $0.insert(pid) } }
+  static func unregister(_ pid: pid_t) { _ = pids.withLock { $0.remove(pid) } }
+
+  /// Children currently running.
+  public static var running: [pid_t] { pids.withLock { Array($0) } }
+
+  /// Stop every tracked child and its descendants. Safe to call from a signal handler queue.
+  public static func terminateAll(grace: TimeInterval = 2) {
+    for pid in running { ProcessTree.terminate(pid, grace: grace) }
+  }
+}
+
+/// Signals a process together with everything it spawned (compilers, test runners).
+public enum ProcessTree {
+  /// The process and all its descendants, parents first. Capped so a runaway tree can't stall us.
+  static func members(of root: pid_t, cap: Int = 512) -> [pid_t] {
+    var result: [pid_t] = [root]
+    var index = 0
+    while index < result.count && result.count < cap {
+      result += children(of: result[index]).filter { !result.contains($0) }
+      index += 1
+    }
+    return Array(result.prefix(cap))
+  }
+
+  static func children(of pid: pid_t) -> [pid_t] {
+    #if canImport(Darwin)
+      let count = proc_listchildpids(pid, nil, 0)
+      guard count > 0 else { return [] }
+      var buffer = [pid_t](repeating: 0, count: Int(count) + 16)
+      let filled = buffer.withUnsafeMutableBytes { raw in
+        proc_listchildpids(pid, raw.baseAddress, Int32(raw.count))
+      }
+      guard filled > 0 else { return [] }
+      return Array(buffer.prefix(Int(filled))).filter { $0 > 0 }
+    #else
+      return []
+    #endif
+  }
+
+  /// SIGTERM the whole tree now, then SIGKILL whatever is still alive after `grace` seconds.
+  /// The member list is taken once, before signalling, so children re-parented to launchd
+  /// when their parent exits are still reached.
+  public static func terminate(_ root: pid_t, grace: TimeInterval = 2) {
+    guard root > 0 else { return }
+    let targets = members(of: root)
+    for pid in targets.reversed() { kill(pid, SIGTERM) }
+    let nanos = UInt64(max(0, grace) * 1_000_000_000)
+    Task.detached {
+      try? await Task.sleep(nanoseconds: nanos)
+      for pid in targets.reversed() where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+    }
+  }
+}
+
+// MARK: - Tool activity (progress)
+
+/// Latest output line of the tool call being served, for MCP progress notifications.
+///
+/// The MCP server sets `current` for calls that asked for progress; `Shell.run` feeds it
+/// every chunk of child output. Reading it never blocks the child.
+public final class ToolActivity: Sendable {
+  @TaskLocal public static var current: ToolActivity?
+
+  private let state = OSAllocatedUnfairLock<String?>(initialState: nil)
+
+  public init() {}
+
+  /// The most recent non-empty output line, trimmed to 200 characters.
+  public var lastLine: String? { state.withLock { $0 } }
+
+  func note(_ chunk: Data) {
+    guard let text = String(data: chunk.suffix(4096), encoding: .utf8) else { return }
+    guard let line = Self.lastLine(in: text) else { return }
+    state.withLock { $0 = line }
+  }
+
+  static func lastLine(in text: String) -> String? {
+    let line = text.split(whereSeparator: \.isNewline).reversed()
+      .lazy.map { $0.trimmingCharacters(in: .whitespaces) }
+      .first { !$0.isEmpty }
+    guard let line else { return nil }
+    return line.count > 200 ? String(line.prefix(200)) + "…" : line
   }
 }

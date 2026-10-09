@@ -115,7 +115,7 @@ These steps pause execution and return a `session_id`. Call `run_plan_decide` to
 3. `run_plan` returns `session_id`, `suspendQuestion`, and screenshot
 4. Agent analyzes and calls `run_plan_decide(session_id, decision)`
 5. Execution resumes from the next step
-6. Sessions expire after 5 minutes
+6. MCP sessions live in the server's memory for 5 minutes. CLI sessions (`xcforge plan run`) are saved to `~/.xcforge/plan-sessions/` (`XCFORGE_PLAN_SESSION_DIR`) so `xcforge plan decide` in a new process can resume them for an hour; time spent waiting for the decision doesn't count against the plan's timeout
 
 ## Example: Complete Login Flow
 

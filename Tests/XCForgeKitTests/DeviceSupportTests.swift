@@ -31,9 +31,14 @@ struct DeviceSupportTests {
       "hardwareProperties": ["udid": "00008110-AAA"],
       "connectionProperties": ["tunnelIPAddress": "fd00::1", "pairingState": "paired"],
     ]
+    // Xcode 27.2 nests `properties` by group.
     let modern: [String: Any] = [
       "identifier": "CORE-2",
-      "properties": ["name": "Test iPad", "udid": "00008120-BBB", "tunnelIPAddress": "fd00::2"],
+      "properties": [
+        "hardware": ["reality": "physical", "udid": "00008120-BBB"],
+        "state": ["name": "Test iPad", "bootState": "booted"],
+        "connection": ["state": "connected", "transportType": "localNetwork", "tunnelIPAddress": "fd00::2"],
+      ],
     ]
     let list: [String: Any] = ["result": ["devices": [legacy, modern]]]
 
@@ -45,6 +50,65 @@ struct DeviceSupportTests {
     #expect(byUDID?.name == "Test iPad")
     #expect(DeviceWDA.findDevice("CORE-1", listJSON: list)?.udid == "00008110-AAA")
     #expect(DeviceWDA.findDevice("nope", listJSON: list) == nil)
+  }
+
+  @Test("Xcode 27 simulators in devicectl output are dropped, and state comes from the tunnel")
+  func devicectlSimulatorsAndState() {
+    let phone: [String: Any] = [
+      "identifier": "CORE-1",
+      "visibilityClass": "default",
+      "hardwareProperties": ["udid": "00008110-AAA", "reality": "physical", "platform": "iOS"],
+      "deviceProperties": ["name": "Phone", "osVersionNumber": "27.0"],
+      "connectionProperties": ["tunnelState": "disconnected", "pairingState": "paired", "transportType": "wired"],
+    ]
+    let virtual: [String: Any] = [
+      "identifier": "SIM-1",
+      "properties": ["name": "iPhone 17", "udid": "SIM-1", "reality": "virtual", "bootState": "booted"],
+    ]
+    let simPlatform: [String: Any] = [
+      "identifier": "SIM-2",
+      "properties": ["name": "iPad Air", "udid": "SIM-2", "platform": "iOS Simulator"],
+    ]
+    let unlabeled: [String: Any] = ["identifier": "SIM-3", "properties": ["name": "iPhone Air", "udid": "sim-3"]]
+    // Shapes captured from Xcode 27.2's devicectl (values masked).
+    let wifiPhone: [String: Any] = [
+      "identifier": "CORE-9",
+      "visibilityClass": "default",
+      "connectionProperties": ["pairingState": "paired", "transportType": "localNetwork", "tunnelState": "connected"],
+      "deviceProperties": ["bootState": "booted", "name": "Owner's iPhone", "osVersionNumber": "27.2"],
+      "hardwareProperties": ["platform": "iOS", "reality": "physical", "udid": "00008150-CCC"],
+      "properties": [
+        "connection": ["state": "connected", "transportType": "localNetwork"],
+        "hardware": ["reality": "physical", "udid": "00008150-CCC"],
+        "state": ["bootState": "booted", "name": "Owner's iPhone"],
+      ],
+    ]
+    let hubSimulator: [String: Any] = [
+      "identifier": "CORE-10",
+      "visibilityClass": "simulators",
+      "connectionProperties": ["transportType": "sameMachine", "tunnelState": "connected"],
+      "deviceProperties": ["name": "iPhone 17", "provider": "com.apple.CoreSimulator.SimulatorCoreDevicePlugin"],
+      "hardwareProperties": ["platform": "iOS", "reality": "simulated", "udid": "SIM-UDID"],
+      "properties": ["hardware": ["reality": "simulated", "udid": "SIM-UDID"], "state": ["name": "iPhone 17"]],
+    ]
+    let wifi = DeviceTools.physicalEntry(wifiPhone)
+    #expect(wifi?.udid == "00008150-CCC")
+    #expect(wifi?.name == "Owner's iPhone")
+    #expect(wifi?.state == "connected")
+    #expect(wifi?.connectionType == "localNetwork")
+    #expect(DeviceTools.physicalEntry(hubSimulator) == nil)
+
+    let entry = DeviceTools.physicalEntry(phone)
+    #expect(entry?.state == "disconnected")
+    #expect(entry?.connectionType == "wired")
+    #expect(DeviceTools.physicalEntry(virtual) == nil)
+    #expect(DeviceTools.physicalEntry(simPlatform) == nil)
+    #expect(DeviceTools.physicalEntry(unlabeled, simulatorUDIDs: ["SIM-3"]) == nil)
+    #expect(DeviceTools.physicalEntry(unlabeled)?.state == "unknown")
+
+    let list: [String: Any] = ["result": ["devices": [virtual, phone]]]
+    #expect(DeviceWDA.findDevice("iPhone 17", listJSON: list) == nil)
+    #expect(DeviceWDA.findDevice("Phone", listJSON: list)?.udid == "00008110-AAA")
   }
 
   // MARK: - WDA URL discovery

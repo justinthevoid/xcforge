@@ -25,7 +25,10 @@ xcforge plan ...           # CLI mode
 xcforge pose ...           # CLI mode
 xcforge bless ...          # CLI mode
 xcforge debug ...          # CLI mode
+xcforge --version          # Version (the MCP server reports the same)
 ```
+
+With `--json` (or when stdout isn't a terminal), errors are a JSON object `{"error": ..., "code": ...}` on stdout, like results.
 
 ---
 
@@ -52,9 +55,12 @@ xcforge build --json                             # Machine-readable JSON output 
 | `--simulator <name\|udid>` | Simulator name or UDID. Auto-detected from booted simulator |
 | `--configuration <config>` | Build configuration (Debug/Release). Default: Debug |
 | `--diagnose` | Build-only with structured diagnostics (skips boot/install/launch) |
+| `--arg <value>` | Launch argument for the app (repeatable) |
+| `--env KEY=VALUE` | Environment variable for the app (repeatable) |
+| `--url <url>` | URL or deep link to open once the app is running |
 | `--json` | Machine-readable JSON output |
 
-**Pipeline behavior:** On build success, automatically boots the simulator (if not already booted), installs the app, and launches it. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
+**Pipeline behavior:** On build success, boots the simulator (if not already booted) and waits for it, installs the scheme's application target, launches it, and watches it for 8s (`XCFORGE_LAUNCH_WATCH_SECONDS`). A crash at launch fails the command with the crash reason and frames. On build failure, stops immediately with build errors. Persists `bundleId` and `appPath` to `defaults.json` so subsequent `sim install` / `sim launch` calls auto-detect across process boundaries.
 
 **JSON output:** With `--json`, emits a `BuildRunResult` with `build`, `boot`, `install`, `launch` phase statuses plus `appPid` and `appRunning` fields.
 
@@ -85,6 +91,8 @@ xcforge build compile --project MyApp.xcodeproj --scheme MyApp
 xcforge build compile --configuration Release
 xcforge build compile --long                       # 7200s total limit instead of 1800s
 xcforge build compile --json
+xcforge build compile --from-snapshot              # Build a snapshot; edits made meanwhile don't matter
+xcforge build compile --all-errors --jobs 4        # Every error, in the diagnostic DerivedData slot
 ```
 
 | Flag | Description |
@@ -98,6 +106,15 @@ xcforge build compile --json
 
 **Use case:** Rapid code iteration without deployment latency. Does not boot simulator or install app.
 
+### build typecheck
+
+Compile one target (its scheme, else `-target`), reusing the workspace's DerivedData. A `-target` build writes into the configured `derivedDataPath` (or the scheme's DerivedData) through SYMROOT/OBJROOT, since xcodebuild rejects `-derivedDataPath` with `-target`.
+
+```bash
+xcforge build typecheck ShutterCoachShared
+xcforge build typecheck Widget --from-snapshot
+```
+
 ### build clean
 
 Clean Xcode build artifacts for a project/scheme.
@@ -105,6 +122,7 @@ Clean Xcode build artifacts for a project/scheme.
 ```bash
 xcforge build clean
 xcforge build clean --project MyApp.xcodeproj --scheme MyApp
+xcforge build clean --derived-data             # Also delete this project's DerivedData folder
 xcforge build clean --json
 ```
 
@@ -327,7 +345,9 @@ xcforge sim info --simulator "iPhone 16 Pro"     # Get metrics for specific simu
 xcforge sim boot "iPhone 16 Pro"                 # Boot a simulator
 xcforge sim shutdown "iPhone 16 Pro"             # Shutdown (or "all")
 xcforge sim install --app-path /path/to/App.app  # Install app (auto-detects sim)
-xcforge sim launch --bundle-id com.app.id        # Launch app (auto-detects sim)
+xcforge sim launch --bundle-id com.app.id        # Launch app; fails with the crash if it dies within 2s
+xcforge sim launch --arg -UITest --env API=stub --url myapp://screen  # Args, env, deep link
+xcforge sim openurl myapp://settings             # Open a URL or deep link
 xcforge sim terminate --bundle-id com.app.id     # Terminate app
 xcforge sim clone "iPhone 16 Pro" --name "Clone" # Clone simulator
 xcforge sim erase "iPhone 16 Pro"                # Erase to factory state
@@ -341,6 +361,11 @@ xcforge sim location-reset                       # Clear GPS override
 xcforge sim appearance --appearance dark         # Set light/dark mode
 xcforge sim statusbar --time "9:41" --battery-level 100  # Override status bar
 xcforge sim statusbar-clear                      # Restore default status bar
+xcforge sim content-size accessibility-large     # Dynamic Type size (prints the old one)
+xcforge sim locale fr_FR                         # Locale + language (relaunch the app to apply)
+xcforge sim container --container data           # App container path (last built app)
+xcforge sim push '{"aps":{"alert":"Hi"}}'        # Deliver a push notification
+xcforge sim privacy grant photos                 # Grant a permission before the app asks
 ```
 
 All subcommands support `--json`. `install`, `launch`, `terminate` auto-detect simulator and bundle ID from session state.
@@ -386,7 +411,18 @@ xcforge spm list                                 # Show dependency tree (JSON)
 xcforge spm clean                                # Clean build artifacts
 ```
 
-All subcommands support `--json`. `--path` defaults to current directory.
+All subcommands support `--json`. Without `--path`, the package is `.xcforge.yaml packagePath`, else the current folder, else the only `Package.swift` in the repo.
+
+---
+
+## xcforge lsp
+
+```bash
+xcforge lsp setup                                # buildServer.json for the auto-detected project and scheme
+xcforge lsp setup --scheme ShutterCoachDev
+```
+
+Runs `xcode-build-server config` and points `build_root` at the DerivedData xcforge builds into.
 
 ---
 
@@ -395,7 +431,7 @@ All subcommands support `--json`. `--path` defaults to current directory.
 Stream, read, and wait on simulator logs. Four subcommands — `read` is the default.
 
 ```bash
-xcforge log start                                # Start capture (smart mode, debug level)
+xcforge log start                                # Start a background capture (smart mode, debug level)
 xcforge log start --mode app                     # App-only logs + crashes
 xcforge log start --mode verbose                 # Unfiltered system logs
 xcforge log start --process MyApp                # Filter by process name
@@ -403,13 +439,14 @@ xcforge log start --subsystem com.myapp          # Filter by subsystem
 xcforge log read                                 # Read with topic filtering (app + crashes)
 xcforge log read --include network               # Add network topic
 xcforge log read --include lifecycle --last 50   # Last 50 lifecycle + app lines
+xcforge log read --last 0                        # Everything (default: newest 200 lines)
 xcforge log read --clear                         # Clear buffer after reading
 xcforge log stop                                 # Stop capture
 xcforge log wait --pattern "error.*timeout"      # Wait for regex pattern
 xcforge log wait --pattern "launched" --timeout 10
 ```
 
-All subcommands support `--json`.
+All subcommands support `--json`. The capture keeps running in the background after `log start` returns, writing to `~/.xcforge/capture/`, until `log stop`.
 
 ---
 
@@ -421,13 +458,14 @@ Launch, read, and stop app console output capture (print/NSLog). Three subcomman
 xcforge console launch                           # Launch app with console capture
 xcforge console launch --bundle-id com.app.id    # Explicit bundle ID
 xcforge console launch --args "--verbose"         # Pass launch args to app
+xcforge console launch --env API=stub            # Environment for the app (repeatable)
 xcforge console read                             # Read stdout + stderr
 xcforge console read --stream stdout --last 20   # Last 20 stdout lines
 xcforge console read --clear                     # Clear buffer after reading
 xcforge console stop                             # Stop capture and terminate app
 ```
 
-All subcommands support `--json`. Auto-detects simulator and bundle ID from session state.
+All subcommands support `--json`. Auto-detects simulator and bundle ID from session state. The console keeps streaming in the background after `console launch` returns, until `console stop`; reads return the newest 200 lines per stream by default.
 
 ---
 
@@ -437,7 +475,9 @@ Capture simulator screenshots and manage visual baselines. Three subcommands —
 
 ```bash
 xcforge screenshot                               # Same as `xcforge screenshot capture`
-xcforge screenshot capture                       # Capture to /tmp/xcforge-screenshot.png
+xcforge screenshot capture                       # Capture to a new temp file (path printed)
+xcforge screenshot capture --max-dimension 800   # Smaller image for a quick look
+xcforge screenshot capture --crop 0,100,390,200  # One area, in device points
 xcforge screenshot capture --format jpeg --output /path/to/file.jpeg
 xcforge screenshot capture --grid                # Include point-coordinate grid overlay
 xcforge screenshot baseline --name login-screen  # Save as named baseline
@@ -485,13 +525,14 @@ xcforge wait-ready --for a11y:x --json
 
 UI automation via WebDriverAgent. 17 subcommands — `status` is the default.
 
+Every subcommand takes `--simulator <name|udid>`; each simulator has its own WDA, and the last one named is used when it's omitted. The first WDA start on a Mac builds xcforgeWDA (up to 15 minutes) and then waits up to 180s for the runner to answer (`XCFORGE_WDA_START_SECONDS`).
+
 ```bash
 xcforge ui status                                # Check WDA health
 xcforge ui session                               # Create WDA session
 xcforge ui session --bundle-id com.app.id        # Bind session to app — verifies CFBundleIdentifier
-xcforge ui ls                                    # Flat element list — auto picks WDA when sim is booted
-xcforge ui ls --source wda                       # Force WDA (iOS app tree); use this if sheets aren't visible
-xcforge ui ls --source axp                       # Force macOS Accessibility (Simulator.app chrome)
+xcforge ui ls                                    # Flat element list (WDA; started when needed)
+xcforge ui ls --source axp                       # macOS Accessibility tree of the one booted simulator
 xcforge ui ls --scope home.drawer.root           # Restrict to a11y-id and its descendants
 xcforge ui find --using "accessibility id" --value "Save"
 xcforge ui find --using "accessibility id" --value "Save" --scroll
@@ -508,9 +549,13 @@ xcforge ui pinch --center-x 200 --center-y 400 --scale 2.0
 xcforge ui drag --from-x 100 --from-y 200 --to-x 300 --to-y 400
 xcforge ui type --text "hello world"
 xcforge ui type --text "hello" --element-id <id> --clear-first
+xcforge ui type --text "secret" --secure --key return   # Redacted, then press return
+xcforge ui type --dismiss-keyboard
+XCFORGE_SIMULATOR="iPhone 16" xcforge ui tap --x 200 --y 400   # Drive a specific simulator
 xcforge ui get-text --element-id <id>
 xcforge ui source                                # Full view hierarchy (JSON)
 xcforge ui source --format xml
+xcforge ui source --format list                  # One line per element: id | label | type | frame
 xcforge ui alert --action accept_all             # Handle all alerts
 xcforge ui alert --action dismiss --button-label "Cancel"
 ```
@@ -857,7 +902,7 @@ cat plan.json | xcforge plan run --stdin
 
 ### plan decide
 
-Resume a suspended plan with a decision.
+Resume a plan that `plan run` suspended, from a new process. Sessions are saved in `~/.xcforge/plan-sessions/` for an hour and used once.
 
 ```bash
 xcforge plan decide --session-id <UUID> --decision accept
@@ -916,7 +961,7 @@ See the [Pose & Visual Iteration](pose.md) reference for app-side routing patter
 
 ## xcforge bless
 
-Save a visual baseline, run tests, compare visual output, and suggest a commit message — all in one call.
+Save a visual baseline, run tests and compare visual output in one call.
 
 ```bash
 xcforge bless --baseline login-screen --tests "UITests/LoginTests"

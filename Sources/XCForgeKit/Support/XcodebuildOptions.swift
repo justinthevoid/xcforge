@@ -1,5 +1,6 @@
 import Foundation
 import MCP
+import os
 
 /// Per-invocation knobs applied to every `xcodebuild` call xcforge makes.
 ///
@@ -33,6 +34,13 @@ public struct XcodebuildOptions: Sendable, Equatable {
   /// `-parallelizeTargets`, `COMPILATION_CACHE_ENABLE_CACHING=YES`) so the build matches a
   /// plain xcodebuild invocation. Default: true.
   public var defaultFlags: Bool?
+  /// `-jobs N` for compiling actions, so a small Mac can cap parallel compiles.
+  public var jobs: Int?
+  /// Build in the separate diagnostic DerivedData slot and keep going after errors, so
+  /// "show me every error" doesn't invalidate the main cache.
+  public var allErrors: Bool?
+  /// DerivedData used by `allErrors` builds. Default: a per-project folder next to Xcode's.
+  public var diagnosticDerivedDataPath: String?
 
   public init(
     derivedDataPath: String? = nil,
@@ -44,7 +52,10 @@ public struct XcodebuildOptions: Sendable, Equatable {
     artifactDir: String? = nil,
     idleTimeoutSeconds: TimeInterval? = nil,
     continueAfterErrors: Bool? = nil,
-    defaultFlags: Bool? = nil
+    defaultFlags: Bool? = nil,
+    jobs: Int? = nil,
+    allErrors: Bool? = nil,
+    diagnosticDerivedDataPath: String? = nil
   ) {
     self.derivedDataPath = derivedDataPath
     self.resultBundlePath = resultBundlePath
@@ -56,6 +67,9 @@ public struct XcodebuildOptions: Sendable, Equatable {
     self.idleTimeoutSeconds = idleTimeoutSeconds
     self.continueAfterErrors = continueAfterErrors
     self.defaultFlags = defaultFlags
+    self.jobs = jobs
+    self.allErrors = allErrors
+    self.diagnosticDerivedDataPath = diagnosticDerivedDataPath
   }
 
   /// Options set for the current call (CLI flags or MCP arguments).
@@ -102,7 +116,47 @@ public struct XcodebuildOptions: Sendable, Equatable {
     merged.defaultFlags =
       explicit.defaultFlags ?? environment["XCFORGE_DEFAULT_FLAGS"].flatMap(parseBool) ?? repo?.defaultFlags
     merged.extraArgs = explicit.extraArgs
+    merged.jobs =
+      explicit.jobs ?? environment["XCFORGE_JOBS"].flatMap { Int($0) }.flatMap { $0 > 0 ? $0 : nil } ?? repo?.jobs
+    merged.allErrors = explicit.allErrors
+    merged.diagnosticDerivedDataPath =
+      explicit.diagnosticDerivedDataPath ?? nonEmpty(environment["XCFORGE_DIAGNOSTIC_DERIVED_DATA_PATH"])
+      ?? repo?.diagnosticDerivedDataPath
     return merged
+  }
+
+  /// Point an `allErrors` build at the diagnostic DerivedData slot, unless this call named a
+  /// DerivedData folder itself.
+  func withDiagnosticSlot(project: String?) -> XcodebuildOptions {
+    guard allErrors == true else { return self }
+    var options = self
+    options.continueAfterErrors = true
+    if Self.current.derivedDataPath == nil {
+      options.derivedDataPath = diagnosticDerivedDataPath ?? Self.defaultDiagnosticDerivedDataPath(project: project)
+    }
+    return options
+  }
+
+  /// A snapshot build keeps out of a configured DerivedData folder (`<folder>-snapshot`), so it
+  /// never invalidates the main tree's cache. Xcode's default folder already differs by path.
+  func forSnapshot(project: String?) -> XcodebuildOptions {
+    guard let project, SourceSnapshot.contains(project), Self.current.derivedDataPath == nil,
+      let derivedDataPath, !SourceSnapshot.contains(derivedDataPath)
+    else { return self }
+    var options = self
+    options.derivedDataPath = derivedDataPath + "-snapshot"
+    return options
+  }
+
+  /// `~/Library/Developer/Xcode/DerivedData/xcforge-diagnostic-<Name>-<hash>`: one slot per
+  /// project, beside Xcode's own folders, so it stays warm between runs.
+  static func defaultDiagnosticDerivedDataPath(project: String?, home: String = NSHomeDirectory()) -> String {
+    let path = project ?? FileManager.default.currentDirectoryPath
+    let name = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+    var hash: UInt64 = 5381
+    for byte in path.utf8 { hash = (hash &* 33) &+ UInt64(byte) }
+    let suffix = String(String(hash, radix: 16).suffix(8))
+    return "\(home)/Library/Developer/Xcode/DerivedData/xcforge-diagnostic-\(name)-\(suffix)"
   }
 
   static func parseBool(_ raw: String) -> Bool? {
@@ -129,7 +183,9 @@ public struct XcodebuildOptions: Sendable, Equatable {
     let ts = Int(Date().timeIntervalSince1970)
     let pid = ProcessInfo.processInfo.processIdentifier
     let rand = UUID().uuidString.prefix(6).lowercased()
-    return "\(artifactDirectory())/xcf-\(prefix)-\(ts)-\(pid)-\(rand).\(ext)"
+    let directory = artifactDirectory()
+    ArtifactPruning.pruneOnce(directory: directory)
+    return "\(directory)/xcf-\(prefix)-\(ts)-\(pid)-\(rand).\(ext)"
   }
 
   /// Result bundle path for one phase. When the caller fixed `resultBundlePath`, the
@@ -149,7 +205,7 @@ public struct XcodebuildOptions: Sendable, Equatable {
 
   /// Tools whose xcodebuild calls honour these options. Their schemas advertise the keys.
   public static let mcpToolNames: Set<String> = [
-    "build_sim", "build_run_sim", "build_compile", "clean",
+    "build_sim", "build_run_sim", "build_compile", "build_typecheck", "clean",
     "test_sim", "test_failures", "test_coverage", "build_and_diagnose", "build_and_test",
     "list_tests", "bless",
   ]
@@ -197,6 +253,16 @@ public struct XcodebuildOptions: Sendable, Equatable {
       "description": .string(
         "Keep building after the first error so one run reports every error. Default: true."),
     ]),
+    "jobs": .object([
+      "type": .string("integer"),
+      "description": .string("Passed to xcodebuild as -jobs for compiling actions. Default: one per core."),
+    ]),
+    "allErrors": .object([
+      "type": .string("boolean"),
+      "description": .string(
+        "Build in a separate diagnostic DerivedData slot and report every error, without invalidating the main cache."
+      ),
+    ]),
     "defaultFlags": .object([
       "type": .string("boolean"),
       "description": .string(
@@ -226,7 +292,9 @@ public struct XcodebuildOptions: Sendable, Equatable {
       artifactDir: nil,
       idleTimeoutSeconds: number(args["idleTimeoutSeconds"]),
       continueAfterErrors: args["continueAfterErrors"]?.boolValue,
-      defaultFlags: args["defaultFlags"]?.boolValue
+      defaultFlags: args["defaultFlags"]?.boolValue,
+      jobs: number(args["jobs"]).map { Int($0) },
+      allErrors: args["allErrors"]?.boolValue
     )
   }
 
@@ -250,5 +318,42 @@ public struct XcodebuildOptions: Sendable, Equatable {
       icons: tool.icons,
       _meta: tool._meta
     )
+  }
+}
+
+/// Result bundles and diagnostic snapshots xcforge writes pile up in the artifact directory
+/// (2-3 GB a day on a busy Mac). The first artifact path a process asks for removes xcforge's
+/// own artifacts older than `maxAge`.
+enum ArtifactPruning {
+  /// Two days: long enough for `test failures` and coverage to read yesterday's run.
+  static let maxAge: TimeInterval = 2 * 24 * 3600
+
+  private static let pruned = OSAllocatedUnfairLock(initialState: Set<String>())
+
+  static func pruneOnce(directory: String) {
+    guard pruned.withLock({ $0.insert(directory).inserted }) else { return }
+    prune(directory: directory, now: Date())
+  }
+
+  /// Remove `xcf-*` result bundles, snapshots and logs older than `maxAge`. Returns the names removed.
+  @discardableResult
+  static func prune(directory: String, now: Date, maxAge: TimeInterval = maxAge) -> [String] {
+    let fm = FileManager.default
+    guard let names = try? fm.contentsOfDirectory(atPath: directory) else { return [] }
+    var removed: [String] = []
+    for name in names where isXCForgeArtifact(name) {
+      let path = (directory as NSString).appendingPathComponent(name)
+      guard let modified = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date,
+        now.timeIntervalSince(modified) > maxAge
+      else { continue }
+      if (try? fm.removeItem(atPath: path)) != nil { removed.append(name) }
+    }
+    return removed
+  }
+
+  /// `xcf-<prefix>-<seconds>-<pid>-<random>.<ext>`, as `uniqueArtifactPath` names them.
+  static func isXCForgeArtifact(_ name: String) -> Bool {
+    guard name.hasPrefix("xcf-") else { return false }
+    return [".xcresult", ".txt", ".log"].contains { name.hasSuffix($0) }
   }
 }

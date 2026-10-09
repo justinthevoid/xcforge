@@ -18,7 +18,8 @@ swift run xcforge build --help # CLI mode
   after **600s with no output** (`--idle-timeout` / `idleTimeoutSeconds`, 0 disables).
 - Pass `--diagnose` / `diagnose: true` to capture a diagnostic snapshot even on success.
 - On timeout, the result includes a `/tmp/xcf-diag-<pid>-<ts>.txt` path and a summary line.
-- `build_sim` and `build_run_sim` share the same watchdog design.
+- `build_sim` and `build_run_sim` share the same watchdog design. The watchdog samples at 300s and 540s and
+  only reports a snapshot for a timeout or `diagnose`.
 
 **Formatting** (CI enforces strict lint):
 ```bash

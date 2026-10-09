@@ -1,9 +1,11 @@
 import Foundation
 
 public enum WorkflowJSONRenderer {
-  public static func renderJSON<T: Encodable>(_ value: T) throws -> String {
+  /// Pretty-printed for people; `compact` drops the indentation agents pay for in tokens.
+  public static func renderJSON<T: Encodable>(_ value: T, compact: Bool = false) throws -> String {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    encoder.outputFormatting =
+      compact ? [.sortedKeys, .withoutEscapingSlashes] : [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     encoder.dateEncodingStrategy = .iso8601
     let data = try encoder.encode(value)
     // Safe to force-unwrap: JSONEncoder always produces valid UTF-8.
@@ -16,7 +18,7 @@ public enum WorkflowJSONRenderer {
     _ value: TestTools.TestExecution, forAgent: Bool
   ) throws -> String {
     if forAgent {
-      return try renderJSON(AgentResultProjection.project(value))
+      return try renderJSON(AgentResultProjection.project(value), compact: true)
     }
     return try renderJSON(value)
   }
@@ -25,7 +27,7 @@ public enum WorkflowJSONRenderer {
     _ value: TestTools.BuildAndTestResult, forAgent: Bool
   ) throws -> String {
     if forAgent {
-      return try renderJSON(AgentResultProjection.project(value))
+      return try renderJSON(AgentResultProjection.project(value), compact: true)
     }
     return try renderJSON(value)
   }

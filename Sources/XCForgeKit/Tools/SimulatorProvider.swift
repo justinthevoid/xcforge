@@ -37,7 +37,9 @@ public enum SimTools {
     let sessionCleared: Bool
   }
 
-  public static let tools: [Tool] = [
+  public static let tools: [Tool] = coreTools + setupTools
+
+  static let coreTools: [Tool] = [
     Tool(
       name: "list_sims",
       description:
@@ -103,8 +105,11 @@ public enum SimTools {
     ),
     Tool(
       name: "launch_app",
-      description:
-        "Launch an app on a booted simulator. Bundle ID is auto-detected from last build if omitted.",
+      description: """
+        Launch an app on a booted simulator and watch it for 8s for a startup crash. \
+        An app that crashed at launch fails with its crash report's exception and top frames. \
+        Bundle ID is auto-detected from last build if omitted.
+        """,
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -118,7 +123,40 @@ public enum SimTools {
             "description": .string(
               "App bundle identifier. Auto-detected from last build_sim if omitted."),
           ]),
+          "args": .object([
+            "type": .string("array"), "items": .object(["type": .string("string")]),
+            "description": .string("Launch arguments passed to the app."),
+          ]),
+          "env": .object([
+            "type": .string("array"), "items": .object(["type": .string("string")]),
+            "description": .string("Environment for the app, as KEY=VALUE strings."),
+          ]),
+          "url": .object([
+            "type": .string("string"),
+            "description": .string("URL or deep link to open once the app is running."),
+          ]),
+          "terminate": .object([
+            "type": .string("boolean"),
+            "description": .string("Terminate a running copy first. Default: true."),
+          ]),
         ]),
+      ])
+    ),
+    Tool(
+      name: "open_url",
+      description: "Open a URL or deep link on a simulator (simctl openurl).",
+      inputSchema: .object([
+        "type": .string("object"),
+        "properties": .object([
+          "simulator": .object([
+            "type": .string("string"),
+            "description": .string("Simulator name or UDID. Auto-detected from booted simulator if omitted."),
+          ]),
+          "url": .object([
+            "type": .string("string"), "description": .string("URL or deep link to open."),
+          ]),
+        ]),
+        "required": .array([.string("url")]),
       ])
     ),
     Tool(
@@ -387,6 +425,20 @@ public enum SimTools {
     let bundle_id: String?
   }
 
+  private struct LaunchInput: Decodable {
+    let simulator: String?
+    let bundle_id: String?
+    let args: [String]?
+    let env: [String]?
+    let url: String?
+    let terminate: Bool?
+  }
+
+  private struct OpenURLInput: Decodable {
+    let simulator: String?
+    let url: String
+  }
+
   private struct CloneInput: Decodable {
     let simulator: String
     let name: String
@@ -444,31 +496,13 @@ public enum SimTools {
     if nameOrUDID == "booted" { return "booted" }
 
     let result = try await env.shell.xcrun(timeout: 15, "simctl", "list", "devices", "-j")
-    guard let data = result.stdout.data(using: .utf8),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let deviceGroups = json["devices"] as? [String: [[String: Any]]]
-    else {
+    guard let devices = AutoDetect.parseSimulatorDevices(result.stdout) else {
       throw NSError(
         domain: "SimTools", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Failed to parse simulator list"])
     }
-
-    // Exact match only — prefix/substring matching causes false positives on destructive ops
-    // (e.g. "iPhone 16 Pro" would match "iPhone 16 Pro Max" with hasPrefix)
-    let needle = nameOrUDID.lowercased()
-    for (_, devices) in deviceGroups {
-      for device in devices {
-        guard let name = device["name"] as? String,
-          let udid = device["udid"] as? String
-        else { continue }
-        if name.lowercased() == needle { return udid }
-      }
-    }
-    throw NSError(
-      domain: "SimTools", code: 2,
-      userInfo: [
-        NSLocalizedDescriptionKey: "Simulator '\(nameOrUDID)' not found. Use exact name or UDID."
-      ])
+    // The same pick as every other name lookup, so a name never means two devices.
+    return try AutoDetect.pickSimulator(named: nameOrUDID, from: devices).udid
   }
 
   // MARK: - Typed Execute Methods
@@ -521,6 +555,8 @@ public enum SimTools {
       let udid = try await resolveSimulator(simulator, env: env)
       let result = try await env.shell.xcrun(timeout: 60, "simctl", "boot", udid)
       if result.succeeded || result.stderr.contains("current state: Booted") {
+        // `simctl boot` returns before the simulator can take installs and launches.
+        _ = try? await env.shell.xcrun(timeout: 120, "simctl", "bootstatus", udid, "-b")
         return SimResult(succeeded: true, message: "Simulator booted: \(udid)")
       }
       return SimResult(succeeded: false, message: "Boot failed: \(result.stderr)")
@@ -571,8 +607,12 @@ public enum SimTools {
     }
   }
 
+  /// Launch the app and watch it for `AppLiveness.settleSeconds`; an
+  /// app that died is a failure that carries its crash report. `environment` entries are
+  /// `KEY=VALUE`; `url` is opened in the app after it starts.
   public static func executeLaunchApp(
-    simulator: String?, bundleId: String?, args: [String]? = nil, env: Environment
+    simulator: String?, bundleId: String?, args: [String]? = nil, environment: [String] = [],
+    url: String? = nil, terminateFirst: Bool = true, env: Environment
   ) async -> SimResult {
     guard let resolvedBundleId = await env.session.resolveBundleId(bundleId) else {
       return SimResult(
@@ -584,10 +624,18 @@ public enum SimTools {
     } catch {
       return SimResult(succeeded: false, message: "\(error)")
     }
+    let childEnvironment: [String: String]
+    do {
+      childEnvironment = try parseEnvironment(environment)
+    } catch {
+      return SimResult(succeeded: false, message: "\(error)")
+    }
     do {
       let udid = try await resolveSimulator(sim, env: env)
+      let launchedAt = Date()
       let launch = try await launchAppStructured(
-        simulatorUDID: udid, bundleId: resolvedBundleId, args: args, env: env)
+        simulatorUDID: udid, bundleId: resolvedBundleId, args: args, environment: childEnvironment,
+        terminateFirst: terminateFirst, env: env)
 
       if launch.succeeded {
         // Hint WDA so any subsequent implicit `ensureSession()` (e.g. from `ui ls
@@ -595,9 +643,18 @@ public enum SimTools {
         // Springboard.
         await env.wdaClient.recordLaunchedApp(bundleId: resolvedBundleId)
         let note = launch.wasRunning ? " (was running, relaunched)" : ""
-        return SimResult(
-          succeeded: true,
-          message: "Launched \(resolvedBundleId) on \(udid)\(note)\n\(launch.stdout)")
+        var message = "Launched \(resolvedBundleId) on \(udid)\(note)\n\(launch.stdout)"
+        if let url {
+          let opened = try await env.shell.xcrun(timeout: 30, "simctl", "openurl", udid, url)
+          message += opened.succeeded ? "\nOpened \(url)" : "\nOpening \(url) failed: \(opened.stderr)"
+        }
+        if let pid = AppLiveness.pid(fromLaunchOutput: launch.stdout) {
+          let outcome = await AppLiveness.check(
+            pid: pid, bundleId: resolvedBundleId, launchedAt: launchedAt, env: env)
+          message += "\n" + AppLiveness.describe(outcome, bundleId: resolvedBundleId)
+          if outcome != .running { return SimResult(succeeded: false, message: message) }
+        }
+        return SimResult(succeeded: true, message: message)
       }
 
       if launch.timedOut {
@@ -995,15 +1052,45 @@ public enum SimTools {
 
   // MARK: - Internal Helpers
 
+  /// `KEY=VALUE` entries as a dictionary.
+  public static func parseEnvironment(_ entries: [String]) throws -> [String: String] {
+    var result: [String: String] = [:]
+    for entry in entries {
+      guard let equals = entry.firstIndex(of: "="), equals != entry.startIndex else {
+        throw ResolverError("Environment entry '\(entry)' must be KEY=VALUE.")
+      }
+      result[String(entry[..<equals])] = String(entry[entry.index(after: equals)...])
+    }
+    return result
+  }
+
+  public static func executeOpenURL(simulator: String?, url: String, env: Environment) async -> SimResult {
+    do {
+      let sim = try await env.session.resolveSimulator(simulator)
+      let udid = try await resolveSimulator(sim, env: env)
+      let result = try await env.shell.xcrun(timeout: 30, "simctl", "openurl", udid, url)
+      return result.succeeded
+        ? SimResult(succeeded: true, message: "Opened \(url) on \(udid)")
+        : SimResult(succeeded: false, message: "Opening \(url) failed: \(result.stderr)")
+    } catch {
+      return SimResult(succeeded: false, message: "\(error)")
+    }
+  }
+
   /// Seconds `simctl launch` may take. Generous because a busy shared Mac can be slow to
   /// spawn the first process after boot.
   static let launchTimeout: TimeInterval = 60
 
+  /// `environment` reaches the app (simctl passes on `SIMCTL_CHILD_`-prefixed variables).
+  /// `terminateFirst: false` brings a running app to the front instead of relaunching it.
   static func launchAppStructured(
-    simulatorUDID: String, bundleId: String, args: [String]? = nil, env: Environment
+    simulatorUDID: String, bundleId: String, args: [String]? = nil, environment: [String: String] = [:],
+    terminateFirst: Bool = true, env: Environment
   ) async throws -> StructuredAppLaunch {
-    let wasRunning = try await terminateAppIfRunning(
-      simulatorUDID: simulatorUDID, bundleId: bundleId, env: env)
+    var wasRunning = false
+    if terminateFirst {
+      wasRunning = try await terminateAppIfRunning(simulatorUDID: simulatorUDID, bundleId: bundleId, env: env)
+    }
     if wasRunning {
       try? await Task.sleep(nanoseconds: 500_000_000)
     }
@@ -1012,9 +1099,14 @@ public enum SimTools {
     if let args, !args.isEmpty {
       launchArgs.append(contentsOf: args)
     }
+    var childEnvironment: [String: String] = [:]
+    for (key, value) in environment {
+      childEnvironment["SIMCTL_CHILD_" + key] = value
+    }
     let result = try await env.shell.run(
       "/usr/bin/xcrun",
       arguments: launchArgs,
+      environment: childEnvironment.isEmpty ? nil : childEnvironment,
       timeout: launchTimeout
     )
 
@@ -1090,11 +1182,19 @@ extension SimTools: ToolProvider {
           await executeInstallApp(simulator: input.simulator, appPath: input.app_path, env: env))
       }
     case "launch_app":
-      switch ToolInput.decode(AppInput.self, from: args) {
+      switch ToolInput.decode(LaunchInput.self, from: args) {
       case .failure(let err): return err
       case .success(let input):
         return dispatchResult(
-          await executeLaunchApp(simulator: input.simulator, bundleId: input.bundle_id, env: env))
+          await executeLaunchApp(
+            simulator: input.simulator, bundleId: input.bundle_id, args: input.args, environment: input.env ?? [],
+            url: input.url, terminateFirst: input.terminate ?? true, env: env))
+      }
+    case "open_url":
+      switch ToolInput.decode(OpenURLInput.self, from: args) {
+      case .failure(let err): return err
+      case .success(let input):
+        return dispatchResult(await executeOpenURL(simulator: input.simulator, url: input.url, env: env))
       }
     case "terminate_app":
       switch ToolInput.decode(AppInput.self, from: args) {
@@ -1190,7 +1290,7 @@ extension SimTools: ToolProvider {
       case .success(let input):
         return dispatchResult(await executeSimStatusBarClear(simulator: input.simulator, env: env))
       }
-    default: return nil
+    default: return await dispatchSetup(name, args, env: env)
     }
   }
 }

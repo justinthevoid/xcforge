@@ -8,14 +8,59 @@ actor IndigoHIDClient {
 
   static let shared = IndigoHIDClient()
 
-  /// Whether the required frameworks can be loaded.
+  /// Whether HID input can be used: SimulatorKit loads and this Xcode is one where taps are
+  /// known to land. On Xcode 27 the events are sent without error but never reach the app,
+  /// so HID is off there and callers use WDA. `XCFORGE_FORCE_HID=1` turns it on anyway.
   nonisolated static let isAvailable: Bool = {
-    guard simKitHandle != nil else {
-      Log.warn("IndigoHIDClient unavailable — SimulatorKit.framework not found.")
+    guard simKitHandle != nil, supportedXcode else {
+      Log.warn("IndigoHIDClient unavailable — \(unavailableReason)")
       return false
     }
     return true
   }()
+
+  nonisolated private static let supportedXcode: Bool = {
+    if ProcessInfo.processInfo.environment["XCFORGE_FORCE_HID"] == "1" { return true }
+    return hidSupported(xcodeMajor: xcodeMajorVersion(developerDir: developerDir))
+  }()
+
+  /// HID taps are verified up to Xcode 26. An unknown version counts as supported.
+  nonisolated static func hidSupported(xcodeMajor: Int?) -> Bool {
+    guard let xcodeMajor else { return true }
+    return xcodeMajor < 27
+  }
+
+  /// The major version of the Xcode at `developerDir`, from `Contents/version.plist`.
+  nonisolated static func xcodeMajorVersion(developerDir: String) -> Int? {
+    let contents = (developerDir as NSString).deletingLastPathComponent
+    let plist = (contents as NSString).appendingPathComponent("version.plist")
+    guard let dict = NSDictionary(contentsOfFile: plist),
+      let version = dict["CFBundleShortVersionString"] as? String
+    else { return nil }
+    return version.split(separator: ".").first.flatMap { Int($0) }
+  }
+
+  /// Why HID input can't be used, for results that fall back to WDA.
+  nonisolated static var unavailableReason: String {
+    if simKitHandle != nil, !supportedXcode {
+      return "HID is not yet supported on Xcode 27, used WDA (XCFORGE_FORCE_HID=1 tries HID anyway)"
+    }
+    let folders = simulatorKitCandidates(developerDir: developerDir).map {
+      (($0 as NSString).deletingLastPathComponent as NSString).deletingLastPathComponent
+    }
+    return "SimulatorKit.framework not found in \(folders.joined(separator: " or "))"
+  }
+
+  /// Where SimulatorKit lives: `Contents/SharedFrameworks` from Xcode 27,
+  /// `Contents/Developer/Library/PrivateFrameworks` before.
+  nonisolated static func simulatorKitCandidates(developerDir: String) -> [String] {
+    let contents = (developerDir as NSString).deletingLastPathComponent
+    return [
+      (contents as NSString).appendingPathComponent("SharedFrameworks/SimulatorKit.framework/SimulatorKit"),
+      (developerDir as NSString).appendingPathComponent(
+        "Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"),
+    ]
+  }
 
   // MARK: - Framework Loading
 
@@ -39,8 +84,10 @@ actor IndigoHIDClient {
   }()
 
   nonisolated(unsafe) private static let simKitHandle: UnsafeMutableRawPointer? = {
-    dlopen(
-      "\(developerDir)/Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit", RTLD_NOW)
+    for path in simulatorKitCandidates(developerDir: developerDir) {
+      if let handle = dlopen(path, RTLD_NOW) { return handle }
+    }
+    return nil
   }()
 
   // MARK: - Cached State
@@ -60,9 +107,9 @@ actor IndigoHIDClient {
   // MARK: - Public API
 
   /// Tap at point coordinates (in points, same coordinate space as WDA).
-  func tap(x: Double, y: Double, simulator: String = "booted") async throws {
+  func tap(x: Double, y: Double, simulator: String = "booted", orientation: Orientation = .portrait) async throws {
     let port = try await resolvePort(simulator: simulator)
-    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y)
+    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y, orientation: orientation)
 
     try await sendOnHIDQueue {
       try Self.sendTouch(port: port, xRatio: xRatio, yRatio: yRatio, direction: .down)
@@ -74,13 +121,15 @@ actor IndigoHIDClient {
   }
 
   /// Double-tap at point coordinates.
-  func doubleTap(x: Double, y: Double, simulator: String = "booted") async throws {
+  func doubleTap(x: Double, y: Double, simulator: String = "booted", orientation: Orientation = .portrait)
+    async throws
+  {
     while gestureInProgress { try await Task.sleep(nanoseconds: 1_000_000) }
     gestureInProgress = true
     defer { gestureInProgress = false }
 
     let port = try await resolvePort(simulator: simulator)
-    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y)
+    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y, orientation: orientation)
 
     // First tap
     try await sendOnHIDQueue {
@@ -104,11 +153,11 @@ actor IndigoHIDClient {
   }
 
   /// Long press at point coordinates.
-  func longPress(x: Double, y: Double, durationMs: Int = 1000, simulator: String = "booted")
-    async throws
-  {
+  func longPress(
+    x: Double, y: Double, durationMs: Int = 1000, simulator: String = "booted", orientation: Orientation = .portrait
+  ) async throws {
     let port = try await resolvePort(simulator: simulator)
-    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y)
+    let (xRatio, yRatio) = try normalizeCoordinates(x: x, y: y, orientation: orientation)
 
     try await sendOnHIDQueue {
       try Self.sendTouch(port: port, xRatio: xRatio, yRatio: yRatio, direction: .down)
@@ -125,15 +174,16 @@ actor IndigoHIDClient {
     startX: Double, startY: Double,
     endX: Double, endY: Double,
     durationMs: Int = 300,
-    simulator: String = "booted"
+    simulator: String = "booted",
+    orientation: Orientation = .portrait
   ) async throws {
     while gestureInProgress { try await Task.sleep(nanoseconds: 1_000_000) }
     gestureInProgress = true
     defer { gestureInProgress = false }
 
     let port = try await resolvePort(simulator: simulator)
-    let (sxR, syR) = try normalizeCoordinates(x: startX, y: startY)
-    let (exR, eyR) = try normalizeCoordinates(x: endX, y: endY)
+    let (sxR, syR) = try normalizeCoordinates(x: startX, y: startY, orientation: orientation)
+    let (exR, eyR) = try normalizeCoordinates(x: endX, y: endY, orientation: orientation)
 
     // Calculate steps (~10px per step in point space)
     let dx = endX - startX
@@ -284,15 +334,24 @@ actor IndigoHIDClient {
     // iPhone SE (3rd gen)
     case let m where m.contains("iPhone-SE"):
       return (375, 667, 2.0)
+    // iPhone 16/17 Pro Max
+    case let m where (m.contains("iPhone-16") || m.contains("iPhone-17")) && m.contains("Pro-Max"):
+      return (440, 956, 3.0)
+    // iPhone Air
+    case let m where m.contains("iPhone-Air"):
+      return (420, 912, 3.0)
+    // iPhone 17, iPhone 16 Pro and 17 Pro
+    case let m where m.contains("iPhone-17") && !m.contains("Plus"),
+      let m where m.contains("iPhone-16-Pro"):
+      return (402, 874, 3.0)
     // iPhone 14/15/16 standard
     case let m where m.contains("iPhone-14") && !m.contains("Pro") && !m.contains("Plus"),
       let m where m.contains("iPhone-15") && !m.contains("Pro") && !m.contains("Plus"),
       let m where m.contains("iPhone-16") && !m.contains("Pro") && !m.contains("Plus"):
       return (390, 844, 3.0)
-    // iPhone 14/15/16 Pro
+    // iPhone 14/15 Pro
     case let m where m.contains("iPhone-14-Pro") && !m.contains("Max"),
-      let m where m.contains("iPhone-15-Pro") && !m.contains("Max"),
-      let m where m.contains("iPhone-16-Pro") && !m.contains("Max"):
+      let m where m.contains("iPhone-15-Pro") && !m.contains("Max"):
       return (393, 852, 3.0)
     // iPhone Pro Max / Plus
     case let m where m.contains("Pro-Max") || m.contains("Plus"):
@@ -306,9 +365,9 @@ actor IndigoHIDClient {
     // iPad Pro 12.9" / 13"
     case let m where m.contains("iPad-Pro") && (m.contains("12") || m.contains("13")):
       return (1024, 1366, 2.0)
-    // Fallback: iPhone 16 Pro dimensions
+    // Fallback: iPhone 16 Pro / 17 dimensions
     default:
-      return (393, 852, 3.0)
+      return (402, 874, 3.0)
     }
   }
 
@@ -346,13 +405,56 @@ actor IndigoHIDClient {
 
   // MARK: - Coordinate Normalization
 
-  private func normalizeCoordinates(x: Double, y: Double) throws -> (Float, Float) {
+  /// The interface orientation taps are given in. The digitizer is fixed in portrait, so
+  /// points in a rotated interface have to be turned back before they're sent.
+  enum Orientation: Sendable, Equatable {
+    case portrait, portraitUpsideDown, landscapeLeft, landscapeRight
+
+    /// From WebDriverAgent's orientation value.
+    init(wdaValue: String) {
+      let value = wdaValue.uppercased()
+      if value.contains("UPSIDE") {
+        self = .portraitUpsideDown
+      } else if value.contains("LANDSCAPERIGHT") || value == "LANDSCAPE_RIGHT" {
+        self = .landscapeRight
+      } else if value.contains("LANDSCAPE") {
+        self = .landscapeLeft
+      } else {
+        self = .portrait
+      }
+    }
+  }
+
+  private func normalizeCoordinates(x: Double, y: Double, orientation: Orientation) throws -> (Float, Float) {
     guard cachedScreenWidth > 0, cachedScreenHeight > 0 else {
       throw IndigoHIDError.screenInfoUnavailable
     }
-    let xRatio = Float(x / cachedScreenWidth)
-    let yRatio = Float(y / cachedScreenHeight)
-    return (min(max(xRatio, 0), 1), min(max(yRatio, 0), 1))
+    return Self.normalize(
+      x: x, y: y, portraitWidth: cachedScreenWidth, portraitHeight: cachedScreenHeight, orientation: orientation)
+  }
+
+  /// A point in the interface's own coordinates as 0...1 ratios of the portrait digitizer.
+  /// (inferred) Landscape left is the device turned counter-clockwise, home edge on the right.
+  static func normalize(
+    x: Double, y: Double, portraitWidth: Double, portraitHeight: Double, orientation: Orientation
+  ) -> (Float, Float) {
+    let xRatio: Double
+    let yRatio: Double
+    switch orientation {
+    case .portrait:
+      xRatio = x / portraitWidth
+      yRatio = y / portraitHeight
+    case .portraitUpsideDown:
+      xRatio = 1 - x / portraitWidth
+      yRatio = 1 - y / portraitHeight
+    case .landscapeLeft:
+      xRatio = 1 - y / portraitWidth
+      yRatio = x / portraitHeight
+    case .landscapeRight:
+      xRatio = y / portraitWidth
+      yRatio = 1 - x / portraitHeight
+    }
+    return (Float(min(max(xRatio, 0), 1)), Float(min(max(yRatio, 0), 1)))
   }
 
   // MARK: - Mach IPC
@@ -470,29 +572,8 @@ actor IndigoHIDClient {
       else { continue }
 
       // Get the device's HID port via lookup: service
-      let portObj: NSObject? =
-        device.perform(
-          Selector(("lookup:error:")),
-          with: "PurpleWorkspacePort" as NSString,
-          with: nil)?
-        .takeUnretainedValue() as? NSObject
-
-      if let portObj = portObj {
-        // The result should be an NSMachPort or similar — extract the port number
-        if let machPort = portObj as? NSMachPort {
-          let port = machPort.machPort
-          if port != mach_port_t(MACH_PORT_NULL) {
-            return port
-          }
-        }
-        // Try extracting as NSNumber
-        if let num = portObj as? NSNumber {
-          let port = mach_port_t(num.uint32Value)
-          if port != mach_port_t(MACH_PORT_NULL) {
-            return port
-          }
-        }
-      }
+      let port = try lookupPort(on: device, name: "PurpleWorkspacePort")
+      if port != mach_port_t(MACH_PORT_NULL) { return port }
 
       throw IndigoHIDError.portLookupFailed(
         "PurpleWorkspacePort lookup failed for \(udid): port object not usable"
@@ -500,6 +581,50 @@ actor IndigoHIDClient {
     }
 
     throw IndigoHIDError.noBootedSimulator
+  }
+
+  /// What a `lookup:error:` method returns, from its Objective-C return type encoding.
+  enum LookupReturn: Equatable {
+    case machPort
+    case object
+  }
+
+  /// `I`/`i` (and the other integer encodings) is a raw `mach_port_t`; `@` is an object. Type
+  /// qualifiers such as `r` or `V` come first and are skipped.
+  static func lookupReturn(encoding: String) -> LookupReturn? {
+    let type = encoding.drop { "rnNoORV".contains($0) }
+    guard let first = type.first else { return nil }
+    if first == "@" { return .object }
+    if "IiLlQqSs".contains(first) { return .machPort }
+    return nil
+  }
+
+  /// Call `-[SimDevice lookup:error:]`. It returns a `mach_port_t`, not an object, so it can't go
+  /// through `perform(_:with:with:)`, which would retain the port number as a pointer and crash.
+  private static func lookupPort(on device: NSObject, name: String) throws -> mach_port_t {
+    let selector = Selector(("lookup:error:"))
+    guard let method = class_getInstanceMethod(type(of: device), selector) else {
+      throw IndigoHIDError.portLookupFailed("SimDevice has no lookup:error: method")
+    }
+    let rawEncoding = method_copyReturnType(method)
+    let encoding = String(cString: rawEncoding)
+    free(rawEncoding)
+    let implementation = method_getImplementation(method)
+    switch lookupReturn(encoding: encoding) {
+    case .machPort:
+      typealias Lookup = @convention(c) (AnyObject, Selector, NSString, UnsafeMutableRawPointer?) -> UInt32
+      let lookup = unsafeBitCast(implementation, to: Lookup.self)
+      return mach_port_t(lookup(device, selector, name as NSString, nil))
+    case .object:
+      typealias Lookup = @convention(c) (AnyObject, Selector, NSString, UnsafeMutableRawPointer?) -> AnyObject?
+      let lookup = unsafeBitCast(implementation, to: Lookup.self)
+      let result = lookup(device, selector, name as NSString, nil)
+      if let machPort = result as? NSMachPort { return machPort.machPort }
+      if let number = result as? NSNumber { return mach_port_t(number.uint32Value) }
+      return mach_port_t(MACH_PORT_NULL)
+    case nil:
+      throw IndigoHIDError.portLookupFailed("lookup:error: returns an unexpected type '\(encoding)'")
+    }
   }
 
   /// Find the UDID of the first booted simulator.

@@ -98,9 +98,9 @@ List apps installed on a connected physical device.
 
 ---
 
-## device_screenshot
+## device_screenshot (deprecated: `screenshot` with `device`)
 
-Save a PNG of the device screen. Uses `devicectl device capture screenshot` (Xcode 26.6 and later), then the device's WebDriverAgent when `wda_start` has one running.
+Over MCP, call `screenshot(device: ...)`; `device_screenshot` still works for one release. Save a PNG of the device screen. Uses `devicectl device capture screenshot` (Xcode 26.6 and later), then the device's WebDriverAgent when `wda_start` has one running.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -111,9 +111,9 @@ CLI: `xcforge device screenshot --device <udid> [--output shot.png]`.
 
 ---
 
-## wda_start / wda_stop (UI automation on a real device)
+## `wda_start` / `wda_stop` (UI automation on a real device)
 
-`wda_start` builds xcforgeWDA for the device, signs it with your team (`-allowProvisioningUpdates`), launches it with `xcodebuild test-without-building` in the background, and finds its URL (the CoreDevice tunnel address, else the URL WDA logs). The MCP session's UI tools (`find_element`, `click_element`, `type_text`, ...) then target the device. A runner that already answers is reused.
+`wda_start` builds xcforgeWDA for the device, signs it with your team (`-allowProvisioningUpdates`), launches it with `xcodebuild test-without-building` in the background, and finds its URL (the CoreDevice tunnel address, else the URL WDA logs). The MCP session's UI tools (`find_element`, `tap`, `type_text`, ...) then target the device. A runner that already answers is reused.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|

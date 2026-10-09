@@ -87,7 +87,10 @@ struct UIStatus: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     let healthy = await env.wdaClient.isHealthy()
@@ -193,7 +196,10 @@ struct UISession: AsyncParsableCommand {
     }
   }
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     if let url = wdaUrl {
@@ -281,7 +287,10 @@ struct UIFind: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -335,7 +344,10 @@ struct UIFindAll: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -381,7 +393,10 @@ struct UIClick: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -430,7 +445,10 @@ struct UITap: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -476,7 +494,10 @@ struct UIDoubleTap: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -523,7 +544,10 @@ struct UILongPress: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -576,7 +600,10 @@ struct UISwipe: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -627,7 +654,10 @@ struct UIPinch: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -690,7 +720,10 @@ struct UIDrag: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let hasSource = sourceElement != nil || (fromX != nil && fromY != nil)
     let hasTarget = targetElement != nil || (toX != nil && toY != nil)
@@ -745,56 +778,46 @@ struct UIDrag: AsyncParsableCommand {
 struct UIType: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "type",
-    abstract: "Type text into the currently focused element or a specified element."
+    abstract: "Type into the focused field or an element, press a key, or dismiss the keyboard."
   )
 
   @Option(help: "Text to type.")
-  var text: String
+  var text: String?
 
-  @Option(help: "Optional element ID to type into.")
+  @Option(help: "Element ID to type into. Default: the field with keyboard focus.")
   var elementId: String?
 
   @Flag(help: "Clear existing text first.")
   var clearFirst = false
 
+  @Option(help: "Key to press after the text: return, delete, tab or escape.")
+  var key: String?
+
+  @Flag(help: "Dismiss the keyboard afterwards.")
+  var dismissKeyboard = false
+
+  @Flag(help: "Don't echo the text, even outside a secure field.")
+  var secure = false
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
-    let env = Environment.live
-    do {
-      if let eid = elementId {
-        if clearFirst {
-          try await env.wdaClient.clearElement(elementId: eid)
-        }
-        try await env.wdaClient.setValue(elementId: eid, text: text)
-      } else {
-        _ = try await env.wdaClient.ensureSession()
-        let (eid, _) = try await env.wdaClient.findElement(
-          using: "class name", value: "XCUIElementTypeTextField")
-        if clearFirst {
-          try await env.wdaClient.clearElement(elementId: eid)
-        }
-        try await env.wdaClient.setValue(elementId: eid, text: text)
-      }
-      let message = "Typed '\(text)'"
-      if useJSON {
-        print(
-          try WorkflowJSONRenderer.renderJSON(
-            UIResult(succeeded: true, message: message, elementId: elementId, elementCount: nil)))
-      } else {
-        print(message)
-      }
-    } catch {
-      let message = "Type failed: \(error)"
-      if useJSON {
-        print(
-          try WorkflowJSONRenderer.renderJSON(
-            UIResult(succeeded: false, message: message, elementId: nil, elementCount: nil)))
-      } else {
-        print(message)
-      }
+    let (succeeded, message) = await xcforgeTypeText(
+      text: text, elementId: elementId, clearFirst: clearFirst, key: key, dismissKeyboard: dismissKeyboard,
+      secure: secure, env: Environment.live)
+    if useJSON {
+      print(
+        try WorkflowJSONRenderer.renderJSON(
+          UIResult(succeeded: succeeded, message: message, elementId: elementId, elementCount: nil)))
+    } else {
+      print(message)
+    }
+    if !succeeded {
       throw ExitCode.failure
     }
   }
@@ -814,7 +837,10 @@ struct UIGetText: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -849,17 +875,36 @@ struct UISource: AsyncParsableCommand {
     abstract: "Get the full view hierarchy (source tree) of the current screen."
   )
 
-  @Option(help: "Format: json, xml, or description. Default: json.")
+  @Option(help: "Format: json, xml, description, or list (one line per element). Default: json.")
   var format: String = "json"
 
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
+  func validate() throws {
+    if let problem = WDAClient.sourceFormatProblem(format) { throw ValidationError(problem) }
+  }
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
       let start = CFAbsoluteTimeGetCurrent()
+      if format.lowercased() == "list" {
+        let listing = try await UIElementListing.render(env: env)
+        let message = "Elements (\(listing.source), \(listing.count)):\n\(listing.body)"
+        if useJSON {
+          print(
+            try WorkflowJSONRenderer.renderJSON(
+              UIResult(succeeded: true, message: message, elementId: nil, elementCount: listing.count)))
+        } else {
+          print(message)
+        }
+        return
+      }
       let source = try await env.wdaClient.getSource(format: format)
       let elapsed = String(format: "%.1f", CFAbsoluteTimeGetCurrent() - start)
       let truncated =
@@ -904,7 +949,10 @@ struct UIAlert: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     var message: String
@@ -1019,7 +1067,10 @@ struct UILs: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -1062,7 +1113,10 @@ struct UITapByID: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -1120,7 +1174,10 @@ struct UITapBy: AsyncParsableCommand {
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
+  @OptionGroup var target: UISimulatorTarget
+
   mutating func run() async throws {
+    await target.select(env: Environment.live)
     let useJSON = shouldOutputJSON(flag: json)
     let env = Environment.live
     do {
@@ -1212,5 +1269,19 @@ struct UITapPixel: AsyncParsableCommand {
       }
       throw ExitCode.failure
     }
+  }
+}
+
+/// `--simulator` on UI commands: which simulator's WebDriverAgent to use. Without it the CLI
+/// uses `XCFORGE_SIMULATOR`, else the booted simulator.
+struct UISimulatorTarget: ParsableArguments {
+  @Option(help: "Simulator name or UDID whose WebDriverAgent to use. Default: XCFORGE_SIMULATOR, else booted.")
+  var simulator: String?
+
+  func select(env: Environment) async {
+    guard let simulator, simulator != "booted",
+      let udid = try? await SimTools.resolveSimulator(simulator, env: env)
+    else { return }
+    await env.wdaClient.selectSimulator(udid: udid)
   }
 }

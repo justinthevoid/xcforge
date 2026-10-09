@@ -49,12 +49,27 @@ Install a .app bundle on a simulator.
 
 ## launch_app
 
-Launch an installed app.
+Launch an installed app, then watch it for 8s (`XCFORGE_LAUNCH_WATCH_SECONDS`). When it dies, the call fails with the exception, reason, crashed thread's top frames and the `.ips` crash report path.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 | `bundle_id` | No | Auto-detect (last build) | App bundle identifier |
+| `args` | No | — | Launch arguments for the app |
+| `env` | No | — | Environment for the app, `KEY=VALUE` strings |
+| `url` | No | — | URL or deep link to open once the app is running |
+| `terminate` | No | true | Terminate a running copy first |
+
+---
+
+## open_url
+
+Open a URL or deep link on a simulator.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `url` | **Yes** | — | URL or deep link |
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
 
 ---
 
@@ -164,6 +179,78 @@ Set simulator appearance to light or dark mode.
 
 ---
 
+## sim_content_size
+
+Read or set the Dynamic Type text size. Returns the size it replaced, so you can put it back.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `size` | No | — (read) | `extra-small` … `extra-extra-extra-large`, `accessibility-medium` … `accessibility-extra-extra-extra-large`, `increment`, `decrement` |
+
+CLI: `xcforge sim content-size [size]`
+
+---
+
+## sim_locale
+
+Read or set the simulator's locale (`AppleLocale`) and preferred language (`AppleLanguages`).
+Returns the previous values. Apps pick up a change on their next launch.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `locale` | No | — (read) | e.g. `fr_FR`, `ar_SA` |
+| `language` | No | From the locale | e.g. `fr`, `pt-BR` |
+
+CLI: `xcforge sim locale [locale] --language <lang>`
+
+---
+
+## app_container
+
+Path of an installed app's container.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `bundle_id` | No | Last built app | App bundle ID |
+| `container` | No | `data` | `app`, `data`, `groups`, or an app group identifier |
+
+CLI: `xcforge sim container --bundle-id <id> --container data`
+
+---
+
+## sim_push
+
+Deliver a push notification.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `bundle_id` | No | Last built app | App bundle ID |
+| `payload` | **Yes** | — | APNs JSON (`{"aps":{"alert":"Hi"}}`) or plain alert text |
+
+CLI: `xcforge sim push '<json>'` (or a path to a `.json`/`.apns` file)
+
+---
+
+## sim_privacy
+
+Grant, revoke or reset a privacy permission so permission alerts don't block a flow. Changing a
+permission may terminate the app.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `action` | **Yes** | — | `grant`, `revoke`, `reset` |
+| `service` | **Yes** | — | `all`, `calendar`, `contacts`, `contacts-limited`, `location`, `location-always`, `photos`, `photos-add`, `media-library`, `microphone`, `motion`, `reminders`, `siri` |
+| `bundle_id` | No | Last built app | App to change; `reset` without one resets every app |
+
+CLI: `xcforge sim privacy grant photos --bundle-id <id>`
+
+---
+
 ## sim_statusbar
 
 Override simulator status bar values for clean screenshots.
@@ -201,6 +288,7 @@ Set device orientation via WebDriverAgent.
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `orientation` | **Yes** | — | One of: `PORTRAIT`, `LANDSCAPE`, `LANDSCAPE_LEFT`, `LANDSCAPE_RIGHT` |
+| `simulator` | No | last one used | Simulator name or UDID; each simulator has its own WDA |
 
 **Requires:** WDA running on the simulator.
 
@@ -230,4 +318,4 @@ Get simulator display metrics.
 }
 ```
 
-**Use case:** Determine screen resolution and pixel scale for coordinate conversion in UI automation (e.g., converting pixel coordinates to point coordinates for `tap_coordinates`).
+**Use case:** Determine screen resolution and pixel scale for coordinate conversion in UI automation (e.g., converting pixel coordinates to point coordinates for `tap`).

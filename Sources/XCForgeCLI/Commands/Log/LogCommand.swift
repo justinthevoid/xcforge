@@ -75,8 +75,10 @@ struct LogStart: AsyncParsableCommand {
     )
 
     do {
-      try await LogCapture.shared.start(arguments: logArgs, mode: mode)
-      let msg = "Log capture started (\(note))"
+      // Each CLI command is its own process: the capture runs on in the background,
+      // writing to a file, until `log stop`.
+      try DetachedCapture.log.start(arguments: logArgs, mode: mode)
+      let msg = "Log capture started in the background (\(note)). `xcforge log read` reads it; `log stop` ends it."
       if useJSON {
         print(
           try WorkflowJSONRenderer.renderJSON(
@@ -111,8 +113,7 @@ struct LogStop: AsyncParsableCommand {
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    await LogCapture.shared.stop()
-    let msg = "Log capture stopped"
+    let msg = DetachedCapture.log.stop() ? "Log capture stopped" : "No log capture was running"
     if useJSON {
       print(
         try WorkflowJSONRenderer.renderJSON(
@@ -138,7 +139,7 @@ struct LogRead: AsyncParsableCommand {
   )
   var include: [String] = []
 
-  @Option(help: "Only return last N lines (applied after topic filtering).")
+  @Option(help: "Return the last N lines, after topic filtering. Default: 200; 0 returns all.")
   var last: Int?
 
   @Flag(help: "Clear buffer after reading.")
@@ -154,17 +155,15 @@ struct LogRead: AsyncParsableCommand {
       topics.insert(t)
     }
 
-    let isRunning = await LogCapture.shared.isRunning
-    let captureMode = await LogCapture.shared.captureMode
-    let allLines: [String]
-    if clear {
-      allLines = await LogCapture.shared.readAndClear()
-    } else {
-      allLines = await LogCapture.shared.read(last: nil)
-    }
+    let capture = DetachedCapture.log
+    let isRunning = capture.isRunning
+    let captureMode = capture.state()?.mode ?? "smart"
+    let allLines = LogTools.collapseRepeats(capture.lines(.stdout))
+    if clear { capture.clear() }
 
     if allLines.isEmpty {
-      let statusNote = isRunning ? " (capture is running)" : " (capture not running)"
+      let statusNote =
+        isRunning ? " (capture is running)" : " (capture not running; start it with `xcforge log start`)"
       let msg = "No log lines captured\(statusNote)"
       if useJSON {
         print(
@@ -188,30 +187,21 @@ struct LogRead: AsyncParsableCommand {
       bundleId: bundleId, processName: processName
     )
 
-    // Apply `last` AFTER filtering
-    let finalLines: [String]
-    if let n = last {
-      finalLines = Array(filterResult.filteredLines.suffix(n))
-    } else {
-      finalLines = filterResult.filteredLines
-    }
+    // Apply `last` AFTER filtering; the newest lines are the ones that matter.
+    let (finalLines, omitted) = CaptureTail.tail(filterResult.filteredLines, last: last)
+    let output = CaptureTail.keepEnd(finalLines.joined(separator: "\n"), limit: 50000)
 
     if useJSON {
-      let output = finalLines.joined(separator: "\n")
-      let truncated =
-        output.count > 50000 ? String(output.prefix(50000)) + "\n... [truncated]" : output
       print(
         try WorkflowJSONRenderer.renderJSON(
-          LogResult(succeeded: true, message: truncated, lineCount: finalLines.count)))
+          LogResult(succeeded: true, message: output, lineCount: finalLines.count)))
     } else {
-      let summary = LogTools.buildTopicSummary(
+      var summary = LogTools.buildTopicSummary(
         result: filterResult, include: topics,
         captureMode: captureMode, bundleId: bundleId
       )
-      let output = finalLines.joined(separator: "\n")
-      let truncated =
-        output.count > 50000 ? String(output.prefix(50000)) + "\n... [truncated]" : output
-      print(LogRenderer.renderRead(summary: summary, logs: truncated, lineCount: finalLines.count))
+      if let note = CaptureTail.omittedNote(omitted) { summary += "\n\(note)" }
+      print(LogRenderer.renderRead(summary: summary, logs: output, lineCount: finalLines.count))
     }
   }
 }
@@ -274,9 +264,11 @@ struct LogWait: AsyncParsableCommand {
       throw ExitCode.failure
     }
 
-    // Start log capture if not running
-    let wasRunning = await LogCapture.shared.isRunning
-    if !wasRunning {
+    // Read new lines from the background capture when one runs; otherwise stream for
+    // the length of this command.
+    let capture = DetachedCapture.log
+    let useBackground = capture.isRunning
+    if !useBackground {
       let (logArgs, _) = await LogTools.buildLogArgs(
         simulator: sim, mode: "smart", level: "debug",
         process: nil, subsystem: subsystem, predicate: nil
@@ -296,8 +288,9 @@ struct LogWait: AsyncParsableCommand {
       }
     }
 
-    // Clear existing buffer to only match new lines
-    _ = await LogCapture.shared.readAndClear()
+    // Match only lines that arrive from now on.
+    var byteOffset = capture.byteCount(.stdout)
+    var position = await LogCapture.shared.position
 
     let startTime = CFAbsoluteTimeGetCurrent()
     let deadline = startTime + timeout
@@ -305,7 +298,13 @@ struct LogWait: AsyncParsableCommand {
 
     // Poll for matches
     while CFAbsoluteTimeGetCurrent() < deadline {
-      let lines = await LogCapture.shared.readAndClear()
+      let lines: [String]
+      if useBackground {
+        (lines, byteOffset) = capture.newLines(.stdout, after: byteOffset)
+      } else {
+        lines = await LogCapture.shared.lines(since: position)
+        position += lines.count
+      }
       for line in lines {
         let range = NSRange(line.startIndex..., in: line)
         if regex.firstMatch(in: line, range: range) != nil {

@@ -13,7 +13,8 @@ struct Sim: ParsableCommand {
       SimOrientation.self, SimRecordStart.self, SimRecordStop.self,
       SimLocation.self, SimLocationReset.self,
       SimAppearance.self, SimStatusBar.self, SimStatusBarClear.self,
-      SimInfo.self,
+      SimInfo.self, SimOpenURL.self, SimContentSize.self, SimLocale.self, SimContainer.self, SimPush.self,
+      SimPrivacy.self,
     ],
     defaultSubcommand: SimList.self
   )
@@ -151,13 +152,26 @@ struct SimLaunch: AsyncParsableCommand {
   @Option(help: "App bundle identifier. Auto-detected from last build if omitted.")
   var bundleId: String?
 
+  @Option(name: .customLong("arg"), help: "Launch argument for the app (repeatable).")
+  var args: [String] = []
+
+  @Option(help: "Environment variable for the app, KEY=VALUE (repeatable).")
+  var env: [String] = []
+
+  @Option(help: "URL or deep link to open once the app is running.")
+  var url: String?
+
+  @Flag(inversion: .prefixedNo, help: "Terminate a running copy first. Default: on.")
+  var terminate = true
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    let env = Environment.live
-    let result = await SimTools.executeLaunchApp(simulator: simulator, bundleId: bundleId, env: env)
+    let result = await SimTools.executeLaunchApp(
+      simulator: simulator, bundleId: bundleId, args: args, environment: env, url: url,
+      terminateFirst: terminate, env: Environment.live)
 
     if useJSON {
       print(try WorkflowJSONRenderer.renderJSON(result))
@@ -615,5 +629,173 @@ struct SimInfo: AsyncParsableCommand {
       }
       throw ExitCode.failure
     }
+  }
+}
+
+struct SimOpenURL: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "openurl",
+    abstract: "Open a URL or deep link on a simulator."
+  )
+
+  @Argument(help: "URL or deep link to open.")
+  var url: String
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let result = await SimTools.executeOpenURL(simulator: simulator, url: url, env: Environment.live)
+    if shouldOutputJSON(flag: json) {
+      print(try WorkflowJSONRenderer.renderJSON(result))
+    } else {
+      print(SimRenderer.render(result))
+    }
+    if !result.succeeded {
+      throw ExitCode.failure
+    }
+  }
+}
+
+// MARK: - Setup
+
+/// Print a SimResult as text or JSON and exit non-zero when it failed.
+private func emit(_ result: SimTools.SimResult, json: Bool) throws {
+  if shouldOutputJSON(flag: json) {
+    print(try WorkflowJSONRenderer.renderJSON(result))
+  } else {
+    print(SimRenderer.render(result))
+  }
+  if !result.succeeded { throw ExitCode.failure }
+}
+
+struct SimContentSize: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "content-size",
+    abstract: "Read or set the Dynamic Type text size. Prints the previous size."
+  )
+
+  @Argument(help: "Size to set, e.g. large or accessibility-large. Omit to read the current one.")
+  var size: String?
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let result = await SimTools.executeContentSize(simulator: simulator, size: size, env: .live)
+    try emit(result, json: json)
+  }
+}
+
+struct SimLocale: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "locale",
+    abstract: "Read or set the simulator's locale and language. Apps pick it up on their next launch."
+  )
+
+  @Argument(help: "Locale such as fr_FR. Omit to read the current one.")
+  var locale: String?
+
+  @Option(help: "Preferred language such as fr or pt-BR. Default: the locale's language.")
+  var language: String?
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let result = await SimTools.executeLocale(simulator: simulator, locale: locale, language: language, env: .live)
+    try emit(result, json: json)
+  }
+}
+
+struct SimContainer: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "container",
+    abstract: "Print the path of an app's bundle, data or app group container."
+  )
+
+  @Option(name: .customLong("bundle-id"), help: "App bundle ID. Default: the last built app.")
+  var bundleId: String?
+
+  @Option(help: "app, data, groups, or an app group identifier. Default: data")
+  var container: String?
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let result = await SimTools.executeAppContainer(
+      simulator: simulator, bundleId: bundleId, container: container, env: .live)
+    try emit(result, json: json)
+  }
+}
+
+struct SimPush: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "push",
+    abstract: "Deliver a push notification to an app."
+  )
+
+  @Argument(help: "APNs payload JSON, a path to a .json/.apns file, or plain alert text.")
+  var payload: String
+
+  @Option(name: .customLong("bundle-id"), help: "App bundle ID. Default: the last built app.")
+  var bundleId: String?
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    var body = payload
+    if FileManager.default.fileExists(atPath: payload),
+      let contents = FileManager.default.contents(atPath: payload)
+    {
+      body = String(decoding: contents, as: UTF8.self)
+    }
+    let result = await SimTools.executePush(simulator: simulator, bundleId: bundleId, payload: body, env: .live)
+    try emit(result, json: json)
+  }
+}
+
+struct SimPrivacy: AsyncParsableCommand {
+  static let configuration = CommandConfiguration(
+    commandName: "privacy",
+    abstract: "Grant, revoke or reset a privacy permission so permission alerts don't block a flow."
+  )
+
+  @Argument(help: "grant, revoke or reset.")
+  var action: String
+
+  @Argument(help: "Service: all, photos, photos-add, location, location-always, contacts, microphone, and so on.")
+  var service: String
+
+  @Option(name: .customLong("bundle-id"), help: "App. Default: the last built app; reset without one resets all.")
+  var bundleId: String?
+
+  @Option(help: "Simulator name or UDID. Auto-detected from booted simulator if omitted.")
+  var simulator: String?
+
+  @Flag(help: "Emit the result as machine-readable JSON.")
+  var json = false
+
+  mutating func run() async throws {
+    let result = await SimTools.executePrivacy(
+      simulator: simulator, action: action, service: service, bundleId: bundleId, env: .live)
+    try emit(result, json: json)
   }
 }

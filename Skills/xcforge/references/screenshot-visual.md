@@ -1,4 +1,4 @@
-# Screenshot & Visual Tools (5 tools)
+# Screenshot & Visual Tools (7 tools)
 
 ## screenshot
 
@@ -7,8 +7,17 @@ Take a simulator screenshot. 0.3s latency — 44x faster than alternatives.
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
 | `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `device` | No | — | A physical device's name or UDID: captures it instead (was `device_screenshot`) |
 | `format` | No | jpeg | Image format: `png` or `jpeg` |
 | `grid` | No | false | Overlay a point-coordinate grid on the image |
+| `crop` | No | — | `x,y,width,height` in device points (the coordinates taps use) |
+| `maxDimension` | No | — | Shrink so the longer side is at most this many pixels |
+| `waitFor` / `timeout` | No | — | Readiness signal to wait for before capturing |
+
+**Token budget.** A full-resolution iPhone screenshot costs several thousand tokens. Pass
+`maxDimension: 800` for a look at the screen, and `crop` to see one area at full detail. The
+result line gives the device's point size, the crop, the output pixels and, when scaled, how
+many points one pixel covers, so coordinates read off the image map back to taps.
 
 **3-tier capture strategy:**
 1. **Burst** — native CoreSimulator IOSurface framebuffer access (~10ms)
@@ -17,7 +26,10 @@ Take a simulator screenshot. 0.3s latency — 44x faster than alternatives.
 
 **Grid overlay:** When `grid: true`, overlays a transparent grid with 50pt minor lines and 100pt labeled divisions. Displays both X and Y axis labels at 100pt intervals. Falls back to ungridded image with a warning if overlay allocation fails.
 
-**Returns:** Inline base64 image + metadata (resolution, byte size, capture method).
+**Returns:** Inline base64 image + metadata: device size in points (from the simulator's
+screen, not the Simulator window), pixel size, byte size, capture method. The CLI
+(`xcforge screenshot capture`, with `--crop` and `--max-dimension`) writes a new file per capture
+unless `--output` is given.
 
 Use `jpeg` (default) for fastest transfer. Use `png` for pixel-perfect visual regression baselines. Use `grid: true` for coordinate verification during layout work or UI automation scripting.
 
@@ -96,3 +108,34 @@ Codify the baseline-write → test → diff → commit cycle in one call. Saves 
 **Returns:** Pass/fail status, baseline path, test result summary, and visual diff result. Returns failure if any test fails.
 
 **CLI:** `xcforge bless --baseline <name> --tests <filter>`
+
+---
+
+## accessibility_check
+
+Screenshot the current screen at several Dynamic Type sizes and compare each with the first, to
+spot truncation and layout breaks. Restores the text size it found.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `sizes` | No | XS, L, XXXL, AccessibilityXXXL | Comma-separated content size categories, or `all` |
+| `threshold` | No | 5.0 | Max diff % against the base size |
+| `settleTime` | No | 1.5 | Seconds to wait after each size change |
+
+---
+
+## localization_check
+
+Relaunch the app in several languages (including right-to-left ones) and compare each screenshot
+with the first. Relaunches without the locale arguments afterwards.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `simulator` | No | Auto-detect (booted) | Simulator name or UDID |
+| `bundleId` | No | Last build | App to relaunch |
+| `locales` | No | en, de, ja, ar, he | Comma-separated locales, or `all` for 10 |
+| `threshold` | No | 10.0 | Max diff % against the base locale |
+| `settleTime` | No | 3.0 | Seconds to wait after each relaunch |
+
+CLI: `xcforge accessibility dynamic-type` and `xcforge accessibility localization`.

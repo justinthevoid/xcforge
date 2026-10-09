@@ -237,7 +237,7 @@ public enum PlanTools {
 
   private static func encodeReport(_ report: PlanReport) -> CallTool.Result {
     do {
-      let json = try WorkflowJSONRenderer.renderJSON(report)
+      let json = try WorkflowJSONRenderer.renderJSON(report, compact: true)
       return .init(
         content: [.text(text: json, annotations: nil, _meta: nil)], isError: report.failed > 0)
     } catch {
@@ -249,7 +249,7 @@ public enum PlanTools {
     -> CallTool.Result
   {
     do {
-      let json = try WorkflowJSONRenderer.renderJSON(report)
+      let json = try WorkflowJSONRenderer.renderJSON(report, compact: true)
       var content: [Tool.Content] = [.text(text: json, annotations: nil, _meta: nil)]
       if let ss = screenshot {
         content.append(.image(data: ss, mimeType: "image/jpeg", annotations: nil, _meta: nil))

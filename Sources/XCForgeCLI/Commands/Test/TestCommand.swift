@@ -70,7 +70,7 @@ struct TestRun: AsyncParsableCommand {
   @Option(help: "Test plan name.")
   var testplan: String?
 
-  @Option(help: "Test filter, e.g. 'MyTests/testFoo' or 'MyTests'.")
+  @Option(help: "Tests to run, comma-separated: 'Target/Suite/test()', 'Suite/test()' or 'Suite'.")
   var filter: String?
 
   @Flag(help: "Enable code coverage collection.")
@@ -106,6 +106,8 @@ struct TestRun: AsyncParsableCommand {
   )
   var gate = false
 
+  @OptionGroup var testRun: TestRunOptionGroup
+
   @OptionGroup var xcodebuild: XcodebuildOptionGroup
 
   mutating func run() async throws {
@@ -131,9 +133,14 @@ struct TestRun: AsyncParsableCommand {
       long: long,
       diagnose: diagnose,
       simRecovery: recoveryMode,
+      timeoutSeconds: testRun.timeout,
+      envEntries: testRun.env,
       gate: gate,
       forMode: forMode,
       isolatedSimulator: isolatedSim,
+      skipBuild: testRun.build == false,
+      testOptions: testRun.testOptions,
+      includeConsole: testRun.includeConsole,
       env: env
     )
 

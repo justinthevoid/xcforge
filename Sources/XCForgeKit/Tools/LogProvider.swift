@@ -10,6 +10,9 @@ public actor LogCapture {
   private var buffer: [String] = []
   private var pipe: Pipe?
   private let maxLines = 5000
+  /// Lines dropped from the front of `buffer` (trimmed or cleared), so a position taken
+  /// earlier still points at the same line.
+  private var dropped = 0
 
   // Deduplication state
   private var lastMessageContent: String?
@@ -49,7 +52,7 @@ public actor LogCapture {
     let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     for line in lines {
       guard !line.isEmpty else { continue }
-      let content = stripTimestamp(line)
+      let content = Self.stripTimestamp(line)
 
       if content == lastMessageContent {
         repeatCount += 1
@@ -61,6 +64,7 @@ public actor LogCapture {
       }
     }
     if buffer.count > maxLines {
+      dropped += buffer.count - maxLines
       buffer.removeFirst(buffer.count - maxLines)
     }
   }
@@ -68,7 +72,7 @@ public actor LogCapture {
   /// Strip the compact-format timestamp prefix for dedup comparison.
   /// Compact format: "2026-03-29 16:45:12.345 Df  processName  message..."
   /// We strip everything up to and including the first tab or double-space after the timestamp.
-  private func stripTimestamp(_ line: String) -> String {
+  static func stripTimestamp(_ line: String) -> String {
     // Find the third space (after "date time level") to get to the message content
     var spaceCount = 0
     for (i, ch) in line.enumerated() {
@@ -102,9 +106,19 @@ public actor LogCapture {
   public func readAndClear() -> [String] {
     flushRepeat()
     let result = buffer
+    dropped += buffer.count
     buffer.removeAll()
     lastMessageContent = nil
     return result
+  }
+
+  /// A marker for "now": `lines(since:)` returns what arrives after it, without clearing
+  /// lines another reader still wants.
+  public var position: Int { dropped + buffer.count }
+
+  public func lines(since position: Int) -> [String] {
+    let start = max(0, position - dropped)
+    return start < buffer.count ? Array(buffer[start...]) : []
   }
 
   public func read(last: Int?) -> [String] {
@@ -143,7 +157,7 @@ public enum LogTools {
 
   struct ParsedLogLine {
     let processName: String  // "locationd", "SpringBoard", "MyApp"
-    let logType: String  // "Db", "Df", "De", "Di"
+    let logType: String  // "Db", "I", "Df", "E", "F"
     let subsystem: String?  // "com.apple.locationd.Motion" (nil if missing)
     let category: String?  // "Motion", "endpoint" (nil if missing)
   }
@@ -171,9 +185,9 @@ public enum LogTools {
 
     let chars = Array(line.unicodeScalars)
 
-    // Position 24-25: log type (Db, Df, De, Di)
+    // Position 24-25: log type (Db debug, I info, Df default, E error, F fault)
     guard chars.count > 25 else { return nil }
-    let logType = String(chars[24...25].map { Character($0) })
+    let logType = String(chars[24...25].map { Character($0) }).trimmingCharacters(in: .whitespaces)
 
     // After log type + whitespace: process name until '[' or '('
     var idx = 26
@@ -222,6 +236,31 @@ public enum LogTools {
       subsystem: subsystem, category: category)
   }
 
+  static func isErrorOrFault(_ logType: String) -> Bool {
+    let code = logType.trimmingCharacters(in: .whitespaces)
+    return code == "E" || code == "F" || code == "Er" || code == "Fa"
+  }
+
+  /// Collapse consecutive repeats the way live capture does, for lines read from a file.
+  public static func collapseRepeats(_ lines: [String]) -> [String] {
+    var result: [String] = []
+    var last: String?
+    var repeats = 0
+    for line in lines where !line.isEmpty {
+      let content = LogCapture.stripTimestamp(line)
+      if content == last {
+        repeats += 1
+        continue
+      }
+      if repeats > 0 { result.append("  ... repeated \(repeats)x") }
+      repeats = 0
+      last = content
+      result.append(line)
+    }
+    if repeats > 0 { result.append("  ... repeated \(repeats)x") }
+    return result
+  }
+
   /// Categorize a parsed log line into topic(s).
   /// Always includes `app` (if matching) and `crashes` (if fault). Returns `system` as fallback.
   static func categorize(_ parsed: ParsedLogLine, bundleId: String?, processName: String?) -> Set<
@@ -237,8 +276,9 @@ public enum LogTools {
       topics.insert("app")
     }
 
-    // crashes: fault level
-    if parsed.logType == "Df" {
+    // crashes: error and fault levels. Compact style codes: Db debug, I info, Df default,
+    // E error, F fault (some versions spell them Er/Fa). Df is ordinary output.
+    if isErrorOrFault(parsed.logType) {
       topics.insert("crashes")
     }
 
@@ -555,7 +595,8 @@ public enum LogTools {
           ]),
           "last": .object([
             "type": .string("number"),
-            "description": .string("Only return last N lines (applied after topic filtering)"),
+            "description": .string(
+              "Return the last N lines, after topic filtering. Default: 200; 0 returns all."),
           ]),
           "clear": .object([
             "type": .string("boolean"),
@@ -719,24 +760,18 @@ public enum LogTools {
       bundleId: bundleId, processName: processName
     )
 
-    // Apply `last` AFTER filtering
-    let finalLines: [String]
-    if let n = last {
-      finalLines = Array(filterResult.filteredLines.suffix(n))
-    } else {
-      finalLines = filterResult.filteredLines
-    }
+    // Apply `last` AFTER filtering; the newest lines are the ones that matter.
+    let (finalLines, omitted) = CaptureTail.tail(filterResult.filteredLines, last: last)
 
     // Build summary header
-    let summary = buildTopicSummary(
+    var summary = buildTopicSummary(
       result: filterResult, include: includeTopics,
       captureMode: captureMode, bundleId: bundleId
     )
+    if let note = CaptureTail.omittedNote(omitted) { summary += "\n\(note)" }
 
-    let output = finalLines.joined(separator: "\n")
-    let truncated =
-      output.count > 50000 ? String(output.prefix(50000)) + "\n... [truncated]" : output
-    return .ok("\(summary)\n\(truncated)")
+    let output = CaptureTail.keepEnd(finalLines.joined(separator: "\n"), limit: 50000)
+    return .ok("\(summary)\n\(output)")
   }
 
   static func waitForLog(_ args: [String: Value]?, env: Environment) async -> CallTool.Result {
@@ -779,8 +814,8 @@ public enum LogTools {
       }
     }
 
-    // Clear existing buffer to only match new lines
-    _ = await LogCapture.shared.readAndClear()
+    // Match only lines that arrive from now on, without clearing what read_logs would show.
+    var position = await LogCapture.shared.position
 
     let startTime = CFAbsoluteTimeGetCurrent()
     let deadline = startTime + timeout
@@ -788,7 +823,8 @@ public enum LogTools {
 
     // Poll for matches
     while CFAbsoluteTimeGetCurrent() < deadline {
-      let lines = await LogCapture.shared.readAndClear()
+      let lines = await LogCapture.shared.lines(since: position)
+      position += lines.count
       for line in lines {
         let range = NSRange(line.startIndex..., in: line)
         if regex.firstMatch(in: line, range: range) != nil {

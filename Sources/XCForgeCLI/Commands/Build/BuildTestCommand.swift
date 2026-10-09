@@ -26,7 +26,7 @@ struct BuildTest: AsyncParsableCommand {
 
   @Option(
     help:
-      "Test filter. Accepts: 'testMethod', 'TestClass/testMethod', or 'TestTarget/TestClass/testMethod'. Target prefix is auto-resolved."
+      "Tests to run, comma-separated: 'Target/Suite/test()', 'Suite/test()' or 'Suite'. The target is added when missing."
   )
   var filter: String?
 
@@ -36,23 +36,8 @@ struct BuildTest: AsyncParsableCommand {
   @Flag(help: "Raise the total time limit from 1800s to 7200s. Hangs are caught by --idle-timeout either way.")
   var long = false
 
-  @Option(
-    help:
-      "Override timeout in seconds. Takes precedence over --long. Default: 1800s (or 7200s with --long)."
-  )
-  var timeoutSeconds: Int?
-
   @Flag(help: "Capture a diagnostic snapshot even when the build/test succeeds.")
   var diagnose = false
-
-  @Option(
-    name: .long, parsing: .singleValue,
-    help: ArgumentHelp(
-      "Environment variable for the test runner (repeatable). Format: KEY=VALUE. The key is auto-prefixed with TEST_RUNNER_; Xcode strips the prefix inside the test process, so 'BLESS_BASELINE=1' surfaces as ProcessInfo.environment[\"BLESS_BASELINE\"]. TEST_RUNNER_XCFORGE_REPO_ROOT is always injected (override with --env XCFORGE_REPO_ROOT=...).",
-      valueName: "KEY=VALUE"
-    )
-  )
-  var env: [String] = []
 
   @Option(
     help:
@@ -78,6 +63,8 @@ struct BuildTest: AsyncParsableCommand {
   )
   var gate = false
 
+  @OptionGroup var testRun: TestRunOptionGroup
+
   @OptionGroup var xcodebuild: XcodebuildOptionGroup
 
   mutating func run() async throws {
@@ -90,7 +77,6 @@ struct BuildTest: AsyncParsableCommand {
     let session = Environment.live.session
     let configuration = await session.resolveConfiguration(self.configuration)
     let resolvedTestplan = await session.resolveTestPlan(testplan)
-    let resolvedTimeout = timeoutSeconds.map { TimeInterval($0) }
 
     let result = try await TestTools.executeBuildAndTest(
       project: project,
@@ -103,11 +89,14 @@ struct BuildTest: AsyncParsableCommand {
       long: long,
       diagnose: diagnose,
       simRecovery: try SimRecoveryMode.parse(simRecovery),
-      timeoutSeconds: resolvedTimeout,
-      envEntries: env,
+      timeoutSeconds: testRun.timeout,
+      envEntries: testRun.env,
       gate: gate,
       forMode: forMode,
-      isolatedSimulator: isolatedSim
+      isolatedSimulator: isolatedSim,
+      skipBuild: testRun.build == false,
+      testOptions: testRun.testOptions,
+      includeConsole: testRun.includeConsole
     )
 
     if useJSON {
@@ -158,7 +147,7 @@ enum BuildTestRenderer {
       return lines.joined(separator: "\n")
     }
 
-    lines.append("Build OK (\(result.buildElapsed)s)")
+    lines.append(result.skippedBuild ? "Build skipped (tested the last build)" : "Build OK (\(result.buildElapsed)s)")
 
     if let test = result.testResult {
       let icon = test.succeeded ? "PASSED" : "FAILED"
@@ -170,12 +159,10 @@ enum BuildTestRenderer {
       if !test.failures.isEmpty {
         lines.append("")
         lines.append("Failures:")
-        for failure in test.failures {
-          lines.append("  \(failure.testName): \(failure.message)")
-          if !failure.source.isEmpty && failure.source != "stderr" {
-            lines.append("    at \(failure.source)")
-          }
-        }
+        lines += TestFailureText.lines(test.failures)
+      }
+      if !test.flakyTests.isEmpty {
+        lines.append("Flaky (failed, then passed on retry): \(test.flakyTests.joined(separator: ", "))")
       }
 
       if !test.screenshotPaths.isEmpty {

@@ -6,7 +6,7 @@ import XCForgeKit
 struct Bless: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "bless",
-    abstract: "Save visual baseline, run tests, compare, and suggest a commit message.",
+    abstract: "Save visual baseline, run tests, and compare visual output.",
     subcommands: [BlessRun.self],
     defaultSubcommand: BlessRun.self
   )

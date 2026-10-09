@@ -1,11 +1,11 @@
 ---
 name: xcforge
-description: Complete reference for xcforge — 109 MCP tools + 113 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, bless workflow, agent-optimized test output, and full CLI parity across 19 tool groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, iterating with visual poses, or any xcforge tool.
+description: Complete reference for xcforge — 104 MCP tools (114 with the diagnose group) + 113 CLI commands for iOS development. Covers build, test, simulator, physical devices, SPM, UI automation, screenshots, logs, git, visual regression, accessibility, localization, session profiles, diagnosis workflows, plan execution, LLDB debugger integration, bless workflow, agent-optimized test output, and a CLI covering nearly every tool across 19 command groups. Use when working with iOS simulators, physical devices, Xcode builds, Swift packages, UI testing, TDD workflows, debugging running apps with LLDB, iterating with visual poses, or any xcforge tool.
 ---
 
 # xcforge — iOS Development MCP Server & CLI
 
-xcforge is a native Swift MCP server and CLI for iOS development. 109 MCP tools, 113 CLI commands across 19 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, multi-step plan execution, visual pose iteration, bless (baseline+test+diff in one call), agent-optimized test output with known-failures gating, and test plan inspection. Every MCP tool has a CLI equivalent.
+xcforge is a native Swift MCP server and CLI for iOS development. 104 MCP tools (114 with the off-by-default diagnose group), 113 CLI commands across 19 groups, zero runtime dependencies. It provides build, test, simulator management, physical device support via devicectl, Swift package workflows, UI automation via WebDriverAgent with native HID fallback, ultra-fast screenshots, clipboard access, video recording, location simulation, appearance control, status bar overrides, smart log filtering, visual regression, multi-device checks, accessibility/localization layout checks, session profiles, structured diagnosis workflows, multi-step plan execution, visual pose iteration, bless (baseline+test+diff in one call), agent-optimized test output with known-failures gating, and test plan inspection. Nearly every MCP tool has a CLI equivalent; session profiles, clipboard, `multi_device_check` and `tool_groups` are MCP-only.
 
 ## References
 
@@ -26,6 +26,7 @@ Each reference covers one tool category with exact parameters, return values, an
 | **[Git Tools](references/git-tools.md)** | Git status, diff, log, commit, branch operations |
 | **[Diagnosis Workflows](references/diagnosis-workflows.md)** | Running structured diagnosis: start, build, test, runtime, status, evidence, inspect, verify, compare, result |
 | **[Plan Execution](references/plan-execution.md)** | Multi-step UI automation plans: run_plan, run_plan_decide, step types, variable binding, verification, suspend/resume |
+| **[Tool Surface](references/tool-surface.md)** | Tool groups (`XCFORGE_TOOL_GROUPS`), merged tools and their old names, argument casing, JSON results |
 | **[Auto-Detection & Defaults](references/auto-detection.md)** | Understanding parameter resolution, setting defaults, session profiles |
 | **[LLDB Debugger](references/lldb-debugger.md)** | Attach LLDB to running simulator processes — breakpoints, variable inspection, stack traces, step execution, arbitrary commands; 8 MCP tools + `xcforge debug` CLI |
 | **[Pose & Visual Iteration](references/pose.md)** | Build → install → launch + screenshot with named poses for visual design iteration. Supports app-side argument routing and pixel-coordinate tapping for layout work. |
@@ -99,7 +100,7 @@ bless(baseline: "login-screen", tests: "UITests/LoginTests")
 build_run_sim()                               → app running in simulator
 handle_alert(action: "accept_all")            → dismiss permission dialogs
 find_element(using: "accessibility id", value: "Save", scroll: true)
-click_element(element_id: "...")
+tap(elementId: "...")                         → or tap(id: "Save") in one call
 screenshot()                                  → verify result
 ```
 
@@ -188,7 +189,7 @@ device_install(device: "iPhone", app_path: "/path/to/App.app")
 device_launch(device: "iPhone", bundle_id: "com.app.id")
 device_apps(device: "iPhone")                 → list installed apps
 device_terminate(device: "iPhone", identifier: "com.app.id")
-device_screenshot(device: "iPhone")
+screenshot(device: "iPhone")
 wda_start(device: "iPhone", team: "ABCDE12345")  → UI tools now drive the phone
 ```
 

@@ -190,7 +190,18 @@ public actor AXPBridge {
   private static func buildTree(pid: pid_t) throws -> [AXElement] {
     let app = AXUIElementCreateApplication(pid)
     var elements: [AXElement] = []
-    traverse(element: app, into: &elements, depth: 0, maxDepth: 40, maxElements: 5000)
+    // Windows only: the menu bar's items ("Device", "Features", ...) would otherwise
+    // satisfy text lookups meant for the app.
+    var windowsRef: CFTypeRef?
+    if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+      let windows = windowsRef as? [AXUIElement], !windows.isEmpty
+    {
+      for window in windows {
+        traverse(element: window, into: &elements, depth: 0, maxDepth: 40, maxElements: 5000)
+      }
+    } else {
+      traverse(element: app, into: &elements, depth: 0, maxDepth: 40, maxElements: 5000)
+    }
     return elements
   }
 

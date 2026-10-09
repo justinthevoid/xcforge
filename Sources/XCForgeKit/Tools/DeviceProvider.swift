@@ -201,7 +201,7 @@ public enum DeviceTools {
     Tool(
       name: "wda_start",
       description:
-        "Build, sign and start WebDriverAgent on a connected physical device, then point this server's UI tools (find_element, click_element, ...) at it. Reuses a runner that is already answering.",
+        "Build, sign and start WebDriverAgent on a connected physical device, then point this server's UI tools (find_element, tap, ...) at it. Reuses a runner that is already answering.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -338,26 +338,9 @@ public enum DeviceTools {
         )
       }
 
-      var devices: [DeviceEntry] = []
-      for device in deviceList {
-        let name = property(device, "name") as? String ?? "Unknown"
-        let osVersion = property(device, "osVersionNumber") as? String ?? "Unknown"
-        let udid =
-          property(device, "udid") as? String
-          ?? (device["identifier"] as? String)
-          ?? "Unknown"
-        let state = (device["visibilityClass"] as? String) ?? "available"
-        let connectionType = property(device, "transportType") as? String ?? "unknown"
-
-        devices.append(
-          DeviceEntry(
-            name: name,
-            udid: udid,
-            osVersion: osVersion,
-            state: state,
-            connectionType: connectionType
-          ))
-      }
+      // Xcode 27's devicectl (Device Hub) lists simulators too; this tool is for phones and tablets.
+      let simulatorUDIDs = await simulatorUDIDs(env: env)
+      let devices = deviceList.compactMap { physicalEntry($0, simulatorUDIDs: simulatorUDIDs) }
 
       if let filter = filter?.lowercased(), !filter.isEmpty {
         let filtered = devices.filter {
@@ -675,16 +658,72 @@ public enum DeviceTools {
         + "on the device with `xcforge wda start --device \(device)` and retry.")
   }
 
+  /// A device from `devicectl list devices` JSON, or nil when it is a simulator.
+  static func physicalEntry(_ device: [String: Any], simulatorUDIDs: Set<String> = []) -> DeviceEntry? {
+    let udid =
+      property(device, "udid") as? String
+      ?? (device["identifier"] as? String)
+      ?? "Unknown"
+    if isSimulatorEntry(device) || simulatorUDIDs.contains(udid.uppercased()) { return nil }
+    if let identifier = device["identifier"] as? String, simulatorUDIDs.contains(identifier.uppercased()) {
+      return nil
+    }
+    return DeviceEntry(
+      name: property(device, "name") as? String ?? "Unknown",
+      udid: udid,
+      osVersion: property(device, "osVersionNumber") as? String ?? "Unknown",
+      state: connectionState(device),
+      connectionType: property(device, "transportType") as? String ?? "unknown")
+  }
+
+  /// devicectl marks hardware as `reality: physical` and simulators as `simulated`; older or
+  /// partial entries are caught by the simulator visibility class, provider, platform or type.
+  static func isSimulatorEntry(_ device: [String: Any]) -> Bool {
+    if let reality = property(device, "reality") as? String, reality.lowercased() != "physical" { return true }
+    if (device["visibilityClass"] as? String)?.lowercased() == "simulators" { return true }
+    if let provider = property(device, "provider") as? String, provider.contains("CoreSimulator") { return true }
+    for key in ["platform", "deviceType", "transportType"] {
+      if let value = property(device, key) as? String, value.lowercased().contains("simulator") { return true }
+    }
+    return false
+  }
+
+  /// Connected, disconnected or unavailable from the tunnel; else pairing or boot state.
+  /// `visibilityClass` is a display hint, not a state.
+  static func connectionState(_ device: [String: Any]) -> String {
+    for key in ["tunnelState", "pairingState", "bootState"] {
+      if let value = property(device, key) as? String, !value.isEmpty { return value }
+    }
+    return "unknown"
+  }
+
+  /// Upper-cased UDIDs of every simulator, so a simulator devicectl doesn't label is still dropped.
+  private static func simulatorUDIDs(env: Environment) async -> Set<String> {
+    guard let result = try? await env.shell.xcrun(timeout: 10, arguments: ["simctl", "list", "devices", "-j"]),
+      result.succeeded,
+      let json = try? JSONSerialization.jsonObject(with: Data(result.stdout.utf8)) as? [String: Any],
+      let runtimes = json["devices"] as? [String: [[String: Any]]]
+    else { return [] }
+    return Set(runtimes.values.flatMap { $0 }.compactMap { ($0["udid"] as? String)?.uppercased() })
+  }
+
   public static func isConnectedPhysicalDevice(_ identifier: String, env: Environment) async -> Bool {
     let list = await executeListDevices(filter: nil, env: env)
     return list.devices.contains { $0.udid == identifier || $0.name == identifier }
   }
 
-  /// Read a device field from devicectl JSON. Xcode 27 groups fields under `properties`;
-  /// earlier versions split them across `deviceProperties`, `hardwareProperties` and
-  /// `connectionProperties`. Both layouts are read.
+  /// Read a device field from devicectl JSON. Xcode 27 groups fields under `properties`
+  /// (`properties.hardware.udid`, `properties.state.name`, ...); earlier versions split them
+  /// across `deviceProperties`, `hardwareProperties` and `connectionProperties`, which Xcode 27
+  /// still writes. Both layouts are read.
   static func property(_ device: [String: Any], _ key: String) -> Any? {
-    for container in ["properties", "deviceProperties", "hardwareProperties", "connectionProperties"] {
+    if let properties = device["properties"] as? [String: Any] {
+      if let value = properties[key], !(value is [String: Any]) { return value }
+      for group in ["hardware", "state", "connection", "device"] {
+        if let dict = properties[group] as? [String: Any], let value = dict[key] { return value }
+      }
+    }
+    for container in ["deviceProperties", "hardwareProperties", "connectionProperties"] {
       if let dict = device[container] as? [String: Any], let value = dict[key] { return value }
     }
     return device[key]
@@ -695,7 +734,7 @@ public enum DeviceTools {
   private static func formatDeviceList(_ devices: [DeviceEntry]) -> String {
     var lines: [String] = ["\(devices.count) device(s):"]
     for device in devices {
-      lines.append("  \(device.name) — \(device.osVersion) [\(device.connectionType)]")
+      lines.append("  \(device.name) — \(device.osVersion) [\(device.connectionType), \(device.state)]")
       lines.append("    UDID: \(device.udid)")
     }
     return lines.joined(separator: "\n")
@@ -800,7 +839,7 @@ extension DeviceTools: ToolProvider {
         let state = DeviceWDA.load(device: input.device)
         await DeviceWDA.stop(device: input.device, env: env)
         if let state, await env.wdaClient.getBaseURL() == state.url {
-          await env.wdaClient.setBaseURL("http://localhost:8100")
+          await env.wdaClient.useSimulators()
         }
         return .ok(
           state == nil

@@ -2,7 +2,7 @@ import Foundation
 import MCP
 
 enum UITools {
-  public static let tools: [Tool] = [
+  static let coreTools: [Tool] = [
     Tool(
       name: "wda_status",
       description:
@@ -35,7 +35,7 @@ enum UITools {
     Tool(
       name: "wda_create_session",
       description:
-        "Create a new WebDriverAgent session, optionally targeting a specific app by bundle ID. A session is required before using UI interaction tools (find_element, click_element, type_text, etc.). Sessions are auto-created by most tools, so this is only needed to explicitly switch the target app.",
+        "Create a new WebDriverAgent session, optionally targeting a specific app by bundle ID. A session is required before using UI interaction tools (find_element, tap, type_text, etc.). Sessions are auto-created by most tools, so this is only needed to explicitly switch the target app.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
@@ -46,16 +46,26 @@ enum UITools {
             "type": .string("string"),
             "description": .string("WDA base URL. Default: http://localhost:8100"),
           ]),
+          "alert_action": .object([
+            "type": .string("string"),
+            "description": .string(
+              "What WDA does with system alerts (permission prompts) from now on: 'accept', 'dismiss' or 'none'. XCFORGE_ALERT_ACTION sets the default."
+            ),
+          ]),
         ]),
       ])
     ),
     Tool(
       name: "find_element",
       description:
-        "Find a single UI element matching a query. Returns the element ID for use with click_element, get_text, etc. With scroll: true, automatically scrolls the nearest ScrollView/List until the element appears (one call, no manual swipe loop needed). Use find_elements instead when you need all matches (e.g. counting list items).",
+        "Find a single UI element matching a query. Returns the element ID for use with tap, get_text, etc. With scroll: true, automatically scrolls the nearest ScrollView/List until the element appears (one call, no manual swipe loop needed). all: true returns every match (e.g. counting list items).",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
+          "all": .object([
+            "type": .string("boolean"),
+            "description": .string("Return every matching element's ID instead of one."),
+          ]),
           "using": .object([
             "type": .string("string"),
             "description": .string(
@@ -74,6 +84,19 @@ enum UITools {
           ]),
           "max_swipes": .object([
             "type": .string("number"), "description": .string("Max scroll attempts. Default: 10"),
+          ]),
+          "index": .object([
+            "type": .string("number"),
+            "description": .string(
+              "Which match to use when several match (0-based). Several matches are listed with labels and frames."),
+          ]),
+          "timeout": .object([
+            "type": .string("number"),
+            "description": .string("Seconds to wait for the element to appear. Default: 0 (look once)"),
+          ]),
+          "until_gone": .object([
+            "type": .string("boolean"),
+            "description": .string("Wait until nothing matches instead (needs timeout). Default: false"),
           ]),
         ]),
         "required": .array([.string("using"), .string("value")]),
@@ -168,6 +191,11 @@ enum UITools {
           "duration_ms": .object([
             "type": .string("number"), "description": .string("Swipe duration in ms. Default: 300"),
           ]),
+          "hid": .object([
+            "type": .string("boolean"),
+            "description": .string(
+              "Swipe with native HID events on a simulator (falls back to WDA; not yet supported on Xcode 27)."),
+          ]),
         ]),
         "required": .array([
           .string("start_x"), .string("start_y"), .string("end_x"), .string("end_y"),
@@ -239,20 +267,34 @@ enum UITools {
     ),
     Tool(
       name: "type_text",
-      description: "Type text into the currently focused element or a specified element.",
+      description: """
+        Type into the field that has keyboard focus, or into element_id. Also presses a key \
+        (return, delete, tab, escape) or dismisses the keyboard. Secure fields' text is never echoed.
+        """,
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
           "text": .object(["type": .string("string"), "description": .string("Text to type")]),
           "element_id": .object([
-            "type": .string("string"), "description": .string("Optional element ID to type into"),
+            "type": .string("string"), "description": .string("Element to type into. Default: the focused field"),
           ]),
           "clear_first": .object([
             "type": .string("boolean"),
             "description": .string("Clear existing text first. Default: false"),
           ]),
+          "key": .object([
+            "type": .string("string"),
+            "description": .string("Key to press after the text: return, delete, tab or escape"),
+          ]),
+          "dismiss_keyboard": .object([
+            "type": .string("boolean"),
+            "description": .string("Dismiss the keyboard afterwards. Default: false"),
+          ]),
+          "secure": .object([
+            "type": .string("boolean"),
+            "description": .string("Don't echo the text, even outside a secure field. Default: false"),
+          ]),
         ]),
-        "required": .array([.string("text")]),
       ])
     ),
     Tool(
@@ -272,14 +314,25 @@ enum UITools {
     Tool(
       name: "get_source",
       description:
-        "Get the full view hierarchy (source tree) of the current screen. Returns all elements with their types, labels, frames, and accessibility identifiers. Use to discover element identifiers before using find_element, or to debug layout issues.",
+        "Get the view hierarchy of the current screen. format: list gives one line per element (`<a11y-id> | <label> | <type> | <x>,<y>,<w>,<h>`), the cheapest way to see what's tappable; json, xml and description give the full tree.",
       inputSchema: .object([
         "type": .string("object"),
         "properties": .object([
           "format": .object([
             "type": .string("string"),
-            "description": .string("Format: json, xml, or description. Default: json"),
-          ])
+            "enum": .array([.string("list"), .string("json"), .string("xml"), .string("description")]),
+            "description": .string("list, json, xml or description. Default: json"),
+          ]),
+          "scope": .object([
+            "type": .string("string"),
+            "description": .string(
+              "format: list only. Accessibility id to restrict the listing to, with its descendants."),
+          ]),
+          "source": .object([
+            "type": .string("string"),
+            "enum": .array([.string("auto"), .string("wda"), .string("axp")]),
+            "description": .string("format: list only. Tree to read: auto (default), wda or axp."),
+          ]),
         ]),
       ])
     ),
@@ -359,7 +412,12 @@ enum UITools {
             "description": .string(
               "Optional accessibility id. Restrict the listing to that element and its descendants."
             ),
-          ])
+          ]),
+          "source": .object([
+            "type": .string("string"),
+            "enum": .array([.string("auto"), .string("wda"), .string("axp")]),
+            "description": .string("Tree to read: auto (default), wda or axp."),
+          ]),
         ]),
       ])
     ),
@@ -438,6 +496,7 @@ enum UITools {
   struct SessionInput: Decodable {
     let bundle_id: String?
     let wda_url: String?
+    var alert_action: String? = nil
   }
 
   struct FindElementInput: Decodable {
@@ -446,6 +505,9 @@ enum UITools {
     let scroll: Bool?
     let direction: String?
     let max_swipes: Int?
+    var index: Int? = nil
+    var timeout: Double? = nil
+    var until_gone: Bool? = nil
   }
 
   struct FindElementsInput: Decodable {
@@ -496,10 +558,18 @@ enum UITools {
   }
 
   struct TypeTextInput: Decodable {
-    let text: String
+    var text: String? = nil
     let element_id: String?
     let clear_first: Bool?
+    var key: String? = nil
+    var dismiss_keyboard: Bool? = nil
+    var secure: Bool? = nil
   }
+
+  /// Characters WDA's keys endpoint types for named keys.
+  static let namedKeys: [String: String] = [
+    "return": "\n", "enter": "\n", "delete": "\u{8}", "backspace": "\u{8}", "tab": "\t", "escape": "\u{1b}",
+  ]
 
   struct SourceInput: Decodable {
     let format: String?
@@ -679,6 +749,12 @@ enum UITools {
     case .success(let input):
       let customURL = input.wda_url
       let bundleId = input.bundle_id
+      if let action = input.alert_action?.lowercased() {
+        guard ["accept", "dismiss", "none"].contains(action) else {
+          return .fail("alert_action must be 'accept', 'dismiss' or 'none'")
+        }
+        await wdaClient.setDefaultAlertAction(action == "none" ? nil : action)
+      }
 
       if let url = customURL {
         // Per-call override: try custom URL directly, NO deploy attempt.
@@ -752,10 +828,45 @@ enum UITools {
       let direction = input.direction ?? "auto"
       let maxSwipes = input.max_swipes ?? 10
 
+      if input.until_gone == true {
+        let timeout = input.timeout ?? 10
+        let gone = await UIWait.until(timeout: timeout) {
+          ((try? await env.wdaClient.findElements(using: input.using, value: input.value)) ?? [""]).isEmpty
+        }
+        return gone
+          ? .ok("No element matches \(input.using)=\(input.value)")
+          : .fail("Still matching \(input.using)=\(input.value) after \(Int(timeout))s")
+      }
+
+      // Several matches: say so, with enough to tell them apart, and use `index`.
+      if !scroll {
+        let timeout = input.timeout ?? 0
+        var ids: [String] = []
+        _ = await UIWait.until(timeout: timeout) {
+          ids = (try? await env.wdaClient.findElements(using: input.using, value: input.value)) ?? []
+          return !ids.isEmpty
+        }
+        if ids.count > 1 || input.index != nil {
+          let index = input.index ?? 0
+          guard ids.indices.contains(index) else {
+            return .fail("index \(index) is out of range: \(ids.count) element(s) match \(input.using)=\(input.value)")
+          }
+          var lines = ["Element found: \(ids[index]) (wda, match \(index + 1) of \(ids.count))"]
+          if ids.count > 1 {
+            lines.append("\(ids.count) elements match; pass index to pick another:")
+            for (offset, id) in ids.prefix(UIWait.listedMatches).enumerated() {
+              lines.append("  [\(offset)] \(await UIWait.describe(elementId: id, wdaClient: env.wdaClient))")
+            }
+            if ids.count > UIWait.listedMatches { lines.append("  +\(ids.count - UIWait.listedMatches) more") }
+          }
+          return .ok(lines.joined(separator: "\n"))
+        }
+      }
+
       // AXP pre-check: stash handle for later click/getText acceleration
       let axpStrategies: Set<String> = ["accessibility id", "class name"]
       var axpHandle: AXPBridge.AXPHandle?
-      if !scroll, axpStrategies.contains(input.using), AXPBridge.isAvailable {
+      if !scroll, axpStrategies.contains(input.using), await axpTargetsSimulator(env: env) {
         do {
           axpHandle = try await env.axpBridge.findElement(
             strategy: input.using, value: input.value
@@ -786,7 +897,13 @@ enum UITools {
         if let fg { msg += " appForeground=\(fg)" }
         return .ok(msg)
       } catch {
-        return .fail("Element not found: \(error)")
+        var message = "Element not found: \(error)"
+        if let alert = await env.wdaClient.getAlertText() {
+          let buttons = alert.buttons.joined(separator: ", ")
+          message += "\nA system alert is showing (\"\(alert.text)\"; buttons: \(buttons))."
+          message += " handle_alert accepts or dismisses it."
+        }
+        return .fail(message)
       }
     }
   }
@@ -954,28 +1071,61 @@ enum UITools {
     switch ToolInput.decode(TypeTextInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
-      let clearFirst = input.clear_first ?? false
+      let (ok, message) = await executeTypeText(
+        text: input.text, elementId: input.element_id, clearFirst: input.clear_first ?? false, key: input.key,
+        dismissKeyboard: input.dismiss_keyboard ?? false, secure: input.secure ?? false, wdaClient: wdaClient)
+      return ok ? .ok(message) : .fail(message)
+    }
+  }
 
-      do {
-        if let eid = input.element_id {
-          if clearFirst {
-            try await wdaClient.clearElement(elementId: eid)
-          }
-          try await wdaClient.setValue(elementId: eid, text: input.text)
-        } else {
-          // Find first text field and type into it
-          _ = try await wdaClient.ensureSession()
-          let (eid, _) = try await wdaClient.findElement(
-            using: "class name", value: "XCUIElementTypeTextField")
-          if clearFirst {
-            try await wdaClient.clearElement(elementId: eid)
-          }
-          try await wdaClient.setValue(elementId: eid, text: input.text)
-        }
-        return .ok("Typed '\(input.text)'")
-      } catch {
-        return .fail("Type failed: \(error)")
+  /// Type into `elementId`, else the field with keyboard focus (never "the first text
+  /// field", which skipped secure and search fields), then press `key` and dismiss the
+  /// keyboard as asked. A secure field's text is never echoed.
+  static func executeTypeText(
+    text: String?, elementId: String?, clearFirst: Bool, key: String?, dismissKeyboard: Bool, secure: Bool,
+    wdaClient: WDAClient
+  ) async -> (succeeded: Bool, message: String) {
+    var keyText: String?
+    if let key {
+      guard let mapped = namedKeys[key.lowercased()] else {
+        return (false, "key must be one of: return, delete, tab, escape")
       }
+      keyText = mapped
+    }
+    guard text != nil || keyText != nil || dismissKeyboard else {
+      return (false, "Pass text, key or dismiss_keyboard")
+    }
+
+    do {
+      var done: [String] = []
+      if let text {
+        let target: String
+        if let elementId {
+          target = elementId
+        } else if let focused = try await wdaClient.activeElementId() {
+          target = focused
+        } else {
+          return (false, "No field has keyboard focus. Tap the field first, or pass element_id.")
+        }
+        if clearFirst {
+          try await wdaClient.clearElement(elementId: target)
+        }
+        try await wdaClient.setValue(elementId: target, text: text)
+        let type = (try? await wdaClient.getElementAttribute("type", elementId: target)) ?? ""
+        let hidden = secure || type.contains("SecureTextField")
+        done.append(hidden ? "Typed \(text.count) characters (secure field, not shown)" : "Typed '\(text)'")
+      }
+      if let keyText, let key {
+        try await wdaClient.typeKeys(keyText)
+        done.append("Pressed \(key.lowercased())")
+      }
+      if dismissKeyboard {
+        try await wdaClient.dismissKeyboard()
+        done.append("Dismissed the keyboard")
+      }
+      return (true, done.joined(separator: "\n"))
+    } catch {
+      return (false, "Type failed: \(error)")
     }
   }
 
@@ -1074,21 +1224,31 @@ enum UITools {
     }
   }
 
+  /// The interface orientation from WebDriverAgent when it's running; portrait otherwise.
+  static func hidOrientation(wdaClient: WDAClient) async -> IndigoHIDClient.Orientation {
+    guard await wdaClient.isHealthy(), let value = try? await wdaClient.getOrientation() else { return .portrait }
+    return IndigoHIDClient.Orientation(wdaValue: value)
+  }
+
   static func indigoTap(_ args: [String: Value]?, wdaClient: WDAClient) async -> CallTool.Result {
     switch ToolInput.decode(IndigoTapInput.self, from: args) {
     case .failure(let err): return err
     case .success(let input):
       let simulator = input.simulator ?? "booted"
+      var hidFallbackReason = IndigoHIDClient.unavailableReason
 
       if IndigoHIDClient.isAvailable {
         do {
+          let orientation = await hidOrientation(wdaClient: wdaClient)
           let start = CFAbsoluteTimeGetCurrent()
-          try await IndigoHIDClient.shared.tap(x: input.x, y: input.y, simulator: simulator)
+          try await IndigoHIDClient.shared.tap(
+            x: input.x, y: input.y, simulator: simulator, orientation: orientation)
           let elapsed = String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
           return .ok("Tapped at (\(Int(input.x)), \(Int(input.y))) via IndigoHID (\(elapsed)ms)")
         } catch {
           Log.warn("IndigoHID tap failed, falling back to WDA: \(error)")
           await IndigoHIDClient.shared.invalidateCache()
+          hidFallbackReason = "\(error)"
         }
       }
 
@@ -1097,7 +1257,9 @@ enum UITools {
         let start = CFAbsoluteTimeGetCurrent()
         try await wdaClient.tap(x: input.x, y: input.y)
         let elapsed = String(format: "%.0f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-        return .ok("Tapped at (\(Int(input.x)), \(Int(input.y))) via WDA fallback (\(elapsed)ms)")
+        return .ok(
+          "Tapped at (\(Int(input.x)), \(Int(input.y))) via WDA (\(elapsed)ms); HID not used: \(hidFallbackReason)"
+        )
       } catch {
         return .fail("Tap failed: \(error)")
       }
@@ -1110,13 +1272,15 @@ enum UITools {
     case .success(let input):
       let durationMs = input.duration_ms ?? 300
       let simulator = input.simulator ?? "booted"
+      var hidFallbackReason = IndigoHIDClient.unavailableReason
 
       if IndigoHIDClient.isAvailable {
         do {
+          let orientation = await hidOrientation(wdaClient: wdaClient)
           let start = CFAbsoluteTimeGetCurrent()
           try await IndigoHIDClient.shared.swipe(
             startX: input.start_x, startY: input.start_y, endX: input.end_x, endY: input.end_y,
-            durationMs: durationMs, simulator: simulator
+            durationMs: durationMs, simulator: simulator, orientation: orientation
           )
           let elapsed = String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
           return .ok(
@@ -1125,6 +1289,7 @@ enum UITools {
         } catch {
           Log.warn("IndigoHID swipe failed, falling back to WDA: \(error)")
           await IndigoHIDClient.shared.invalidateCache()
+          hidFallbackReason = "\(error)"
         }
       }
 
@@ -1134,7 +1299,7 @@ enum UITools {
           startX: input.start_x, startY: input.start_y, endX: input.end_x, endY: input.end_y,
           durationMs: durationMs)
         return .ok(
-          "Swiped from (\(Int(input.start_x)),\(Int(input.start_y))) to (\(Int(input.end_x)),\(Int(input.end_y))) via WDA fallback"
+          "Swiped from (\(Int(input.start_x)),\(Int(input.start_y))) to (\(Int(input.end_x)),\(Int(input.end_y))) via WDA; HID not used: \(hidFallbackReason)"
         )
       } catch {
         return .fail("Swipe failed: \(error)")
@@ -1153,21 +1318,29 @@ enum UITools {
   /// True if any iOS simulator is currently in the "Booted" state. Used to decide
   /// `auto` source preference. Conservative: any simctl error returns false.
   static func isAnySimulatorBooted(env: Environment) async -> Bool {
+    await bootedSimulatorCount(env: env) > 0
+  }
+
+  static func bootedSimulatorCount(env: Environment) async -> Int {
     do {
       let result = try await env.shell.xcrun(timeout: 5, "simctl", "list", "devices", "-j")
       guard let data = result.stdout.data(using: .utf8),
         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
         let groups = json["devices"] as? [String: [[String: Any]]]
-      else { return false }
-      for (_, devices) in groups {
-        for device in devices where (device["state"] as? String) == "Booted" {
-          return true
-        }
-      }
-      return false
+      else { return 0 }
+      return groups.values.joined().filter { ($0["state"] as? String) == "Booted" }.count
     } catch {
-      return false
+      return 0
     }
+  }
+
+  /// Whether the macOS accessibility shortcut answers for the app under test. It reads
+  /// Simulator.app's windows, which can't tell simulators apart and know nothing of a
+  /// phone, so it is used only with WDA on this Mac and exactly one simulator booted.
+  static func axpTargetsSimulator(env: Environment) async -> Bool {
+    guard AXPBridge.isAvailable else { return false }
+    if await env.wdaClient.isRemote { return false }
+    return await bootedSimulatorCount(env: env) == 1
   }
 
   /// CLI-facing entry point for `ui ls`. Mirrors `listElements` MCP semantics:
@@ -1203,9 +1376,12 @@ enum UITools {
       primary = .axp
       fallback = nil
     case .auto:
-      let simBooted = await isAnySimulatorBooted(env: env)
-      primary = simBooted ? .wda : .axp
-      fallback = simBooted ? .axp : .wda
+      // With a simulator or phone in play, the WDA tree is the only one in device points
+      // for the right target; when it fails, say so rather than list Simulator.app's.
+      let remote = await env.wdaClient.isRemote
+      let useWDA = remote ? true : await isAnySimulatorBooted(env: env)
+      primary = useWDA ? .wda : .axp
+      fallback = useWDA ? nil : .wda
     }
 
     // Try a single source. Returns true on success (`elements` populated and `sourceTag`
@@ -1299,7 +1475,7 @@ enum UITools {
   // MARK: - ui ls / tap-by-* helpers
 
   /// Element entry used by `listElements`. One line per entry.
-  private struct FlatElement {
+  struct FlatElement {
     let identifier: String
     let label: String
     let type: String
@@ -1307,6 +1483,9 @@ enum UITools {
     let y: Int
     let width: Int
     let height: Int
+    var value: String = ""
+    var enabled = true
+    var selected = false
   }
 
   /// Escape `|` (the field separator) and collapse `\n`/`\r` to spaces so a single
@@ -1323,7 +1502,12 @@ enum UITools {
     let id = el.identifier.isEmpty ? "-" : sanitizeField(el.identifier)
     let label = el.label.isEmpty ? "-" : sanitizeField(el.label)
     let type = el.type.isEmpty ? "-" : sanitizeField(el.type)
-    return "\(id) | \(label) | \(type) | \(el.x),\(el.y),\(el.width),\(el.height)"
+    var line = "\(id) | \(label) | \(type) | \(el.x),\(el.y),\(el.width),\(el.height)"
+    // What agents check after acting: the value, and whether it can be used or is chosen.
+    if !el.value.isEmpty, el.value != el.label { line += " | value=\(sanitizeField(String(el.value.prefix(200))))" }
+    if !el.enabled { line += " | disabled" }
+    if el.selected { line += " | selected" }
+    return line
   }
 
   /// Parse the AXP getSourceJSON payload into a flat array of `FlatElement`.
@@ -1356,32 +1540,59 @@ enum UITools {
   }
 
   /// Recursively flatten WDA `/source?format=json` tree into `FlatElement`s.
-  private static func flattenWDASource(_ root: [String: Any]) -> [FlatElement] {
+  /// Element types worth listing even without an id, label or value: an agent may need to
+  /// tap or type into them.
+  static let interactiveTypes: Set<String> = [
+    "Button", "TextField", "SecureTextField", "SearchField", "TextView", "Switch", "Slider", "Stepper",
+    "SegmentedControl", "Cell", "Link", "Image", "Picker", "PickerWheel", "Toggle", "Tab", "Key", "Alert",
+  ]
+
+  /// Recursively flatten WDA `/source?format=json` tree into `FlatElement`s, keeping what an
+  /// agent can see or use: wrapper containers with nothing to say, and nodes that are
+  /// invisible or entirely off screen, are left out (their children are still visited).
+  static func flattenWDASource(_ root: [String: Any]) -> [FlatElement] {
     var out: [FlatElement] = []
+    func number(_ rect: [String: Any], _ key: String) -> Int {
+      (rect[key] as? Int) ?? Int((rect[key] as? Double) ?? 0)
+    }
+    func flag(_ node: [String: Any], _ key: String) -> Bool? {
+      if let bool = node[key] as? Bool { return bool }
+      if let text = node[key] as? String { return text == "1" || text.lowercased() == "true" }
+      if let int = node[key] as? Int { return int != 0 }
+      return nil
+    }
+    let top = (root["value"] as? [String: Any]) ?? root
+    let screen = top["rect"] as? [String: Any] ?? [:]
+    let screenWidth = number(screen, "width")
+    let screenHeight = number(screen, "height")
+
     func visit(_ node: [String: Any]) {
       let rect = node["rect"] as? [String: Any] ?? [:]
-      let el = FlatElement(
+      var el = FlatElement(
         identifier: (node["name"] as? String) ?? (node["identifier"] as? String) ?? "",
         label: (node["label"] as? String) ?? "",
         type: (node["type"] as? String) ?? "",
-        x: (rect["x"] as? Int) ?? Int((rect["x"] as? Double) ?? 0),
-        y: (rect["y"] as? Int) ?? Int((rect["y"] as? Double) ?? 0),
-        width: (rect["width"] as? Int) ?? Int((rect["width"] as? Double) ?? 0),
-        height: (rect["height"] as? Int) ?? Int((rect["height"] as? Double) ?? 0)
+        x: number(rect, "x"), y: number(rect, "y"), width: number(rect, "width"), height: number(rect, "height")
       )
-      if !el.identifier.isEmpty || !el.label.isEmpty || !el.type.isEmpty {
+      el.value = (node["value"] as? String) ?? (node["value"] as? NSNumber)?.stringValue ?? ""
+      el.enabled = flag(node, "isEnabled") ?? true
+      el.selected = flag(node, "isSelected") ?? false
+
+      let says = !el.identifier.isEmpty || !el.label.isEmpty || !el.value.isEmpty
+      let offScreen =
+        screenWidth > 0 && screenHeight > 0
+        && (el.x >= screenWidth || el.y >= screenHeight || (el.width > 0 && el.x + el.width <= 0)
+          || (el.height > 0 && el.y + el.height <= 0))
+      let hidden = flag(node, "isVisible") == false || offScreen
+      let shortType = el.type.hasPrefix("XCUIElementType") ? String(el.type.dropFirst(15)) : el.type
+      if !hidden && (says || interactiveTypes.contains(shortType)) {
         out.append(el)
       }
       if let children = node["children"] as? [[String: Any]] {
         for child in children { visit(child) }
       }
     }
-    // The WDA source can either be the root node or wrapped in {"value": {...}}.
-    if let wrapped = root["value"] as? [String: Any] {
-      visit(wrapped)
-    } else {
-      visit(root)
-    }
+    visit(top)
     return out
   }
 
@@ -1553,28 +1764,7 @@ enum UITools {
     case .failure(let err): return err
     case .success(let input):
       let format = input.format ?? "json"
-
-      // AXPBridge fast-path for JSON format
-      if format == "json", AXPBridge.isAvailable {
-        let start = CFAbsoluteTimeGetCurrent()
-        do {
-          let source = try await env.axpBridge.getSourceJSON()
-          let elapsed = String(format: "%.1f", (CFAbsoluteTimeGetCurrent() - start) * 1000)
-          let elementCount = source.components(separatedBy: "\"type\"").count - 1
-          Task {
-            guard let udid = await DeviceStateStore.currentUDID(session: env.session) else {
-              return
-            }
-            await DeviceStateStore.shared.update(
-              .screen(elementCount: max(elementCount, 1), summary: "json"), for: udid)
-          }
-          let truncated =
-            source.count > 50000 ? String(source.prefix(50000)) + "\n... [truncated]" : source
-          return .ok("View hierarchy (axp, \(elapsed)ms, \(source.count) chars):\n\(truncated)")
-        } catch {
-          Log.warn("AXPBridge getSourceJSON failed, falling back to WDA: \(error)")
-        }
-      }
+      if let problem = WDAClient.sourceFormatProblem(format) { return .fail(problem) }
 
       do {
         let start = CFAbsoluteTimeGetCurrent()
@@ -1587,9 +1777,12 @@ enum UITools {
           await DeviceStateStore.shared.update(
             .screen(elementCount: max(elementCount, 1), summary: format), for: udid)
         }
-        // Truncate if too large
+        // Over 50,000 characters, a raw tree cut mid-JSON is useless: point at format: list.
         let truncated =
-          source.count > 50000 ? String(source.prefix(50000)) + "\n... [truncated]" : source
+          source.count > 50000
+          ? String(source.prefix(50000))
+            + "\n... [truncated at 50,000 of \(source.count) characters; format: list returns one line per element]"
+          : source
         return .ok("View hierarchy (wda, \(elapsed)s, \(source.count) chars):\n\(truncated)")
       } catch {
         return .fail("Get source failed: \(error)")
@@ -1671,6 +1864,16 @@ public func xcforgePerformUITapPixel(
   )
 }
 
+/// CLI-facing entry point for `ui type`.
+public func xcforgeTypeText(
+  text: String?, elementId: String?, clearFirst: Bool, key: String?, dismissKeyboard: Bool, secure: Bool,
+  env: Environment
+) async -> (succeeded: Bool, message: String) {
+  await UITools.executeTypeText(
+    text: text, elementId: elementId, clearFirst: clearFirst, key: key, dismissKeyboard: dismissKeyboard,
+    secure: secure, wdaClient: env.wdaClient)
+}
+
 extension UITools: ToolProvider {
   public static func dispatch(_ name: String, _ args: [String: Value]?, env: Environment) async
     -> CallTool.Result?
@@ -1680,21 +1883,28 @@ extension UITools: ToolProvider {
       return await handleAlert(args, session: env.session, wdaClient: env.wdaClient)
     case "wda_status": return await wdaStatus(args, session: env.session, wdaClient: env.wdaClient)
     case "wda_create_session": return await wdaCreateSession(args, env: env)
-    case "find_element": return await findElement(args, env: env)
+    case "find_element":
+      if args?["all"]?.boolValue == true { return await findElements(args, wdaClient: env.wdaClient) }
+      return await findElement(args, env: env)
+    case "tap": return await tap(args, env: env)
     case "find_elements": return await findElements(args, wdaClient: env.wdaClient)
     case "click_element": return await clickElement(args, env: env)
     case "tap_coordinates": return await tapCoordinates(args, wdaClient: env.wdaClient)
     case "ui_tap_pixel": return await tapPixel(args, env: env)
     case "double_tap": return await doubleTap(args, wdaClient: env.wdaClient)
     case "long_press": return await longPress(args, wdaClient: env.wdaClient)
-    case "swipe": return await swipeAction(args, wdaClient: env.wdaClient)
+    case "swipe":
+      if args?["hid"]?.boolValue == true { return await indigoSwipe(args, wdaClient: env.wdaClient) }
+      return await swipeAction(args, wdaClient: env.wdaClient)
     case "pinch": return await pinchAction(args, wdaClient: env.wdaClient)
     case "indigo_tap": return await indigoTap(args, wdaClient: env.wdaClient)
     case "indigo_swipe": return await indigoSwipe(args, wdaClient: env.wdaClient)
     case "drag_and_drop": return await dragAndDrop(args, wdaClient: env.wdaClient)
     case "type_text": return await typeText(args, wdaClient: env.wdaClient)
     case "get_text": return await getText(args, env: env)
-    case "get_source": return await getSource(args, env: env)
+    case "get_source":
+      if args?["format"]?.stringValue == "list" { return await listElements(args, env: env) }
+      return await getSource(args, env: env)
     case "list_elements": return await listElements(args, env: env)
     case "tap_by_id": return await tapByID(args, env: env)
     case "tap_by": return await tapBy(args, env: env)
@@ -1702,5 +1912,12 @@ extension UITools: ToolProvider {
     case "clipboard_set": return await clipboardSet(args, wdaClient: env.wdaClient)
     default: return nil
     }
+  }
+}
+
+/// The flat element listing behind `list_elements`, for the CLI's `ui source --format list`.
+public enum UIElementListing {
+  public static func render(env: Environment) async throws -> (body: String, count: Int, source: String) {
+    try await UITools.renderListing(scope: nil, env: env)
   }
 }

@@ -5,6 +5,18 @@ enum TestRenderer {
   static func renderTest(_ execution: TestTools.TestExecution) -> String {
     var lines: [String] = []
 
+    // A test build that failed is compile errors, not failing tests.
+    if execution.buildFailed {
+      lines.append("TEST BUILD FAILED in \(execution.elapsed)s, no test ran")
+      lines += TestFailureText.buildErrorLines(execution.failures, indent: "")
+      if let path = execution.hangDiagnosticPath {
+        lines.append("Diagnostic snapshot: \(path)")
+      }
+      lines.append("Scheme: \(execution.scheme)")
+      if !execution.xcresultPath.isEmpty { lines.append("xcresult: \(execution.xcresultPath)") }
+      return lines.joined(separator: "\n")
+    }
+
     let icon = execution.succeeded ? "PASSED" : "FAILED"
     lines.append("Tests \(icon) in \(execution.elapsed)s")
 
@@ -19,12 +31,9 @@ enum TestRenderer {
     }
     lines.append(statParts.joined(separator: ", "))
 
-    // Inline failure summaries
-    for failure in execution.failures.prefix(20) {
-      lines.append("FAIL: \(failure.testName)")
-      if !failure.message.isEmpty {
-        lines.append("  \(failure.message)")
-      }
+    lines += TestFailureText.lines(execution.failures, indent: "")
+    if !execution.flakyTests.isEmpty {
+      lines.append("Flaky (failed, then passed on retry): \(execution.flakyTests.joined(separator: ", "))")
     }
 
     // Device info
@@ -53,46 +62,28 @@ enum TestRenderer {
     if result.failures.isEmpty {
       return "No test failures found.\nxcresult: \(result.xcresultPath)"
     }
+    if result.buildFailed {
+      var lines = ["The last test run failed to build, so no test ran. Build errors:"]
+      lines += TestFailureText.buildErrorLines(result.failures, indent: "")
+      lines.append("xcresult: \(result.xcresultPath)")
+      return lines.joined(separator: "\n")
+    }
 
     var lines: [String] = []
     lines.append("\(result.failures.count) test failure(s):")
     lines.append("")
+    lines += TestFailureText.lines(result.failures, indent: "")
 
-    for failure in result.failures {
-      lines.append("FAIL: \(failure.testName) [\(failure.testIdentifier)]")
-      if !failure.message.isEmpty {
-        lines.append("  " + failure.message.replacingOccurrences(of: "\n", with: "\n  "))
-      }
-
-      // Matching screenshots
-      let matchingScreenshots = result.screenshots.filter {
-        $0.testName.contains(failure.testIdentifier) || failure.testIdentifier.contains($0.testName)
-      }
-      for screenshot in matchingScreenshots {
-        lines.append("  Screenshot: \(screenshot.path)")
-      }
-
-      // Console output
-      let funcName =
-        failure.testIdentifier.split(separator: "/").last.map(String.init) ?? failure.testIdentifier
-      if let console = result.consoleByTest[funcName]
-        ?? result.consoleByTest[failure.testIdentifier]
-      {
-        lines.append("  Console:")
-        lines.append("    " + console.replacingOccurrences(of: "\n", with: "\n    "))
-      }
-
+    // Attachments that couldn't be tied to one failure
+    let attached = Set(result.failures.flatMap { $0.attachments ?? [] })
+    let loose = result.screenshots.map(\.path).filter { !attached.contains($0) }
+    if !loose.isEmpty {
       lines.append("")
+      lines.append("Other failure attachments (\(loose.count)):")
+      lines += loose.prefix(20).map { "  \($0)" }
     }
 
-    // All screenshots at the end
-    if !result.screenshots.isEmpty {
-      lines.append("Failure screenshots (\(result.screenshots.count)):")
-      for att in result.screenshots {
-        lines.append("  \(att.path)")
-      }
-    }
-
+    lines.append("")
     lines.append("xcresult: \(result.xcresultPath)")
     return lines.joined(separator: "\n")
   }
@@ -128,7 +119,8 @@ enum TestRenderer {
     // Group by target/class
     var grouped: [String: [String: [String]]] = [:]
     for test in result.tests {
-      grouped[test.target, default: [:]][test.className, default: []].append(test.methodName)
+      let method = TestIDs.components(test.fullIdentifier).last ?? test.methodName
+      grouped[test.target, default: [:]][test.className, default: []].append(method)
     }
 
     for (target, classes) in grouped.sorted(by: { $0.key < $1.key }) {
@@ -143,9 +135,9 @@ enum TestRenderer {
 
     lines.append("")
     lines.append("Filter examples:")
-    lines.append("  xcforge test --filter \"Target/Class/method\"")
-    lines.append("  xcforge test --filter \"Class/method\"  (auto-resolves target)")
-    lines.append("  xcforge test --filter \"Class\"          (all tests in class)")
+    lines.append("  xcforge test --filter \"Target/Suite/test()\"")
+    lines.append("  xcforge test --filter \"Suite/test()\"  (the target is added)")
+    lines.append("  xcforge test --filter \"Suite\"         (every test in the suite)")
     return lines.joined(separator: "\n")
   }
 

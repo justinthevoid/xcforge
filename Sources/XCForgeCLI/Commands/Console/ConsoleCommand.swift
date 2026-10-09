@@ -35,13 +35,16 @@ struct ConsoleLaunch: AsyncParsableCommand {
   @Option(help: "Space-separated launch arguments for the app.")
   var args: String?
 
+  @Option(help: "Environment variable for the app, KEY=VALUE (repeatable).")
+  var env: [String] = []
+
   @Flag(help: "Emit the result as machine-readable JSON.")
   var json = false
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    let env = Environment.live
-    guard let resolvedBundleId = await env.session.resolveBundleId(bundleId) else {
+    let environment = Environment.live
+    guard let resolvedBundleId = await environment.session.resolveBundleId(bundleId) else {
       let result = ConsoleResult(
         succeeded: false,
         message: "Missing bundle_id — provide --bundle-id or run build first",
@@ -58,8 +61,10 @@ struct ConsoleLaunch: AsyncParsableCommand {
     let launchArgs = args?.split(separator: " ").map(String.init) ?? []
 
     let sim: String
+    let childEnvironment: [String: String]
     do {
-      sim = try await env.session.resolveSimulator(simulator)
+      sim = try await environment.session.resolveSimulator(simulator)
+      childEnvironment = try SimTools.parseEnvironment(env)
     } catch {
       let result = ConsoleResult(
         succeeded: false,
@@ -76,9 +81,17 @@ struct ConsoleLaunch: AsyncParsableCommand {
 
     do {
       let udid = try await SimTools.resolveSimulator(sim)
-      let msg = try await AppConsole.shared.launch(
-        simulator: udid, bundleId: resolvedBundleId, args: launchArgs
-      )
+      // The console streams to files in the background, so `console read` in a later
+      // command still sees it.
+      var simctlArgs = ["simctl", "launch", "--console", "--terminate-running-process", udid, resolvedBundleId]
+      simctlArgs += launchArgs
+      var simctlEnvironment: [String: String] = [:]
+      for (key, value) in childEnvironment {
+        simctlEnvironment["SIMCTL_CHILD_" + key] = value
+      }
+      try DetachedCapture.console.start(
+        arguments: simctlArgs, environment: simctlEnvironment, captureStderr: true, bundleId: resolvedBundleId)
+      let msg = "Console capture started for \(resolvedBundleId). `xcforge console read` reads it."
       let result = ConsoleResult(
         succeeded: true,
         message: msg,
@@ -113,7 +126,7 @@ struct ConsoleRead: AsyncParsableCommand {
     abstract: "Read captured console output from a running app."
   )
 
-  @Option(help: "Only return last N lines per stream.")
+  @Option(help: "Return the last N lines per stream. Default: 200; 0 returns all.")
   var last: Int?
 
   @Flag(help: "Clear buffer after reading.")
@@ -127,30 +140,23 @@ struct ConsoleRead: AsyncParsableCommand {
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    let output = await AppConsole.shared.read(last: last, clear: clear)
+    let capture = DetachedCapture.console
+    let stdoutTail = CaptureTail.tail(capture.lines(.stdout), last: last)
+    let stderrTail = CaptureTail.tail(capture.lines(.stderr), last: last)
+    if clear { capture.clear() }
 
-    let filteredStdout: [String]?
-    let filteredStderr: [String]?
-
-    switch stream {
-    case "stdout":
-      filteredStdout = output.stdout
-      filteredStderr = nil
-    case "stderr":
-      filteredStdout = nil
-      filteredStderr = output.stderr
-    default:
-      filteredStdout = output.stdout
-      filteredStderr = output.stderr
-    }
+    var message = clear ? "Buffer cleared after reading" : "Console output read"
+    if !capture.exists { message = "No console capture. Start one with `xcforge console launch`." }
+    let omitted = (stream == "stderr" ? 0 : stdoutTail.omitted) + (stream == "stdout" ? 0 : stderrTail.omitted)
+    if let note = CaptureTail.omittedNote(omitted) { message += " \(note)" }
 
     let result = ConsoleResult(
       succeeded: true,
-      message: clear ? "Buffer cleared after reading" : "Console output read",
-      stdout: filteredStdout,
-      stderr: filteredStderr,
-      isRunning: output.isRunning,
-      bundleId: output.bundleId
+      message: message,
+      stdout: stream == "stderr" ? nil : stdoutTail.lines,
+      stderr: stream == "stdout" ? nil : stderrTail.lines,
+      isRunning: capture.isRunning,
+      bundleId: capture.state()?.bundleId
     )
 
     if useJSON {
@@ -172,11 +178,11 @@ struct ConsoleStop: AsyncParsableCommand {
 
   mutating func run() async throws {
     let useJSON = shouldOutputJSON(flag: json)
-    await AppConsole.shared.stop()
+    let stopped = DetachedCapture.console.stop()
 
     let result = ConsoleResult(
       succeeded: true,
-      message: "App console stopped",
+      message: stopped ? "App console stopped" : "No console capture was running",
       stdout: nil, stderr: nil,
       isRunning: false, bundleId: nil
     )

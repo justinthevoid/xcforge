@@ -16,7 +16,7 @@ struct MultipleSimulatorMatchError: Error, CustomStringConvertible {
 /// Throws ResolverError with rich messages when ambiguous.
 enum AutoDetect {
 
-  private struct SimulatorDevice: Sendable {
+  struct SimulatorDevice: Sendable, Equatable {
     let name: String
     let udid: String
     let runtime: String
@@ -133,12 +133,14 @@ enum AutoDetect {
         "-not", "-path", "*/.build/*",
         "-not", "-path", "*/DerivedData/*",
         "-not", "-path", "*/.swiftpm/*",
+        // Every .xcodeproj holds a project.xcworkspace; it isn't a separate workspace.
+        "-not", "-path", "*.xcodeproj/*",
       ], timeout: 10)
 
     let paths = result.stdout
       .split(separator: "\n")
       .map(String.init)
-      .filter { !$0.isEmpty }
+      .filter { !$0.isEmpty && !$0.contains(".xcodeproj/") }
 
     // Prefer .xcworkspace over .xcodeproj when both exist
     let workspaces = paths.filter { $0.hasSuffix(".xcworkspace") }
@@ -165,7 +167,11 @@ enum AutoDetect {
   /// Detect scheme for a project. Returns name if exactly one scheme exists.
   static func scheme(project: String) async throws -> String {
     let schemes = try await availableSchemes(project: project)
+    let projectName = ((project as NSString).lastPathComponent as NSString).deletingPathExtension
 
+    if let preferred = preferredScheme(schemes, projectName: projectName) {
+      return preferred
+    }
     switch schemes.count {
     case 1:
       return schemes[0]
@@ -176,6 +182,15 @@ enum AutoDetect {
     }
   }
 
+  /// The scheme to use without asking: the only one, the one named after the project
+  /// (Xcode's app scheme), or the only one that isn't a test or CocoaPods scheme.
+  static func preferredScheme(_ schemes: [String], projectName: String) -> String? {
+    if schemes.count == 1 { return schemes[0] }
+    if schemes.contains(projectName) { return projectName }
+    let apps = schemes.filter { !$0.hasSuffix("Tests") && !$0.hasPrefix("Pods-") }
+    return apps.count == 1 ? apps[0] : nil
+  }
+
   static func availableSchemes(project: String) async throws -> [String] {
     let isWorkspace = project.hasSuffix(".xcworkspace")
     let projectFlag = isWorkspace ? "-workspace" : "-project"
@@ -184,7 +199,7 @@ enum AutoDetect {
       "/usr/bin/xcodebuild",
       arguments: [
         projectFlag, project, "-list", "-json",
-      ], timeout: 15)
+      ], timeout: 60)  // Package resolution on a cold checkout can take most of a minute.
 
     guard result.succeeded,
       let data = result.stdout.data(using: .utf8),
@@ -238,7 +253,7 @@ enum AutoDetect {
       "/usr/bin/xcodebuild",
       arguments: [
         projectFlag, project, "-list", "-json",
-      ], timeout: 15)
+      ], timeout: 60)  // Package resolution on a cold checkout can take most of a minute.
 
     guard result.succeeded,
       let data = result.stdout.data(using: .utf8),
@@ -255,6 +270,31 @@ enum AutoDetect {
     }
 
     return []
+  }
+
+  /// Test target names and how they were found.
+  struct TestTargets: Sendable, Equatable {
+    let names: [String]
+    /// True when read from the test plan or scheme, false when guessed from target names.
+    let exact: Bool
+  }
+
+  /// Test targets for filter resolution: the test plan's, else the scheme's test action's,
+  /// else targets whose names end in Tests. Workspaces have no target list in `-list`, so the
+  /// scheme is the only reliable source there.
+  static func testTargetNames(
+    project: String, scheme: String?, testplan: String?, env: Environment = .live
+  ) async -> TestTargets {
+    if let testplan, let names = TestPlanInspector.testTargetNames(plan: testplan, project: project),
+      !names.isEmpty
+    {
+      return TestTargets(names: names, exact: true)
+    }
+    if let scheme, let names = SchemeFile.testTargets(scheme: scheme, project: project), !names.isEmpty {
+      return TestTargets(names: names, exact: true)
+    }
+    let guessed = (try? await testTargets(project: project, env: env)) ?? []
+    return TestTargets(names: guessed, exact: false)
   }
 
   // MARK: - Destination builder
@@ -305,40 +345,64 @@ enum AutoDetect {
       return (nameOrUDID, nameOrUDID)
     }
 
-    let devices = try await loadSimulatorDevices()
+    let winner = try pickSimulator(named: nameOrUDID, from: try await loadSimulatorDevices())
+    return (winner.name, winner.udid)
+  }
 
-    // Filter by name, case-insensitive
+  /// The one simulator every name lookup resolves `name` to: an exact, case-insensitive
+  /// name match that is available or booted; a booted one when exactly one match is booted,
+  /// else the one with the newest OS. Two matches on the same newest OS are an error that
+  /// lists their UDIDs.
+  static func pickSimulator(named name: String, from devices: [SimulatorDevice]) throws -> SimulatorDevice {
     let matches = devices.filter {
-      $0.isAvailable && $0.name.caseInsensitiveCompare(nameOrUDID) == .orderedSame
+      ($0.isAvailable || $0.state == "Booted") && $0.name.caseInsensitiveCompare(name) == .orderedSame
     }
-
-    if matches.isEmpty {
-      throw ResolverError("No available simulator found with name '\(nameOrUDID)'.")
+    guard !matches.isEmpty else {
+      throw ResolverError("No available simulator found with name '\(name)'.")
     }
-
-    // Sort by OS version descending to pick highest-OS match
-    let sorted = matches.sorted { lhs, rhs in
-      lhs.runtime > rhs.runtime
-    }
-
-    // If multiple match the same (highest) runtime, that's an ambiguity error
-    let highestRuntime = sorted[0].runtime
-    let topTier = sorted.filter { $0.runtime == highestRuntime }
+    if matches.count == 1 { return matches[0] }
+    let booted = matches.filter { $0.state == "Booted" }
+    if booted.count == 1 { return booted[0] }
+    let candidates = booted.isEmpty ? matches : booted
+    let newest = candidates.map { runtimeVersion($0.runtime) }.max { $0.lexicographicallyPrecedes($1) } ?? []
+    let topTier = candidates.filter { runtimeVersion($0.runtime) == newest }
     if topTier.count > 1 {
       let descriptions = topTier.map { describe($0) }.joined(separator: "\n  ")
       throw MultipleSimulatorMatchError(
-        "Simulator '\(nameOrUDID)' matches \(topTier.count) devices with the same OS version"
-          + " (\(highestRuntime)). Specify a UDID instead:\n  \(descriptions)"
+        "Simulator '\(name)' matches \(topTier.count) devices with the same OS version"
+          + " (\(topTier[0].runtime)). Specify a UDID instead:\n  \(descriptions)"
       )
     }
+    return topTier[0]
+  }
 
-    let winner = sorted[0]
-    return (winner.name, winner.udid)
+  /// `iOS-18-10` → [18, 10], so 18.10 sorts after 18.2.
+  static func runtimeVersion(_ runtime: String) -> [Int] {
+    runtime.split { !$0.isNumber }.compactMap { Int($0) }
+  }
+
+  /// A simulator to compile against when none is configured or booted: the booted one
+  /// with the newest OS, else the available iPhone with the newest OS. Compiling only
+  /// needs the platform and architecture, so any of them gives the same build.
+  static func simulatorForCompile() async -> String? {
+    guard let devices = try? await loadSimulatorDevices() else { return nil }
+    return simulatorForCompile(from: devices)
+  }
+
+  static func simulatorForCompile(from devices: [SimulatorDevice]) -> String? {
+    let ios = devices.filter { $0.isAvailable && $0.runtime.lowercased().hasPrefix("ios") }
+    let booted = ios.filter { $0.state == "Booted" }
+    let pool = booted.isEmpty ? ios.filter { $0.name.hasPrefix("iPhone") } : booted
+    let sorted = pool.sorted {
+      let (l, r) = (runtimeVersion($0.runtime), runtimeVersion($1.runtime))
+      return l == r ? $0.name < $1.name : r.lexicographicallyPrecedes(l)
+    }
+    return sorted.first?.udid
   }
 
   /// Returns true if the string looks like a physical device UDID.
   /// Supports both legacy 40-char hex format and newer 8-16 hex format (e.g. 00008101-001A2B3C4D5E6F78).
-  private static func isPhysicalDeviceUDID(_ s: String) -> Bool {
+  static func isPhysicalDeviceUDID(_ s: String) -> Bool {
     let legacy = #"^[0-9a-fA-F]{40}$"#
     let modern = #"^[0-9a-fA-F]{8}-[0-9a-fA-F]{16}$"#
     return s.range(of: legacy, options: .regularExpression) != nil
@@ -429,6 +493,17 @@ enum AutoDetect {
     }
   }
 
+  /// False only when the simulator list loads and has no simulator with this name or UDID.
+  /// Physical device UDIDs are taken as they are.
+  static func simulatorExists(_ nameOrUDID: String) async -> Bool {
+    if isPhysicalDeviceUDID(nameOrUDID) { return true }
+    guard let devices = try? await loadSimulatorDevices() else { return true }
+    return devices.contains {
+      $0.udid.caseInsensitiveCompare(nameOrUDID) == .orderedSame
+        || $0.name.caseInsensitiveCompare(nameOrUDID) == .orderedSame
+    }
+  }
+
   private static func loadSimulatorDevices() async throws -> [SimulatorDevice] {
     let shellResult: ShellResult
     do {
@@ -437,13 +512,18 @@ enum AutoDetect {
       throw ResolverError("Simulator validation failed: \(error)")
     }
 
-    guard shellResult.succeeded,
-      let data = shellResult.stdout.data(using: .utf8),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let devices = json["devices"] as? [String: [[String: Any]]]
-    else {
+    guard shellResult.succeeded, let results = parseSimulatorDevices(shellResult.stdout) else {
       throw ResolverError("Failed to parse simulator list")
     }
+    return results
+  }
+
+  /// Devices from `simctl list devices -j` output, or nil when it doesn't parse.
+  static func parseSimulatorDevices(_ output: String) -> [SimulatorDevice]? {
+    guard let data = output.data(using: .utf8),
+      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let devices = json["devices"] as? [String: [[String: Any]]]
+    else { return nil }
 
     var results: [SimulatorDevice] = []
     for (runtime, deviceList) in devices {
@@ -470,7 +550,7 @@ enum AutoDetect {
     return results
   }
 
-  private static func describe(_ device: SimulatorDevice) -> String {
+  static func describe(_ device: SimulatorDevice) -> String {
     let availabilityLabel = device.isAvailable ? device.state : "Unavailable"
     return "\(device.name) (\(device.runtime)) — \(availabilityLabel) — \(device.udid)"
   }
@@ -551,42 +631,95 @@ enum AutoDetect {
 
   /// Resolve simulator name to UDID via simctl
   private static func resolveNameToUDID(_ name: String) async -> String? {
-    guard let result = try? await Shell.xcrun(timeout: 15, "simctl", "list", "devices", "-j"),
-      result.succeeded,
-      let data = result.stdout.data(using: .utf8),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let devices = json["devices"] as? [String: [[String: Any]]]
-    else {
-      return nil
+    guard let devices = try? await loadSimulatorDevices() else { return nil }
+    return try? pickSimulator(named: name, from: devices).udid
+  }
+}
+
+/// Reads a scheme's test action from its `.xcscheme` file.
+enum SchemeFile {
+  /// The `.xcscheme` for `scheme`, looked for in the project (or the workspace and the
+  /// projects beside it), shared schemes first.
+  static func locate(scheme: String, project: String) -> String? {
+    let fm = FileManager.default
+    var containers = [project]
+    if project.hasSuffix(".xcworkspace") {
+      containers += projects(near: (project as NSString).deletingLastPathComponent)
     }
-
-    let nameLower = name.lowercased()
-    var exactMatch: String?
-    var caseInsensitive: String?
-    var prefixBooted: String?
-    var prefixMatch: String?
-
-    for (_, deviceList) in devices {
-      for device in deviceList {
-        guard let deviceName = device["name"] as? String,
-          let udid = device["udid"] as? String
-        else { continue }
-        let usable =
-          (device["isAvailable"] as? Bool ?? false) || (device["state"] as? String) == "Booted"
-        guard usable else { continue }
-
-        let isBooted = (device["state"] as? String) == "Booted"
-
-        if deviceName == name {
-          exactMatch = udid
-        } else if exactMatch == nil && deviceName.lowercased() == nameLower {
-          caseInsensitive = udid
-        } else if deviceName.lowercased().hasPrefix(nameLower) {
-          if isBooted { prefixBooted = udid } else if prefixMatch == nil { prefixMatch = udid }
-        }
+    for container in containers {
+      let shared = "\(container)/xcshareddata/xcschemes/\(scheme).xcscheme"
+      if fm.fileExists(atPath: shared) { return shared }
+    }
+    for container in containers {
+      let userData = "\(container)/xcuserdata"
+      for user in (try? fm.contentsOfDirectory(atPath: userData)) ?? [] {
+        let path = "\(userData)/\(user)/xcschemes/\(scheme).xcscheme"
+        if fm.fileExists(atPath: path) { return path }
       }
     }
+    return nil
+  }
 
-    return exactMatch ?? caseInsensitive ?? prefixBooted ?? prefixMatch
+  /// `.xcodeproj` bundles within three levels of `directory`, skipping build output.
+  static func projects(near directory: String) -> [String] {
+    guard
+      let enumerator = FileManager.default.enumerator(
+        at: URL(fileURLWithPath: directory), includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles, .skipsPackageDescendants])
+    else { return [] }
+    var found: [String] = []
+    for case let url as URL in enumerator {
+      if SourceChanges.skippedDirectories.contains(url.lastPathComponent) {
+        enumerator.skipDescendants()
+        continue
+      }
+      if url.pathExtension == "xcodeproj" { found.append(url.path) }
+      if enumerator.level >= 3 { enumerator.skipDescendants() }
+    }
+    return found.sorted()
+  }
+
+  /// Test target names the scheme's test action runs: those of its test plans when it uses
+  /// them, else its testables. Nil when the scheme file can't be found.
+  static func testTargets(scheme: String, project: String) -> [String]? {
+    guard let path = locate(scheme: scheme, project: project),
+      let xml = try? String(contentsOfFile: path, encoding: .utf8)
+    else { return nil }
+    // `container:` paths are relative to the folder holding the project or workspace that
+    // owns the scheme, which for a workspace may be a project in a subfolder.
+    var container = (path as NSString).deletingLastPathComponent
+    while !container.hasSuffix(".xcodeproj") && !container.hasSuffix(".xcworkspace") && container.count > 1 {
+      container = (container as NSString).deletingLastPathComponent
+    }
+    return testTargets(schemeXML: xml, projectDirectory: (container as NSString).deletingLastPathComponent)
+  }
+
+  static func testTargets(schemeXML xml: String, projectDirectory: String) -> [String] {
+    guard let start = xml.range(of: "<TestAction"),
+      let end = xml.range(of: "</TestAction>", range: start.upperBound..<xml.endIndex)
+    else { return [] }
+    let action = String(xml[start.lowerBound..<end.upperBound])
+
+    var names: [String] = []
+    for plan in matches(#"reference\s*=\s*"container:([^"]+\.xctestplan)""#, in: action) {
+      let path = plan.hasPrefix("/") ? plan : (projectDirectory as NSString).appendingPathComponent(plan)
+      names += TestPlanInspector.testTargetNames(atPath: path) ?? []
+    }
+    if names.isEmpty {
+      let enabled = #"<TestableReference[^>]*?skipped\s*=\s*"NO"[\s\S]*?</TestableReference>"#
+      let testables = matches(enabled, in: action, group: 0)
+      for testable in testables {
+        names += matches(#"BlueprintName\s*=\s*"([^"]+)""#, in: testable).prefix(1)
+      }
+    }
+    var seen = Set<String>()
+    return names.filter { seen.insert($0).inserted }
+  }
+
+  private static func matches(_ pattern: String, in text: String, group: Int = 1) -> [String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+      Range($0.range(at: group), in: text).map { String(text[$0]) }
+    }
   }
 }

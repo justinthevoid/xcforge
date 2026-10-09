@@ -1,9 +1,9 @@
 import Foundation
 
-/// Slim 10-field projection of a test run designed for agent consumption.
-/// Encoded JSON omits screenshots, slowest-test arrays, build diagnostics,
-/// xcresult paths, and other context-burning fields. `knownFailures` is
-/// omitted when nil or empty to keep the wire shape tight.
+/// Slim projection of a test run designed for agent consumption.
+/// Encoded JSON omits slowest-test arrays, build diagnostics and other context-burning
+/// fields. `knownFailures`, `flaky`, `reason` and `xcresult` are omitted when empty to
+/// keep the wire shape tight.
 public struct AgentTestResult: Codable, Sendable, Equatable {
   public let succeeded: Bool
   public let buildOk: Bool
@@ -14,14 +14,40 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
   public let timedOut: Bool
   public let knownFailures: [String]?
   public let failures: [AgentFailure]
+  /// Tests that failed and then passed on a retry. Omitted when empty.
+  public let flaky: [String]?
+  /// Why the run failed when `failures` can't say: nothing ran, the runner died, or a
+  /// time limit killed it (which limit, and how to raise it).
+  public let reason: String?
+  /// The result bundle, for `test_failures` or xcresulttool.
+  public let xcresult: String?
 
+  /// One failing test. `message` is the first line of its first message; `file` and
+  /// `line` locate it, `moreMessages` counts the rest.
   public struct AgentFailure: Codable, Sendable, Equatable {
     public let id: String
     public let message: String
+    public let file: String?
+    public let line: Int?
+    public let moreMessages: Int?
+    public let attachments: [String]?
+
+    public init(
+      id: String, message: String, file: String? = nil, line: Int? = nil, moreMessages: Int? = nil,
+      attachments: [String]? = nil
+    ) {
+      self.id = id
+      self.message = message
+      self.file = file
+      self.line = line
+      self.moreMessages = moreMessages
+      self.attachments = attachments
+    }
   }
 
   enum CodingKeys: String, CodingKey {
-    case succeeded, buildOk, total, passed, failed, skipped, timedOut, knownFailures, failures
+    case succeeded, buildOk, total, passed, failed, skipped, timedOut, knownFailures, failures, flaky, reason
+    case xcresult
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -37,6 +63,13 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
       try c.encode(known, forKey: .knownFailures)
     }
     try c.encode(failures, forKey: .failures)
+    if let flaky, !flaky.isEmpty {
+      try c.encode(flaky, forKey: .flaky)
+    }
+    try c.encodeIfPresent(reason, forKey: .reason)
+    if let xcresult, !xcresult.isEmpty {
+      try c.encode(xcresult, forKey: .xcresult)
+    }
   }
 
   public init(
@@ -48,7 +81,10 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
     skipped: Int,
     timedOut: Bool,
     knownFailures: [String]?,
-    failures: [AgentFailure]
+    failures: [AgentFailure],
+    flaky: [String]? = nil,
+    reason: String? = nil,
+    xcresult: String? = nil
   ) {
     self.succeeded = succeeded
     self.buildOk = buildOk
@@ -59,6 +95,9 @@ public struct AgentTestResult: Codable, Sendable, Equatable {
     self.timedOut = timedOut
     self.knownFailures = knownFailures
     self.failures = failures
+    self.flaky = flaky
+    self.reason = reason
+    self.xcresult = xcresult
   }
 }
 
@@ -78,21 +117,49 @@ public enum AgentResultProjection {
   }
 
   public static func project(_ e: TestTools.TestExecution) -> AgentTestResult {
-    let knownSet = Set(e.knownFailures ?? [])
-    let visibleFailures = e.failures.filter { !knownSet.contains($0.testIdentifier) }
-    let agentFailures = visibleFailures.map {
-      AgentTestResult.AgentFailure(id: $0.testIdentifier, message: firstLine($0.message))
+    let known = e.knownFailures ?? []
+    func isKnown(_ id: String) -> Bool { known.contains { TestIDs.same($0, id) } }
+    let visibleFailures = e.failures.filter { !isKnown($0.testIdentifier) }
+    let agentFailures = visibleFailures.map { failure -> AgentTestResult.AgentFailure in
+      let messages = failure.messages ?? []
+      let first = messages.first
+      return AgentTestResult.AgentFailure(
+        id: failure.testIdentifier,
+        message: firstLine(first.map { m in m.label.map { "[\($0)] \(m.text)" } ?? m.text } ?? failure.message),
+        file: first?.file,
+        line: first?.line,
+        moreMessages: messages.count > 1 ? messages.count - 1 : nil,
+        attachments: (failure.attachments ?? []).isEmpty ? nil : failure.attachments
+      )
+    }
+    // The real count of failing tests, less the gated ones, even when parsing lost some of them.
+    let failed = max(agentFailures.count, e.failedTestCount - known.count)
+    var reason: String?
+    if e.xcforgeTimedOut {
+      // Reported even when some failures were read: the run didn't finish.
+      reason = e.timeoutDetail.map(firstLine) ?? "timed out before the tests finished"
+    } else if !e.succeeded && agentFailures.isEmpty {
+      if e.totalTestCount == 0 {
+        reason = "no tests ran: the filter, scheme or test plan selected none"
+      } else if failed > 0 {
+        reason = "\(failed) tests failed but their details couldn't be read from \(e.xcresultPath)"
+      } else {
+        reason = e.xcresultParseError ?? "xcodebuild failed without a test failure; see \(e.xcresultPath)"
+      }
     }
     return AgentTestResult(
       succeeded: e.succeeded,
       buildOk: !e.buildFailed,
       total: e.totalTestCount,
       passed: e.passedTestCount,
-      failed: agentFailures.count,
+      failed: failed,
       skipped: e.skippedTestCount,
       timedOut: e.xcforgeTimedOut,
       knownFailures: e.knownFailures,
-      failures: agentFailures
+      failures: agentFailures,
+      flaky: e.flakyTests.isEmpty ? nil : e.flakyTests,
+      reason: reason,
+      xcresult: e.xcresultPath
     )
   }
 
@@ -109,7 +176,10 @@ public enum AgentResultProjection {
           skipped: projected.skipped,
           timedOut: b.xcforgeTimedOut || projected.timedOut,
           knownFailures: projected.knownFailures,
-          failures: projected.failures
+          failures: projected.failures,
+          flaky: projected.flaky,
+          reason: projected.reason,
+          xcresult: projected.xcresult
         )
       }
       return projected
@@ -127,7 +197,9 @@ public enum AgentResultProjection {
       skipped: 0,
       timedOut: b.xcforgeTimedOut,
       knownFailures: known,
-      failures: []
+      failures: [],
+      reason: b.buildSucceeded ? "the tests didn't run" : "the build failed",
+      xcresult: b.buildXcresultPath
     )
   }
 }

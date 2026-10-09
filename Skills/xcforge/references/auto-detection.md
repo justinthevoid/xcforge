@@ -51,6 +51,9 @@ file is warned and skipped (never crashes).
 | `testPlan` | Default `.xctestplan` for `test_sim`/`build_and_test` when no `--testplan`/`testplan` arg is given. | **repo-only — never written to `defaults.json` or profiles** |
 | `testTimeout` | Per-project default test timeout, positive integer seconds. Precedence: explicit `timeoutSeconds` > `testTimeout` > `--long` (7200s) > 1800s default. Non-positive values rejected with warning. | **repo-only** |
 | `autoPromote` | `true` turns on 3-rep auto-promotion of explicit values to session defaults. Off (`false`) by default. | **repo-only** |
+| `toolGroups` | Which MCP tool groups the server lists at start, e.g. `+diagnose` or `build,test,ui`. See [Tool surface](tool-surface.md). `XCFORGE_TOOL_GROUPS` wins over it. | **repo-only** |
+
+The shared-Mac keys (`derivedDataPath`, `buildLock`, `jobs`, ...) are listed in [Shared Mac](shared-mac.md); `packagePath` in [SPM Tools](spm-tools.md).
 
 `configuration`, `testPlan`, `testTimeout`, and `autoPromote` are repo-only by
 design and never flow into the machine-global persisted JSON or named profiles.
@@ -77,12 +80,13 @@ xcforge init --force    # overwrite an existing file
 - Scans working directory for `.xcodeproj` and `.xcworkspace` files
 - If exactly one found, uses it automatically
 - If multiple found, returns the list and asks for selection
-- Prefers `.xcworkspace` over `.xcodeproj` when both exist (CocoaPods, SPM workspace)
+- Prefers `.xcworkspace` over `.xcodeproj` when both exist (CocoaPods, SPM workspace). The `project.xcworkspace` inside every `.xcodeproj` doesn't count
 
 ### scheme
 - Queries `xcodebuild -list` for the resolved project
 - If exactly one scheme, uses it
-- If multiple, returns the list
+- If several, uses the one named after the project, else the only one that isn't a test or `Pods-` scheme
+- Otherwise returns the list
 
 ### simulator
 - Finds currently booted simulator via `simctl list devices`
@@ -188,6 +192,8 @@ xcforge defaults set --scheme MyApp      # Set the active project's default sche
 xcforge defaults clear                   # Clear ONLY the active project's record
 xcforge defaults clear --all             # Wipe every project's record on this machine
 ```
+
+`set` finds the project first (as a build would) and exits non-zero without writing when there is none: pass `--project`. A saved simulator that no longer exists is ignored with a warning and auto-detection is used instead.
 
 `clear` (no `--all`) auto-resolves the active project before clearing; if no project can be detected from cwd, it reports that and exits cleanly without touching disk.
 

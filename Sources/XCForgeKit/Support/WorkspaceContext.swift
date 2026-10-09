@@ -99,7 +99,16 @@ public actor SessionState {
   /// There is no longer a "global persisted project" fallback — project
   /// identity must come from a source the user controls.
   public func resolveProject(_ explicit: String?) async throws -> String {
-    if let explicit {
+    let resolved = try await resolveProjectUncached(explicit)
+    lastResolvedProject = resolved
+    return resolved
+  }
+
+  private func resolveProjectUncached(_ explicit: String?) async throws -> String {
+    // A relative path is taken against the working directory now, so tools that run in another
+    // directory (xcode-build-server, a snapshot worktree) still find it.
+    if let explicit = explicit.map(Self.absolutePath) {
+      refreshRepoDefaults(forProject: explicit)
       trackUsage(value: explicit, streak: &projectStreak, stored: &project, source: &projectSource)
       loadRecordIfNeeded(forProject: explicit)
       return explicit
@@ -122,6 +131,44 @@ public actor SessionState {
     Log.warn("Auto-detected project: \((detected as NSString).lastPathComponent)")
     return detected
   }
+
+  static func absolutePath(_ path: String) -> String {
+    let expanded = (path as NSString).expandingTildeInPath
+    let absolute =
+      expanded.hasPrefix("/")
+      ? expanded
+      : (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(expanded)
+    return (absolute as NSString).standardizingPath
+  }
+
+  /// Use the `.xcforge.yaml` that governs `project`, not the one next to the server's
+  /// working directory. A project in another worktree or repo gets its own scheme, test
+  /// plan and simulator settings; values cached from the previous config are dropped.
+  private func refreshRepoDefaults(forProject project: String) {
+    let expanded = (project as NSString).expandingTildeInPath
+    let absolute =
+      expanded.hasPrefix("/")
+      ? expanded
+      : (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(expanded)
+    let directory = ((absolute as NSString).standardizingPath as NSString).deletingLastPathComponent
+    let values = RepoConfig.discover(from: directory)
+    guard values?.sourcePath != repoDefaults?.sourcePath else { return }
+    repoDefaults = values
+    if schemeSource == .repoConfig { scheme = nil }
+    if simulatorSource == .repoConfig { simulator = nil }
+  }
+
+  /// Problems found in the `.xcforge.yaml` in effect (unknown keys, bad values).
+  public var configWarnings: [String] { repoDefaults?.warnings ?? [] }
+
+  /// The project resolved for this session so far, if any.
+  public var activeProject: String? { lastResolvedProject }
+
+  /// Whatever `resolveProject` returned last, explicit values included.
+  private var lastResolvedProject: String?
+
+  /// Path of the `.xcforge.yaml` in effect, if any.
+  public var configPath: String? { repoDefaults?.sourcePath }
 
   /// Resolve scheme name. Caches auto-detected result for the session.
   public func resolveScheme(_ explicit: String?, project: String) async throws -> String {
@@ -163,9 +210,14 @@ public actor SessionState {
       return repo
     }
     if let persisted = persistedSimulator {
-      self.simulator = persisted
-      self.simulatorSource = .persisted
-      return persisted
+      // A saved simulator may have been deleted or renamed since it was saved.
+      if await AutoDetect.simulatorExists(persisted) {
+        self.simulator = persisted
+        self.simulatorSource = .persisted
+        return persisted
+      }
+      Log.warn("Saved default simulator '\(persisted)' no longer exists; auto-detecting instead.")
+      persistedSimulator = nil
     }
     return try await AutoDetect.simulator()
   }
@@ -238,8 +290,9 @@ public actor SessionState {
     )
   }
 
-  public func resolveBundleId(_ explicit: String?) -> String? {
+  public func resolveBundleId(_ explicit: String?) async -> String? {
     if let explicit { return explicit }
+    await loadBuildInfoIfNeeded()
     // scheme is no longer eagerly cached from persisted at init, so the
     // build-scheme mismatch guard must consult the effective scheme
     // (session cache → repo config → persisted) to keep stale bundle ids
@@ -249,11 +302,20 @@ public actor SessionState {
     return bundleId
   }
 
-  func resolveAppPath(_ explicit: String?) -> String? {
+  func resolveAppPath(_ explicit: String?) async -> String? {
     if let explicit { return explicit }
+    await loadBuildInfoIfNeeded()
     let effScheme = scheme ?? repoDefaults?.scheme ?? persistedScheme
     if let buildScheme, let effScheme, buildScheme != effScheme { return nil }
     return appPath
+  }
+
+  /// A new process (the CLI, or a restarted MCP server) has no project resolved yet, so
+  /// the last build's bundle ID and app path, saved per project, aren't loaded. Resolve
+  /// the project to load them.
+  private func loadBuildInfoIfNeeded() async {
+    guard loadedRecordForProject == nil else { return }
+    _ = try? await resolveProject(nil)
   }
 
   func clearBuildInfo() {
@@ -345,6 +407,12 @@ public actor SessionState {
     {
       lines.append(
         "  note: one or more defaults were auto-promoted from repeated explicit use.")
+    }
+    if let path = repoDefaults?.sourcePath {
+      lines.append("  config: \(path)")
+    }
+    for warning in configWarnings {
+      lines.append("  config warning: \(warning)")
     }
     return lines.joined(separator: "\n")
   }
@@ -697,6 +765,8 @@ public actor SessionState {
           return .ok(await state.showDefaults())
         }
 
+        // Defaults are saved per project: find it first, so a fresh process doesn't drop them.
+        if input.project == nil { _ = try? await state.resolveProject(nil) }
         let persisted = await state.setDefaults(
           project: input.project, scheme: input.scheme, simulator: input.simulator)
         var body = await state.showDefaults()
