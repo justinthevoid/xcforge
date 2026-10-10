@@ -37,14 +37,23 @@ public struct TestPlanOptions: Codable {
   public var codeCoverage: Bool?
   public var threadSanitizerEnabled: Bool?
   public var addressSanitizerEnabled: Bool?
+  public var testTimeoutsEnabled: Bool?
+  public var defaultTestExecutionTimeAllowance: Double?
+  public var maximumTestExecutionTimeAllowance: Double?
+  public var testExecutionOrdering: String?
 }
 
 public struct TestPlanTarget: Codable {
   public var target: TestTargetRef
   public var parallelizable: Bool?
   public var enabled: Bool?
+  /// Xcode's actual target-disable key. `enabled` remains readable for older tool plans.
+  public var skipped: Bool?
+  public var options: TestPlanOptions?
   public var skippedTests: [SkippedTest]?
   public var selectedTests: [SkippedTest]?
+
+  var isEnabled: Bool { enabled != false && skipped != true }
 }
 
 public struct TestTargetRef: Codable {
@@ -132,7 +141,7 @@ public enum TestPlanInspector {
     guard let data = FileManager.default.contents(atPath: path),
       let decoded = try? JSONDecoder().decode(XCTestPlan.self, from: data)
     else { return nil }
-    return decoded.testTargets.filter { $0.enabled != false }.map(\.target.name)
+    return decoded.testTargets.filter(\.isEnabled).map(\.target.name)
   }
 
   // MARK: - Private
@@ -228,13 +237,19 @@ public enum TestPlanInspector {
     for target in plan.testTargets {
       let skipped = target.skippedTests?.count ?? 0
       var targetLine = "  \(target.target.name)"
-      if target.enabled == false { targetLine += " (disabled)" }
+      if !target.isEnabled { targetLine += " (disabled)" }
       if let parallel = target.parallelizable { targetLine += " (parallelizable: \(parallel))" }
       if skipped > 0 { targetLine += " [\(skipped) skipped]" }
       if let selected = target.selectedTests, !selected.isEmpty {
         targetLine += " [only \(selected.count) selected]"
       }
       lines.append(targetLine)
+      if let options = target.options { lines.append(formatOptions(options, indent: "    ")) }
+      for test in (target.selectedTests ?? []).prefix(10) {
+        lines.append("    select: \(test.identifier)")
+      }
+      let selected = target.selectedTests?.count ?? 0
+      if selected > 10 { lines.append("    ... \(selected - 10) more selected") }
       for test in (target.skippedTests ?? []).prefix(10) {
         lines.append("    skip: \(test.identifier)")
       }
@@ -248,12 +263,15 @@ public enum TestPlanInspector {
       if hasMultiTagFilter(tagSettings) {
         lines.append(
           "  Warning: with several included tags, a plan set to match all runs only tests that carry "
-            + "every one of them. Compare `xcforge test list --testplan <plan>` with the scheme's count.")
+            + "every one of them. Confirm the intended selection before native qualification.")
       }
     }
 
     lines.append("")
-    lines.append("Run `xcforge test list --testplan <plan>` to see exactly which tests this plan runs.")
+    lines.append("Metadata only: no build, package resolution, simulator launch or test enumeration was performed.")
+    lines.append(
+      "`xcforge test list` can compile the app to enumerate tests; use it only where native builds are permitted. "
+        + "Declared selections and tag filters do not establish the executed test count.")
 
     return lines.joined(separator: "\n")
   }
@@ -263,6 +281,10 @@ public enum TestPlanInspector {
     if let v = options.codeCoverage { parts.append("codeCoverage: \(v)") }
     if let v = options.threadSanitizerEnabled { parts.append("threadSanitizer: \(v)") }
     if let v = options.addressSanitizerEnabled { parts.append("addressSanitizer: \(v)") }
+    if let v = options.testTimeoutsEnabled { parts.append("testTimeoutsEnabled: \(v)") }
+    if let v = options.defaultTestExecutionTimeAllowance { parts.append("defaultTestExecutionTimeAllowance: \(v)s") }
+    if let v = options.maximumTestExecutionTimeAllowance { parts.append("maximumTestExecutionTimeAllowance: \(v)s") }
+    if let v = options.testExecutionOrdering { parts.append("testExecutionOrdering: \(v)") }
     guard !parts.isEmpty else { return "\(indent)(no options set)" }
     return parts.map { "\(indent)\($0)" }.joined(separator: "\n")
   }

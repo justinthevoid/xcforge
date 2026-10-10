@@ -182,7 +182,9 @@ List available test identifiers for a scheme. Use to discover the correct filter
 
 ## test_plan_inspect
 
-Parse and summarize a `.xctestplan` file without running tests.
+Parse and summarize a `.xctestplan` file without building, resolving packages, launching a simulator, or enumerating compiled tests. Reports timeout allowances, target execution ordering, declared selections, tag filters and disabled targets (`skipped: true` or legacy `enabled: false`).
+
+This is the safe inspection tool in an editing loop where native builds are forbidden. `list_tests` / `xcforge test list` can compile the app to enumerate tests and requires permission for native execution. Static selections and tag filters do not prove an executed test count; use the qualification run's results for that.
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|

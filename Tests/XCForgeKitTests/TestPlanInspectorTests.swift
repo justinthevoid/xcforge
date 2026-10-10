@@ -116,5 +116,54 @@ struct TestPlanInspectorTests {
     #expect(summary.contains("Sanitizer Config"))
     #expect(summary.contains("MyAppTests"))
     #expect(summary.contains("1 skipped"))
+    #expect(summary.contains("Metadata only: no build"))
+    #expect(summary.contains("can compile the app"))
+    #expect(!summary.contains("Run `xcforge test list"))
+  }
+
+  @Test("Xcode skipped targets and legacy disabled targets are excluded from discovery")
+  func excludesSkippedTargets() throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("xcforge-targets-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("ci.xctestplan")
+    try #"""
+    {"testTargets":[
+      {"target":{"name":"ActiveTests"}},
+      {"target":{"name":"SkippedUITests"},"skipped":true},
+      {"target":{"name":"LegacyDisabledTests"},"enabled":false},
+      {"target":{"name":"ExplicitActiveTests"},"skipped":false}
+    ]}
+    """#.write(to: file, atomically: true, encoding: .utf8)
+    #expect(TestPlanInspector.testTargetNames(atPath: file.path) == ["ActiveTests", "ExplicitActiveTests"])
+  }
+
+  @Test("metadata inspection reports execution budgets and declared selections")
+  func reportsTimeoutsAndSelectionsWithoutEnumeration() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("xcforge-budgets-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("ci.xctestplan")
+    try #"""
+    {
+      "configurations":[{"name":"Smoke", "options":{"maximumTestExecutionTimeAllowance":120}}],
+      "defaultOptions":{"testTimeoutsEnabled":true,"defaultTestExecutionTimeAllowance":60},
+      "testTargets":[
+        {"target":{"name":"AppUITests"},"options":{"testExecutionOrdering":"alphabetical"},
+         "selectedTests":["CritiqueFlowUITests/testCompletes()"]},
+        {"target":{"name":"DisabledTests"},"skipped":true}
+      ]
+    }
+    """#.write(to: file, atomically: true, encoding: .utf8)
+    let summary = try await TestPlanInspector.inspectTestPlan(name: "ci", project: directory.path, env: .live)
+    #expect(summary.contains("testTimeoutsEnabled: true"))
+    #expect(summary.contains("defaultTestExecutionTimeAllowance: 60.0s"))
+    #expect(summary.contains("maximumTestExecutionTimeAllowance: 120.0s"))
+    #expect(summary.contains("testExecutionOrdering: alphabetical"))
+    #expect(summary.contains("select: CritiqueFlowUITests/testCompletes()"))
+    #expect(summary.contains("DisabledTests (disabled)"))
+    #expect(!summary.contains("Run `xcforge test list"))
   }
 }
