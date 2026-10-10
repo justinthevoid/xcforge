@@ -104,6 +104,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
+          # Drop the earlier step's edit so checkout works when main's server.json moved on
+          git checkout -- server.json
           git checkout main
           # Re-apply the jq patch on the freshly checked-out main
           jq \
