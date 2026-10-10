@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-10
+
 ### Added
 - **`xcforge skill install`** writes the xcforge agent skill (embedded in the binary) into the project's `.claude/skills`, or with `--global` into `~/.claude/skills` (`$CLAUDE_CONFIG_DIR/skills` when set), or any `--dir`. Re-running refreshes a stale copy and drops files a newer xcforge no longer ships. `skill status` reports where it's installed and whether it's current, `skill show` prints a file, `skill uninstall` removes it
 - **Shared-Mac options for every xcodebuild call:** `--derived-data-path`, `--result-bundle-path`, repeatable `--xcodebuild-arg`, `--lock`, `--lock-wait` and `--min-free-gb` on `build compile|run|clean`, `build-test` and `test run|failures|list|rerun-failed`, with matching MCP arguments, env vars and `.xcforge.yaml` keys (`derivedDataPath`, `buildLock`, `artifactDir`, `minFreeGB`). See `Skills/xcforge/references/shared-mac.md`
@@ -117,7 +119,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - `ui tap` and other HID input no longer crash (SIGSEGV) on Xcode 27: SimulatorKit's `lookup:error:` returns a mach port, not an object, and is now called by its real signature. An unexpected signature is an error, not a crash
 - Screenshots of a landscape app report landscape point sizes even though the simulator framebuffer stays portrait (orientation read from WDA when it is running)
 - `build typecheck --target` works with a configured DerivedData folder: `-target` builds use SYMROOT/OBJROOT inside it instead of `-derivedDataPath`, which xcodebuild rejects. An xcodebuild usage error is reported as `xcodebuild_usage`, not a compile failure
-- Coordinate taps and swipes use HID input on Xcode 27, which moved SimulatorKit to `Contents/SharedFrameworks`. When they fall back to WDA the result says why HID wasn't used
+- SimulatorKit is found in `Contents/SharedFrameworks`, where Xcode 27 moved it. When a tap or swipe falls back to WDA the result says why HID wasn't used
 - Launches watch the app for 8s (was 2s) and wait up to 15s for a late crash report; an exit without a report says how long after launch it died and where reports land
 - A relative `--project` path resolves against the working directory
 - The first `wda start` gets 15 minutes to build xcforgeWDA and 3 minutes (`XCFORGE_WDA_START_SECONDS`) for the runner to answer, and a failure names the cause, such as an xcforgeWDA copy too old for this Xcode. A second call waits for a deploy in progress instead of failing
