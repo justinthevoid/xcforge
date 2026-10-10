@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-10-10
+
+### Fixed
+- Static test-plan inspection honors Xcode's skipped targets, displays timeout settings and declared test selections, and keeps metadata inspection separate from compiling test discovery. The embedded agent skill now documents the same distinction.
+
 ## [1.7.0] - 2026-10-10
 
 ### Added
